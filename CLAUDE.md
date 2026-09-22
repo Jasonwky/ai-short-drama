@@ -11,12 +11,15 @@ commit messages, and inline code comments stay in English to match the existing 
 
 ## 本项目是什么
 
-**AI 短剧(AI Short Drama)。** 仓库尚未铺代码 —— 截至初始提交 `f57fdce`,只有 `README.md`,
+**AI 短剧(AI Short Drama)。** 做一套 AI 短剧生产工作流,以网页控制台的形式呈现。
+
+**全新项目,不依赖也不继承任何既有仓库。** 截至初始提交 `f57fdce`,仓库只有 `README.md`,
 没有源码、没有包管理清单、没有构建/测试工具链,因此暂无构建、lint、测试、运行命令可写。
 
-目录骨架与下方的工程纪律沿用自 `D:\work\game\micro-video`,**只拷了通用部分,项目特有内容未拷贝**。
 等第一批真实代码落地后,在这里补上:项目定位与关键决策表 · 构建/lint/测试(含跑单个测试)/运行命令 ·
 需要读多个文件才看得出的架构(模块边界、数据流、非显然约定)。
+
+已有调研:`docs/superpowers/spike-results/2026-09-22-AI短剧成熟工作流调研.md`。
 
 ---
 
@@ -190,11 +193,9 @@ commit messages, and inline code comments stay in English to match the existing 
 
 ---
 
-## 沿用的工程结论
+## 带外部证据的工程结论
 
-> 以下结论沿用自 `micro-video` 项目,是与具体产品无关的通用部分。
-
-### 两条仍然适用的结论
+### 两条硬结论
 
 1. **多 Agent 系统失败率 41%–86.7%**(MAST,arXiv 2503.13657,1,600+ 轨迹 / 7 框架 / κ=0.88)。
    失败分布:**42% 规格说明、37% 协调崩溃、21% 薄弱验证**。
