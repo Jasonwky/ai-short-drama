@@ -1,0 +1,149 @@
+{
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": { "unet_name": "qwen-image-edit-2511-Q4_K_M.gguf" },
+    "_meta": { "title": "图模型 GGUF Q4_K_M" }
+  },
+  "2": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": { "model": ["1", 0], "shift": 3.1 },
+    "_meta": { "title": "采样偏移(官方模板值 3.1)" }
+  },
+  "3": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": ["2", 0],
+      "lora_name": "qwen-image-edit-2511-multiple-angles-lora.safetensors",
+      "strength_model": 1.0
+    },
+    "_meta": { "title": "四视图 LoRA(闸门 0-2 用)" }
+  },
+  "4": {
+    "class_type": "PrimitiveBoolean",
+    "inputs": { "value": false },
+    "_meta": { "title": "开关:是否启用四视图 LoRA" }
+  },
+  "5": {
+    "class_type": "ComfySwitchNode",
+    "inputs": { "switch": ["4", 0], "on_false": ["2", 0], "on_true": ["3", 0] },
+    "_meta": { "title": "选 model:基线 / 四视图" }
+  },
+  "6": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": ["5", 0],
+      "lora_name": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+      "strength_model": 1.0
+    },
+    "_meta": { "title": "Lightning 4 步加速 LoRA" }
+  },
+  "7": {
+    "class_type": "PrimitiveBoolean",
+    "inputs": { "value": false },
+    "_meta": { "title": "开关:false=基线20步CFG4 / true=加速4步CFG1" }
+  },
+  "8": {
+    "class_type": "ComfySwitchNode",
+    "inputs": { "switch": ["7", 0], "on_false": ["5", 0], "on_true": ["6", 0] },
+    "_meta": { "title": "选 model:是否叠加速 LoRA" }
+  },
+  "9": {
+    "class_type": "CFGNorm",
+    "inputs": { "model": ["8", 0], "strength": 1.0, "pre_cfg": false },
+    "_meta": { "title": "CFGNorm(官方模板值 1.0/false)" }
+  },
+  "10": { "class_type": "PrimitiveInt", "inputs": { "value": 20 }, "_meta": { "title": "基线步数(Comfy 建议 20;Qwen 官方 40)" } },
+  "11": { "class_type": "PrimitiveInt", "inputs": { "value": 4 }, "_meta": { "title": "加速步数" } },
+  "12": {
+    "class_type": "ComfySwitchNode",
+    "inputs": { "switch": ["7", 0], "on_false": ["10", 0], "on_true": ["11", 0] },
+    "_meta": { "title": "选 steps" }
+  },
+  "13": { "class_type": "PrimitiveFloat", "inputs": { "value": 4.0 }, "_meta": { "title": "基线 CFG" } },
+  "14": { "class_type": "PrimitiveFloat", "inputs": { "value": 1.0 }, "_meta": { "title": "加速档 CFG 必须为 1" } },
+  "15": {
+    "class_type": "ComfySwitchNode",
+    "inputs": { "switch": ["7", 0], "on_false": ["13", 0], "on_true": ["14", 0] },
+    "_meta": { "title": "选 cfg" }
+  },
+  "16": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "_meta": { "title": "文本编码器 Qwen2.5-VL 7B" }
+  },
+  "17": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "qwen_image_vae.safetensors" },
+    "_meta": { "title": "VAE —— 必须接,否则参考图只走文本编码器" }
+  },
+  "18": { "class_type": "LoadImage", "inputs": { "image": "ref1.png" }, "_meta": { "title": "参考图 1 → Picture 1" } },
+  "19": { "class_type": "LoadImage", "inputs": { "image": "ref2.png" }, "_meta": { "title": "参考图 2 → Picture 2" } },
+  "20": { "class_type": "LoadImage", "inputs": { "image": "ref3.png" }, "_meta": { "title": "参考图 3 → Picture 3(槽位上限)" } },
+  "21": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": ["16", 0],
+      "prompt": "PROMPT_PLACEHOLDER",
+      "vae": ["17", 0],
+      "image1": ["18", 0],
+      "image2": ["19", 0],
+      "image3": ["20", 0]
+    },
+    "_meta": { "title": "正向条件(节点自动在提示词前拼 Picture N:)" }
+  },
+  "22": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": { "clip": ["16", 0], "prompt": "", "vae": ["17", 0] },
+    "_meta": { "title": "负向条件(空提示词)" }
+  },
+  "23": {
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "inputs": { "conditioning": ["21", 0], "reference_latents_method": "index_timestep_zero" },
+    "_meta": { "title": "多参考图方式(GGUF 非 Comfy 打包文件,官方 Note 说可能需要)" }
+  },
+  "24": {
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "inputs": { "conditioning": ["22", 0], "reference_latents_method": "index_timestep_zero" },
+    "_meta": { "title": "同上,负向" }
+  },
+  "25": {
+    "class_type": "FluxKontextImageScale",
+    "inputs": { "image": ["18", 0] },
+    "_meta": { "title": "把首张参考图缩到模型合法尺寸,作为 latent 基底" }
+  },
+  "26": {
+    "class_type": "VAEEncode",
+    "inputs": { "pixels": ["25", 0], "vae": ["17", 0] },
+    "_meta": { "title": "编码成 latent" }
+  },
+  "27": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["9", 0],
+      "seed": 0,
+      "steps": ["12", 0],
+      "cfg": ["15", 0],
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "positive": ["23", 0],
+      "negative": ["24", 0],
+      "latent_image": ["26", 0],
+      "denoise": 1.0
+    },
+    "_meta": { "title": "采样 —— seed 由调用方写入,不可随机" }
+  },
+  "28": {
+    "class_type": "VAEDecode",
+    "inputs": { "samples": ["27", 0], "vae": ["17", 0] },
+    "_meta": { "title": "解码" }
+  },
+  "29": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["28", 0], "filename_prefix": "shortdrama/gate0" },
+    "_meta": { "title": "存图" }
+  }
+}
