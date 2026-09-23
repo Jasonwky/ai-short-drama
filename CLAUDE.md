@@ -22,6 +22,10 @@ commit messages, and inline code comments stay in English to match the existing 
 - 跑单个测试:`python -m pytest tests/drama/test_rules.py::test_min_duration -q`
 - 没有打包清单:`tools/` 是命名空间包,测试靠 `tests/conftest.py` 把仓库根放进 `sys.path`
 - `pytest.ini` 把测试范围限定在 `tests/` —— `thirdparty/` 里的参考仓库自带测试,不能让 pytest 递归进去
+- 起生成 worker(一台云机一个):`python -X utf8 -m tools.serve.worker --db <库> --host-id <id> --data-root <素材根> --loop`
+  (`--once` 只跑一轮;日志同时追加到 `<素材根>/journal/worker.log`)
+- 真链路验收(要开卡):`python -X utf8 -m tools.serve.e2e_first_segment --help`;
+  在 Git Bash 里跑要加 `MSYS_NO_PATHCONV=1`,否则 `/root/...` 会被改写成 Windows 路径
 
 ### 代码布局(读多个文件才看得出的部分)
 
@@ -29,6 +33,9 @@ commit messages, and inline code comments stay in English to match the existing 
   由**数据库触发器**强制,不靠调用方自觉。写入一律走 `repo` 的字段白名单
 - `tools/gen/capability.py` 后端能力声明:段落时长区间、参考槽位数、实测耗时都从这里读,
   **领域层不硬编码模型参数**(换模型只改声明)
+- `tools/gen/planner.py` 只做**规划**(内容就绪即写出参数定死的 task);`tools/serve/` 负责**提交与推进**:
+  worker 每轮「保隧道 → 按 external_id 推进在途 → 机器空闲才派下一条」。**接管不是单独流程** ——
+  重启后在途任务照常推进,绝不重交。库里的素材/产物路径都相对 `data_root`
 - `tools/gate0/` 是闸门 0 的**实验脚本**,不是产品代码;正式逻辑以 `tools/drama/` 为准
 
 已有调研:`docs/superpowers/spike-results/2026-09-22-AI短剧成熟工作流调研.md`。
