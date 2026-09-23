@@ -1,0 +1,74 @@
+# -*- coding: utf-8 -*-
+from tools.drama import repo
+from tools.drama.readiness import is_ready, segment_readiness
+from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
+
+
+def _check(store, seg, host_ok=True):
+    return segment_readiness(store, seg, video_cap=MINIMAX_H3, image_cap=QWEN_IMAGE_EDIT_2511,
+                             host_ok=host_ok, host_msg="云机隧道已连通" if host_ok else "云机隧道未连通",
+                             model_ok=True, model_msg="MiniMax H3 可用")
+
+
+def _by_key(checks):
+    return {c.key: c for c in checks}
+
+
+def test_complete_segment_is_ready(store, sample):
+    checks = _check(store, sample["seg"])
+    assert is_ready(checks), [c for c in checks if not c.ok]
+    assert "slots" not in _by_key(checks)
+
+
+def test_missing_turnaround_blocks(store, sample):
+    repo.update(store, "character", sample["lin"], turnaround_path=None)
+    c = _by_key(_check(store, sample["seg"]))["assets_bound"]
+    assert not c.ok and c.msg == "角色「林小雨」缺四视图"
+
+
+def test_unknown_mention_blocks(store, sample):
+    repo.update(store, "segment", sample["seg"], video_prompt="@林小雨 和 @王五 在 @老宅庭院 看 @玉佩")
+    c = _by_key(_check(store, sample["seg"]))["mentions"]
+    assert not c.ok and "@王五 不是本镜绑定的素材" in c.msg
+
+
+def test_bound_but_never_mentioned_blocks(store, sample):
+    repo.update(store, "segment", sample["seg"], video_prompt="@林小雨 在 @老宅庭院 发呆")
+    c = _by_key(_check(store, sample["seg"]))["mentions"]
+    assert not c.ok and c.msg == "绑定了「玉佩」但视频提示词从未 @ 它"
+
+
+def test_missing_last_frame_for_first_last_mode(store, sample):
+    repo.update(store, "segment", sample["seg"], reference_mode="first_last")
+    c = _by_key(_check(store, sample["seg"]))["refs_ready"]
+    assert not c.ok and c.msg == "参考模式 first_last,缺少尾帧"
+
+
+def test_unimplemented_mode_is_reported_not_faked(store, sample):
+    repo.update(store, "segment", sample["seg"], reference_mode="anchors")
+    c = _by_key(_check(store, sample["seg"]))["refs_ready"]
+    assert not c.ok and "尚未实现" in c.msg
+
+
+def test_two_characters_push_prop_out_of_slots_as_warning(store, sample):
+    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])
+    repo.update(store, "segment", sample["seg"],
+                description="【镜头1】沈墨说：「你还留着它。」【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」",
+                video_prompt="@林小雨 把 @玉佩 递给 @沈墨,@老宅庭院 黄昏")
+    checks = _check(store, sample["seg"])
+    slots = _by_key(checks)["slots"]
+    assert slots.ok and slots.warn
+    assert slots.msg == "道具「玉佩」因槽位不足未作为参考图,仅以文字描述参与"
+    assert is_ready(checks)  # 告警不阻塞,但必须让人看见
+
+
+def test_host_down_blocks(store, sample):
+    c = _by_key(_check(store, sample["seg"], host_ok=False))["host_ready"]
+    assert not c.ok and c.msg == "云机隧道未连通"
+
+
+def test_text_only_segment_needs_no_images(store, sample):
+    repo.update(store, "segment", sample["seg"], reference_mode="text_only", image_prompt="")
+    repo.update(store, "character", sample["lin"], turnaround_path=None)
+    checks = _by_key(_check(store, sample["seg"]))
+    assert "assets_bound" not in checks and checks["prompt_ready"].ok and checks["refs_ready"].ok
