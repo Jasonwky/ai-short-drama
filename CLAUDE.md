@@ -13,11 +13,23 @@ commit messages, and inline code comments stay in English to match the existing 
 
 **AI 短剧(AI Short Drama)。** 做一套 AI 短剧生产工作流,以网页控制台的形式呈现。
 
-**全新项目,不依赖也不继承任何既有仓库。** 截至初始提交 `f57fdce`,仓库只有 `README.md`,
-没有源码、没有包管理清单、没有构建/测试工具链,因此暂无构建、lint、测试、运行命令可写。
+**全新项目,不依赖也不继承任何既有仓库。** 设计:`docs/superpowers/specs/2026-09-22-AI短剧生产控制台-design.md`;
+实施计划与路线图:`docs/superpowers/plans/`。
 
-等第一批真实代码落地后,在这里补上:项目定位与关键决策表 · 构建/lint/测试(含跑单个测试)/运行命令 ·
-需要读多个文件才看得出的架构(模块边界、数据流、非显然约定)。
+### 常用命令
+
+- 跑全部测试:`python -m pytest -q`(在仓库根目录;Python 3.14,只依赖 pytest)
+- 跑单个测试:`python -m pytest tests/drama/test_rules.py::test_min_duration -q`
+- 没有打包清单:`tools/` 是命名空间包,测试靠 `tests/conftest.py` 把仓库根放进 `sys.path`
+- `pytest.ini` 把测试范围限定在 `tests/` —— `thirdparty/` 里的参考仓库自带测试,不能让 pytest 递归进去
+
+### 代码布局(读多个文件才看得出的部分)
+
+- `tools/drama/` 领域核心:`db.Store` 是唯一真相源(SQLite);画幅不可改、task 生成参数不可变
+  由**数据库触发器**强制,不靠调用方自觉。写入一律走 `repo` 的字段白名单
+- `tools/gen/capability.py` 后端能力声明:段落时长区间、参考槽位数、实测耗时都从这里读,
+  **领域层不硬编码模型参数**(换模型只改声明)
+- `tools/gate0/` 是闸门 0 的**实验脚本**,不是产品代码;正式逻辑以 `tools/drama/` 为准
 
 已有调研:`docs/superpowers/spike-results/2026-09-22-AI短剧成熟工作流调研.md`。
 
