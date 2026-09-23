@@ -55,15 +55,26 @@ def check_tags(prompt: str, n_refs: int) -> list[str]:
     """标签双向校验。返回问题清单,空表示通过。
 
     Qwen 节点会自动在提示词前拼 `Picture 1: <vision…>`,正文里用 "Picture N" 指代。
+
+    **两条规则强度不同**:
+
+    1. **引用不能越界** —— 任何情况下都成立。提示词写 `Picture 3` 却只接了 2 张图,
+       模型收到一个不存在的引用,ComfyUI 不报错(云机上那个已出片的工作流就栽在这)。
+    2. **每张图都要被引用** —— **只在 ≥2 张图时成立**。单图编辑没有歧义,
+       图已由节点呈现给模型,不需要文字指代;
+       多视角 LoRA 的提示词格式(`<sks> front view …`)就完全不提 Picture N。
     """
     problems: list[str] = []
     used = {int(m) for m in re.findall(r"[Pp]icture\s*(\d+)", prompt)}
-    for i in used:
+    for i in sorted(used):
         if i < 1 or i > n_refs:
             problems.append(f"提示词引用了 Picture {i},但只接入了 {n_refs} 张参考图")
-    for i in range(1, n_refs + 1):
-        if i not in used:
-            problems.append(f"参考图 Picture {i} 已接入,但提示词从未引用它")
+    if n_refs >= 2:
+        for i in range(1, n_refs + 1):
+            if i not in used:
+                problems.append(
+                    f"接了 {n_refs} 张参考图,但提示词从未引用 Picture {i} —— "
+                    f"多图必须逐一指代,否则模型不知道哪张管什么")
     return problems
 
 
