@@ -31,10 +31,10 @@ def create_task(store: Store, *, kind: str, target_type: str, target_id: int, mo
     with store.write() as c:
         return c.execute(
             "INSERT INTO task (kind, target_type, target_id, model, params_json, seed, prompt,"
-            " refs_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " refs_json, created_at, state_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (kind, target_type, target_id, model,
              json.dumps(params, ensure_ascii=False, sort_keys=True), seed, prompt,
-             json.dumps(list(refs), ensure_ascii=False), now())).lastrowid
+             json.dumps(list(refs), ensure_ascii=False), now(), now())).lastrowid
 
 
 def set_task_state(store: Store, task_id: int, state: str, *, external_id: str | None = None,
@@ -52,7 +52,7 @@ def set_task_state(store: Store, task_id: int, state: str, *, external_id: str |
         if state == "done" and not result_path:
             raise ValueError("完成必须有产物路径(result_path)")
 
-        sets: dict = {"state": state}
+        sets: dict = {"state": state, "state_since": now()}
         for key, val in (("external_id", external_id), ("host_id", host_id),
                          ("result_path", result_path), ("result_sha256", result_sha256),
                          ("error", error)):

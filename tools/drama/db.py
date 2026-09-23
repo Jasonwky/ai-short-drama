@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -131,7 +131,8 @@ CREATE TABLE host (
   key_ref TEXT NOT NULL,
   local_port INTEGER NOT NULL,
   remote_comfy_port INTEGER NOT NULL DEFAULT 8188,
-  vram_gb REAL NOT NULL
+  vram_gb REAL NOT NULL,
+  models_dir TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE task (
@@ -153,12 +154,21 @@ CREATE TABLE task (
   result_sha256 TEXT,
   error TEXT,
   started_at TEXT,
-  finished_at TEXT
+  finished_at TEXT,
+  state_since TEXT
 );
 CREATE TRIGGER task_params_immutable
 BEFORE UPDATE OF kind, target_type, target_id, model, params_json, seed, prompt, refs_json, created_at ON task
 BEGIN SELECT RAISE(ABORT, 'task 的生成参数不可变 —— 这是溯源的前提;要重跑请新建一条 task'); END;
 """
+
+# 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
+MIGRATIONS: dict[int, list[str]] = {
+    # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
+    #     host.models_dir 给 LoRA 预检定位远端模型文件
+    1: ["ALTER TABLE task ADD COLUMN state_since TEXT",
+        "ALTER TABLE host ADD COLUMN models_dir TEXT NOT NULL DEFAULT ''"],
+}
 
 
 def now() -> str:
@@ -188,10 +198,15 @@ class Store:
                               (str(SCHEMA_VERSION),))
             return
         row = self.conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
-        if row is None or int(row[0]) != SCHEMA_VERSION:
-            found = row[0] if row else "缺失"
+        found = int(row[0]) if row else None
+        if found is None or found > SCHEMA_VERSION or any(v not in MIGRATIONS for v in range(found, SCHEMA_VERSION)):
             raise RuntimeError(
-                f"数据库结构版本 {found} 与代码 {SCHEMA_VERSION} 不符 —— 不许在不匹配的结构上继续写")
+                f"数据库结构版本 {row[0] if row else '缺失'} 与代码 {SCHEMA_VERSION} 不符 —— 不许在不匹配的结构上继续写")
+        for v in range(found, SCHEMA_VERSION):
+            with self.write() as c:
+                for stmt in MIGRATIONS[v]:
+                    c.execute(stmt)
+                c.execute("UPDATE meta SET value = ? WHERE key = 'schema_version'", (str(v + 1),))
 
     @contextmanager
     def write(self):
