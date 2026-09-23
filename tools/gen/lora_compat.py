@@ -21,6 +21,10 @@ import struct
 import sys
 from pathlib import Path
 
+# 退出码:0 兼容 · 2 用法错误 · 3 形状不兼容。
+# 「不兼容」**不能用 1** —— Python 未捕获异常的退出码也是 1,崩溃会被误读成「核验出了不兼容」。
+EXIT_INCOMPATIBLE = 3
+
 # 不同导出工具给键加的前缀不一样,比较前统一去掉
 _PREFIXES = ("model.diffusion_model.", "diffusion_model.", "transformer.", "model.")
 
@@ -85,7 +89,7 @@ def main() -> int:
     for t in r["missing"][:3]:
         print(f"   ? 底模没有 {t}")
     # 任何形状不符都判不兼容 —— 部分打上的 LoRA 比不打更糟,因为它会被当成"已加速"
-    return 1 if r["mismatched"] else 0
+    return EXIT_INCOMPATIBLE if r["mismatched"] else 0
 
 
 if __name__ == "__main__":
