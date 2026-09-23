@@ -11,6 +11,7 @@ MiniMax H3 的训练区间(124–362 帧 @24fps)逼出来的 —— ComfyUI 节�
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 
@@ -31,6 +32,10 @@ class Capability:
     # ── 其它 ────────────────────────────
     supports_audio: bool = False
     aspect_ratios: tuple[str, ...] = field(default_factory=tuple)
+    # ── 实测耗时(用来给「重跑要多久」报估算,不是承诺)──
+    timing_points: tuple[tuple[int, float], ...] = ()   # (帧数, 秒/步),视频后端
+    default_steps: int = 0
+    sec_per_item: float = 0.0                              # 单张耗时,图片后端
 
     # ---------- 时长 ↔ 帧数 ----------
 
@@ -43,6 +48,25 @@ class Capability:
         step, base = self.frame_grid_step, self.frame_grid_base
         remainder = (raw - base) % step
         return raw if remainder == 0 else raw + (step - remainder)
+
+    def est_seconds(self, frames: int, steps: int | None = None) -> float:
+        """按实测点估算一条视频的生成秒数。
+
+        每步耗时随帧数**超线性**增长(注意力随序列长度),所以两点之间按幂律
+        s = s0 · (f/f0)^k 插值/外推,k 由两个实测点反解。只有一个点时按线性。
+        这是估算 —— 界面上必须标「估算」。
+        """
+        if not self.timing_points:
+            raise ValueError(f"{self.name} 没有实测耗时点,不能估算")
+        pts = sorted(self.timing_points)
+        steps = steps or self.default_steps
+        f0, s0 = pts[0]
+        if len(pts) == 1:
+            k = 1.0
+        else:
+            f1, s1 = pts[-1]
+            k = math.log(s1 / s0) / math.log(f1 / f0)
+        return steps * s0 * (frames / f0) ** k
 
     def seconds_for(self, frames: int) -> float:
         return frames / self.fps
@@ -97,6 +121,10 @@ MINIMAX_H3 = Capability(
     max_ref_audios=3,
     supports_audio=True,
     aspect_ratios=("16:9", "9:16", "1:1", "4:3", "3:4", "21:9"),
+    # 192 帧:闸门 0 实测 2026-09-23(4090,20 步 44.4 s/it)
+    # 328 帧:ai-ecommerce 实测 2026-09-07(4090,20 步 109.3 s/it)
+    timing_points=((192, 44.4), (328, 109.3)),
+    default_steps=20,
 )
 
 QWEN_IMAGE_EDIT_2511 = Capability(
@@ -105,6 +133,7 @@ QWEN_IMAGE_EDIT_2511 = Capability(
     frame_min_trained=0, frame_max_trained=0,
     max_ref_images=3,             # 🔴 image1/2/3,固定槽位不是 Autogrow
     supports_audio=False,
+    sec_per_item=25.3,            # 闸门 0 实测:4 步档、3 张参考图、928x1664
 )
 
 BACKENDS = {"minimax_h3": MINIMAX_H3, "qwen_image_edit_2511": QWEN_IMAGE_EDIT_2511}
