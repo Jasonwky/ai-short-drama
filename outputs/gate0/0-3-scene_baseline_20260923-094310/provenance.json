@@ -1,0 +1,25 @@
+{
+  "gate": "0-3-scene",
+  "at": "20260923-094310",
+  "model": "qwen-image-edit-2511-Q4_K_M.gguf",
+  "text_encoder": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+  "vae": "qwen_image_vae.safetensors",
+  "loras": [],
+  "preset": "baseline",
+  "steps": 20,
+  "cfg": 4.0,
+  "seed": 777,
+  "prompt": "Completely replace the entire image. Remove the character and everything else. Render an empty ancient Chinese courtyard at dusk: stone paving, a wooden gate with red lacquer, hanging lanterns, low walls with tiled roofs, warm sunset light and long shadows. Absolutely no people, no human figures, no silhouettes, no reflections of people. Wide establishing shot, fixed camera, nobody in frame.",
+  "refs_local": [
+    "outputs/gate0/_refs/apose_front.png"
+  ],
+  "refs_uploaded": [
+    "apose_front.png"
+  ],
+  "prompt_id": "a32146e7-84f4-4f12-a1cf-169c7f37d36b",
+  "elapsed_sec": 69.8,
+  "outputs": [
+    "0-3-scene_00001_.png"
+  ],
+  "device": "cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync"
+}

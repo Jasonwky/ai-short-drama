@@ -1,0 +1,28 @@
+{
+  "gate": "0-2-back",
+  "at": "20260923-094107",
+  "model": "qwen-image-edit-2511-Q4_K_M.gguf",
+  "text_encoder": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+  "vae": "qwen_image_vae.safetensors",
+  "loras": [
+    "qwen-image-edit-2511-multiple-angles-lora",
+    "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16"
+  ],
+  "preset": "fast",
+  "steps": 4,
+  "cfg": 1.0,
+  "seed": 20260923,
+  "prompt": "<sks> back view eye-level shot wide shot",
+  "refs_local": [
+    "outputs/gate0/_refs/apose_front.png"
+  ],
+  "refs_uploaded": [
+    "apose_front.png"
+  ],
+  "prompt_id": "39d8a74d-4fc4-4420-86c1-819f18c4c787",
+  "elapsed_sec": 16.1,
+  "outputs": [
+    "0-2-back_00001_.png"
+  ],
+  "device": "cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync"
+}

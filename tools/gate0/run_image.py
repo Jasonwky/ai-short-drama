@@ -21,6 +21,7 @@ import argparse
 import copy
 import json
 import re
+import shutil
 import sys
 import time
 from datetime import datetime, timezone
@@ -165,6 +166,15 @@ def main() -> int:
     run_dir = OUT_ROOT / f"{args.gate}_{args.preset}_{stamp}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    # 参考图复制进本次运行目录:溯源自包含,不依赖会话临时路径(先前出过悬空路径)
+    refs_dir = run_dir / "refs"
+    refs_dir.mkdir(exist_ok=True)
+    refs_kept = []
+    for r in args.ref:
+        dst = refs_dir / Path(r).name
+        shutil.copy2(r, dst)
+        refs_kept.append(str(dst.relative_to(ROOT)).replace("\\", "/"))
+
     uploaded = []
     for r in args.ref:
         name = client.upload_image(r)
@@ -210,7 +220,7 @@ def main() -> int:
         "size": list(size) if size else "follow_ref1",
         "seed": args.seed,
         "prompt": args.prompt,
-        "refs_local": args.ref, "refs_uploaded": uploaded,
+        "refs_local": refs_kept, "refs_uploaded": uploaded,
         "prompt_id": pid,
         "elapsed_sec": round(elapsed, 1),
         "outputs": files,

@@ -1,0 +1,33 @@
+{
+  "gate": "0-3v",
+  "at": "20260923-095130",
+  "model": "qwen-image-edit-2511-Q4_K_M.gguf",
+  "text_encoder": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+  "vae": "qwen_image_vae.safetensors",
+  "loras": [],
+  "preset": "baseline",
+  "steps": 20,
+  "cfg": 4.0,
+  "size": [
+    928,
+    1664
+  ],
+  "seed": 20260923,
+  "prompt": "Picture 1 is a character turnaround sheet of one woman (four views of the same person). Picture 2 is an empty courtyard location. Picture 3 is a jade pendant prop. Generate a single cinematic film still, vertical 9:16 composition: the woman from Picture 1 stands in the courtyard from Picture 2, seen from the front at eye level, medium shot, holding up the jade pendant from Picture 3 in her right hand and looking at it. Keep her face, hair and costume exactly as in Picture 1. Keep the location architecture and dusk lighting exactly as in Picture 2. Keep the pendant design exactly as in Picture 3.",
+  "refs_local": [
+    "outputs/gate0/_refs/character_turnaround.png",
+    "outputs/gate0/0-3-scene_baseline_20260923-094310/0-3-scene_00001_.png",
+    "outputs/gate0/0-3-prop_baseline_20260923-094422/0-3-prop_00001_.png"
+  ],
+  "refs_uploaded": [
+    "character_turnaround.png",
+    "0-3-scene_00001_.png",
+    "0-3-prop_00001_.png"
+  ],
+  "prompt_id": "b940f10c-1099-48da-ae22-0a376baade3e",
+  "elapsed_sec": 118.5,
+  "outputs": [
+    "0-3v_00001_.png"
+  ],
+  "device": "cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync"
+}

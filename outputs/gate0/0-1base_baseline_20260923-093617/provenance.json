@@ -1,0 +1,25 @@
+{
+  "gate": "0-1base",
+  "at": "20260923-093617",
+  "model": "qwen-image-edit-2511-Q4_K_M.gguf",
+  "text_encoder": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+  "vae": "qwen_image_vae.safetensors",
+  "loras": [],
+  "preset": "baseline",
+  "steps": 20,
+  "cfg": 4.0,
+  "seed": 20260923,
+  "prompt": "Picture 1 shows a character. Keep her exactly as she is and change only the background to a simple dark studio backdrop.",
+  "refs_local": [
+    "outputs/gate0/_refs/apose_front.png"
+  ],
+  "refs_uploaded": [
+    "apose_front.png"
+  ],
+  "prompt_id": "0d35d995-35bb-4d4a-a2d5-7ab2c480a70d",
+  "elapsed_sec": 69.0,
+  "outputs": [
+    "0-1base_00001_.png"
+  ],
+  "device": "cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync"
+}

@@ -1,0 +1,35 @@
+{
+  "gate": "0-3-duo",
+  "at": "20260923-095527",
+  "model": "qwen-image-edit-2511-Q4_K_M.gguf",
+  "text_encoder": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+  "vae": "qwen_image_vae.safetensors",
+  "loras": [
+    "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16"
+  ],
+  "preset": "fast",
+  "steps": 4,
+  "cfg": 1.0,
+  "size": [
+    928,
+    1664
+  ],
+  "seed": 20260923,
+  "prompt": "Picture 1 is a character turnaround sheet of a pink-haired woman in gold armor. Picture 2 is an empty courtyard location. Picture 3 is a second character. Generate a single cinematic film still, vertical 9:16: the woman from Picture 1 and the character from Picture 3 stand facing each other in the courtyard from Picture 2, medium two-shot at eye level. The woman from Picture 1 hands over a small carved green jade pendant with a red silk tassel. Keep both characters' faces, hair and costumes exactly as in their pictures. Keep the courtyard and dusk lighting exactly as in Picture 2.",
+  "refs_local": [
+    "outputs/gate0/_refs/character_turnaround.png",
+    "outputs/gate0/0-3-scene_baseline_20260923-094310/0-3-scene_00001_.png",
+    "outputs/gate0/_refs/CHARACTER_s403.png"
+  ],
+  "refs_uploaded": [
+    "character_turnaround.png",
+    "0-3-scene_00001_.png",
+    "CHARACTER_s403.png"
+  ],
+  "prompt_id": "3f6350eb-4379-4639-b915-858c8c1bcc14",
+  "elapsed_sec": 21.7,
+  "outputs": [
+    "0-3-duo_00001_.png"
+  ],
+  "device": "cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync"
+}

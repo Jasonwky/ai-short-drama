@@ -1,5 +1,8 @@
 tmp/
-outputs/
 thirdparty/
 __pycache__/
 *.pyc
+# outputs: large artifacts stay out, metadata JSON goes in (CLAUDE.md 目录约定)
+outputs/**
+!outputs/**/
+!outputs/**/*.json
