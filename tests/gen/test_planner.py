@@ -52,8 +52,9 @@ def test_first_frame_only_for_first_mode(store, sample):
 def test_video_task_carries_voice_description_not_reference_audio(store, sample):
     row, p = _task(store, plan_video(store, sample["seg"], seed=7))
     assert (row["kind"], row["model"]) == ("video", H3_MODEL)
+    # 台词必须逐字进提示词:P2 真链路里漏了它,H3 说出的是无意义音节(ASR 相似度 0.05)
     assert row["prompt"] == ("<Picture 1> 是本段的首帧。林小雨 在 老宅庭院 低头看 玉佩,然后抬眼说话 "
-                             "林小雨的声音:清亮女声。")
+                             "林小雨用普通话说:「这块玉佩，是我母亲留给我的。」 林小雨的声音:清亮女声。")
     assert (p["frames"], p["size"], p["audio_ref"]) == (192, [768, 1344], None)
     assert p["image_refs"] == ["frames/s1.png"] and p["writes"] == "video_path"
 

@@ -53,6 +53,11 @@ def dialogue_by_speaker(description: str) -> dict[str, int]:
     return out
 
 
+def dialogue_lines(description: str) -> list[tuple[str, str]]:
+    """按出现顺序的 (说话人, 台词原文)。旁白不在内 —— 它不在画面里说,由配音/字幕环节处理。"""
+    return _SPEAKER.findall(description)
+
+
 def min_duration_sec(description: str) -> float:
     return dialogue_chars(description) / SPEECH_CHARS_PER_SEC + PERFORMANCE_PAD_SEC
 

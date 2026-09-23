@@ -90,8 +90,10 @@ def plan_video(store: Store, segment_id: int, *, seed: int) -> int:
                 + ([refs.Ref("scene", assets["scene"]["name"], None)] if assets["scene"] is not None else [])
                 + [refs.Ref("prop", p["name"], None) for p in assets["props"]])
     body = tags.expand(seg["video_prompt"], [], everyone, "h3")   # 视频阶段只接首帧一张图,@名字都退化为文字
+    # 台词逐字进提示词:模型不会从别处知道要说什么(P2 真链路漏了它,说出的是无意义音节)
+    lines = "".join(f"{who}用普通话说:「{line}」" for who, line in rules.dialogue_lines(seg["description"]))
     voices = "".join(f"{c['name']}的声音:{c['voice_desc']}。" for c in assets["characters"] if c["voice_desc"])
-    prompt = "<Picture 1> 是本段的首帧。" + body + (f" {voices}" if voices else "")
+    prompt = "<Picture 1> 是本段的首帧。" + body + "".join(f" {part}" for part in (lines, voices) if part)
 
     params = {
         "workflow": "minimax_h3", "frames": MINIMAX_H3.frames_for(seg["duration_sec"]),

@@ -22,6 +22,11 @@ def test_dialogue_by_speaker():
     assert rules.dialogue_by_speaker(d) == {"林小雨": 4, "沈墨": 4}
 
 
+def test_dialogue_lines_keep_order_and_exact_text():
+    d = "【镜头1】林小雨说：「你来了。」旁白：那一年。【镜头2】沈墨说：「我来晚了。」"
+    assert rules.dialogue_lines(d) == [("林小雨", "你来了。"), ("沈墨", "我来晚了。")]   # 旁白不在画面里说
+
+
 def test_min_duration():
     assert rules.min_duration_sec(DESC) == pytest.approx(12 / 4.5 + 2)
 
