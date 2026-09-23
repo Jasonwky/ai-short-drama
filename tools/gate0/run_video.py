@@ -49,6 +49,14 @@ PRESETS = {
     "fast":     (8,  "PDD Ref2VA 8 步加速,CFG 已蒸馏进权重"),
 }
 
+# 经 tools/gen/lora_compat.py 在云机实测不兼容的档位 —— 拒绝提交,不让它静默跑出"假加速"。
+# ComfyUI 遇到形状不符只打 ERROR 日志、照样出片,所以这层拦截必须在我们这边。
+BLOCKED_PRESETS = {
+    "fast": ("PDD 8 步 LoRA 是给未剪枝 H3 训的:云机底模 minimax_h3_ref2va_pruned_fp8_scaled 的 "
+             "adaln_proj 输入维被剪到 8,LoRA 增量是 2688 —— 208 层匹配、50 层 adaln 全部打不上。"
+             "见 docs/superpowers/spike-results/2026-09-23-闸门0-视频侧实测.md"),
+}
+
 TAG_RE = re.compile(r"<(Picture|Video|Audio)\s+(\d+)>")
 
 
@@ -112,10 +120,14 @@ def main() -> int:
     ap.add_argument("--audio", default=None, help="参考音频(wav/mp3/mp4 均可,LoadAudio 解码)")
     ap.add_argument("--seconds", type=float, required=True)
     ap.add_argument("--seed", type=int, required=True, help="必须显式给,不许随机")
-    ap.add_argument("--preset", choices=sorted(PRESETS), default="fast")
+    ap.add_argument("--preset", choices=sorted(PRESETS), default="baseline")
     ap.add_argument("--server", default="127.0.0.1:8188")
     ap.add_argument("--timeout", type=int, default=7200)
     args = ap.parse_args()
+
+    if args.preset in BLOCKED_PRESETS:
+        print(f"[拒绝] 档位 {args.preset} 已判不兼容:{BLOCKED_PRESETS[args.preset]}", file=sys.stderr)
+        return 2
 
     problems = MINIMAX_H3.check_duration(args.seconds)
     problems += MINIMAX_H3.check_refs(len(args.image), 0, 1 if args.audio else 0)
