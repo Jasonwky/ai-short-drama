@@ -89,6 +89,16 @@ class ComfyClient:
         q = self._request("/queue")
         return len(q.get("queue_running", [])), len(q.get("queue_pending", []))
 
+    def queue_ids(self) -> tuple[list[str], list[str]]:
+        """(正在跑的 prompt_id 列表, 排队中的 prompt_id 列表)。
+
+        队列每一项是 [序号, prompt_id, prompt, extra, outputs]。**按 id 判断「我的任务在不在跑」** ——
+        这台 ComfyUI 是多个项目共用的,只看数量会把别人的任务当成自己的。
+        """
+        q = self._request("/queue")
+        return ([item[1] for item in q.get("queue_running", [])],
+                [item[1] for item in q.get("queue_pending", [])])
+
     # ---------- 素材上传 ----------
 
     def upload_image(self, path: str | Path, subfolder: str = "") -> str:
