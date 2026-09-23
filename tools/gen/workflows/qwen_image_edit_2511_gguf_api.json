@@ -145,5 +145,12 @@
     "class_type": "SaveImage",
     "inputs": { "images": ["28", 0], "filename_prefix": "shortdrama/gate0" },
     "_meta": { "title": "存图" }
+  },
+  "30": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": { "width": 928, "height": 1664, "batch_size": 1 },
+    "_meta": {
+      "title": "目标画幅空 latent(合成首帧用)。默认 KSampler 走 26 = 跟随参考图 1 的画幅;调用方指定尺寸时改接这里。16 通道 /8,与 Qwen 的 VAE 对得上"
+    }
   }
 }

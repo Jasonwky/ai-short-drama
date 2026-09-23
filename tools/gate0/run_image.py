@@ -42,6 +42,8 @@ N_STEPS_BASE, N_STEPS_FAST = "10", "11"
 N_CFG_BASE, N_CFG_FAST = "13", "14"
 N_SAMPLER = "27"
 N_SAVE = "29"
+N_LATENT_FROM_REF = "26"          # VAEEncode(参考图 1) —— 输出画幅跟随参考图 1
+N_LATENT_EMPTY = "30"             # EmptySD3LatentImage —— 输出画幅由调用方指定
 
 PRESETS = {
     # 名称        步数  CFG   说明
@@ -79,7 +81,8 @@ def check_tags(prompt: str, n_refs: int) -> list[str]:
 
 
 def build(prompt: str, ref_names: list[str], seed: int, preset: str,
-          use_angles_lora: bool, prefix: str) -> dict:
+          use_angles_lora: bool, prefix: str,
+          size: tuple[int, int] | None = None) -> dict:
     wf = copy.deepcopy(json.loads(WORKFLOW.read_text(encoding="utf-8")))
     steps, cfg, _ = PRESETS[preset]
 
@@ -102,6 +105,22 @@ def build(prompt: str, ref_names: list[str], seed: int, preset: str,
     wf[N_ENCODE_POS]["inputs"]["prompt"] = prompt
     wf[N_SAMPLER]["inputs"]["seed"] = seed
     wf[N_SAVE]["inputs"]["filename_prefix"] = prefix
+
+    # 🔴 画幅由 latent 决定,不由提示词决定。
+    # 默认 latent = VAEEncode(参考图 1),输出画幅跟着参考图 1 走 —— 改背景、出四视图时正合适。
+    # 但合成分镜首帧时参考图 1 是横向四视图拼图,闸门 0-3 实测出了 2.3:1 横屏,
+    # 提示词里写 "vertical 9:16" 压不过去。合成必须显式给目标尺寸。
+    if size:
+        w, h = size
+        if w % 16 or h % 16:
+            raise ValueError(f"尺寸 {w}x{h} 不是 16 的倍数(EmptySD3LatentImage 的 step)")
+        wf[N_LATENT_EMPTY]["inputs"]["width"] = w
+        wf[N_LATENT_EMPTY]["inputs"]["height"] = h
+        wf[N_SAMPLER]["inputs"]["latent_image"] = [N_LATENT_EMPTY, 0]
+        for n in (N_LATENT_FROM_REF, "25"):   # 25 = FluxKontextImageScale,只给 26 用
+            wf.pop(n, None)
+    else:
+        wf.pop(N_LATENT_EMPTY, None)
     return wf
 
 
@@ -114,6 +133,8 @@ def main() -> int:
     ap.add_argument("--seed", type=int, required=True, help="必须显式给,不许随机")
     ap.add_argument("--preset", choices=sorted(PRESETS), default="baseline")
     ap.add_argument("--angles-lora", action="store_true", help="启用四视图 LoRA")
+    ap.add_argument("--size", default=None,
+                    help="输出尺寸 WxH(如 928x1664 竖屏)。不给则跟随参考图 1 的画幅")
     ap.add_argument("--server", default="127.0.0.1:8188")
     ap.add_argument("--timeout", type=int, default=3600)
     args = ap.parse_args()
@@ -151,8 +172,9 @@ def main() -> int:
         print(f"[上传] {r} -> {name}")
 
     steps, cfg, note = PRESETS[args.preset]
+    size = tuple(int(x) for x in args.size.lower().split("x")) if args.size else None
     wf = build(args.prompt, uploaded, args.seed, args.preset,
-               args.angles_lora, f"shortdrama/{args.gate}")
+               args.angles_lora, f"shortdrama/{args.gate}", size)
 
     t0 = time.time()
     pid = client.submit(wf)
@@ -185,6 +207,7 @@ def main() -> int:
         "loras": ([ "qwen-image-edit-2511-multiple-angles-lora" ] if args.angles_lora else [])
                  + ([ "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16" ] if args.preset == "fast" else []),
         "preset": args.preset, "steps": steps, "cfg": cfg,
+        "size": list(size) if size else "follow_ref1",
         "seed": args.seed,
         "prompt": args.prompt,
         "refs_local": args.ref, "refs_uploaded": uploaded,
