@@ -123,6 +123,9 @@ def main() -> int:
     ap.add_argument("--preset", choices=sorted(PRESETS), default="baseline")
     ap.add_argument("--server", default="127.0.0.1:8188")
     ap.add_argument("--timeout", type=int, default=7200)
+    ap.add_argument("--attach", default=None, metavar="PROMPT_ID",
+                    help="不提交,接管云机上已在跑/已跑完的任务(执行器中途崩了、控制面重启时用)。"
+                         "其余参数须与原提交一致,用于写溯源")
     args = ap.parse_args()
 
     if args.preset in BLOCKED_PRESETS:
@@ -168,8 +171,12 @@ def main() -> int:
                f"shortdrama/{args.gate}")
 
     t0 = time.time()
-    pid = client.submit(wf)
-    print(f"[提交] prompt_id={pid} · {args.preset}({steps} 步 —— {note}) · "
+    if args.attach:
+        pid = args.attach
+        print(f"[接管] prompt_id={pid}(不重新提交;耗时从接管时刻起算,不代表真实生成耗时)", flush=True)
+    else:
+        pid = client.submit(wf)
+    print(f"[任务] prompt_id={pid} · {args.preset}({steps} 步 —— {note}) · "
           f"{args.seconds}s = {frames} 帧 · seed={args.seed} · 图 {len(images_up)} · 音 {1 if audio_up else 0}",
           flush=True)
     try:
@@ -194,6 +201,7 @@ def main() -> int:
         "seed": args.seed, "prompt": args.prompt,
         "refs_local": kept, "images_uploaded": images_up, "audio_uploaded": audio_up,
         "prompt_id": pid, "elapsed_sec": round(elapsed, 1), "outputs": files,
+        "attached": bool(args.attach),
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[完成] 耗时 {elapsed / 60:.1f} 分钟 · 产物 {files} · 溯源 {run_dir / 'provenance.json'}")
     return 0

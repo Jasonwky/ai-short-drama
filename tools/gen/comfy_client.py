@@ -18,6 +18,7 @@
 """
 from __future__ import annotations
 
+import http.client
 import json
 import mimetypes
 import time
@@ -31,6 +32,15 @@ DEFAULT_SERVER = "127.0.0.1:8188"
 
 # 队列空但 history 未捕获任务时,等多久就认定任务已结束(秒)
 IDLE_GIVEUP_SEC = 90
+
+# 等待期间连续连不上多久才放弃盯梢(秒)。云机上的任务不会因为我们断线而停 ——
+# 盯梢的人一走,产物就成了孤儿。闸门 0-4 实测:一次瞬时抖动让执行器崩掉,
+# 云机上那条 H3 照样跑完,产物没人取、溯源没人写。
+UNREACHABLE_BUDGET_SEC = 600
+
+# 瞬时网络异常:读响应超时、连接被重置、协议层异常。它们**不是** URLError,
+# 不显式接住就会穿透成未处理异常。
+_TRANSIENT = (TimeoutError, ConnectionError, http.client.HTTPException)
 
 
 class ComfyError(RuntimeError):
@@ -64,9 +74,9 @@ class ComfyClient:
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "ignore")[:800]
             raise ComfyError(f"{path} 返回 HTTP {e.code}:{detail}") from e
-        except urllib.error.URLError as e:
+        except (urllib.error.URLError, *_TRANSIENT) as e:
             raise ComfyUnreachable(
-                f"连不上 ComfyUI({self.base}):{e}。确认服务已启动、隧道已连通。") from e
+                f"连不上 ComfyUI({self.base}):{type(e).__name__}: {e}。确认服务已启动、隧道已连通。") from e
 
     # ---------- 健康 ----------
 
@@ -139,19 +149,13 @@ class ComfyClient:
         return pid
 
     def history(self, prompt_id: str) -> dict | None:
-        """查一条任务的 history。**两级兜底**,见模块文档串第 1 条。"""
-        try:
-            h = self._request(f"/history/{prompt_id}")
-        except ComfyError:
-            h = {}
+        """查一条任务的 history。**两级兜底**,见模块文档串第 1 条。
+        连不上(ComfyUnreachable)原样抛出 —— 「查不到」和「连不上」是两回事,不能混成 None。"""
+        h = self._request(f"/history/{prompt_id}")
         if h.get(prompt_id):
             return h[prompt_id]
         # 兜底:全量 history。0.26+ 上单条查询偶尔返回空。
-        try:
-            allh = self._request("/history")
-        except ComfyError:
-            return None
-        return allh.get(prompt_id)
+        return self._request("/history").get(prompt_id)
 
     def wait(self, prompt_id: str, timeout_sec: int = 7200,
              poll_sec: float = 5.0, on_tick=None) -> dict:
@@ -163,8 +167,23 @@ class ComfyClient:
         """
         started = time.time()
         idle_since: float | None = None
+        down_since: float | None = None
         while True:
-            rec = self.history(prompt_id)
+            try:
+                rec = self.history(prompt_id)
+                running, pending = self.queue_counts() if rec is None else (0, 0)
+                down_since = None
+            except ComfyUnreachable as e:
+                # 断线不放弃:任务还在云机上跑。预算内持续重试,超预算才 fail-loud。
+                down_since = down_since or time.time()
+                if time.time() - down_since > UNREACHABLE_BUDGET_SEC:
+                    raise ComfyUnreachable(
+                        f"连续 {UNREACHABLE_BUDGET_SEC}s 连不上,放弃盯梢 {prompt_id}。"
+                        f"任务可能仍在云机上运行 —— 用 prompt_id 接管,不要重新提交。最后错误:{e}") from e
+                if on_tick:
+                    on_tick(int(time.time() - started), -1, -1)
+                time.sleep(poll_sec)
+                continue
             if rec is not None:
                 status = (rec.get("status") or {})
                 if status.get("status_str") == "error" or status.get("completed") is False:
@@ -172,7 +191,6 @@ class ComfyClient:
                     raise ComfyError(f"任务失败 {prompt_id}:{msgs}")
                 return rec
 
-            running, pending = self.queue_counts()
             if running == 0 and pending == 0:
                 idle_since = idle_since or time.time()
                 if time.time() - idle_since > IDLE_GIVEUP_SEC:
