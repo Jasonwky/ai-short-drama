@@ -1,0 +1,36 @@
+{
+  "gate": "0-6-A",
+  "at": "20260923-100010",
+  "model": "minimax_h3_ref2va_pruned_fp8_scaled.safetensors",
+  "text_encoder": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+  "vae": [
+    "minimax_h3_video_vae_fp16.safetensors",
+    "minimax_h3_audio_vae_fp32.safetensors"
+  ],
+  "loras": [
+    "minimax_h3_ref2va_pdd_acc_8step_comfyui"
+  ],
+  "preset": "fast",
+  "steps": 8,
+  "seconds": 8.0,
+  "frames": 192,
+  "size": [
+    768,
+    1344
+  ],
+  "ref_image_size": "match",
+  "seed": 20260923,
+  "prompt": "<Picture 1> is the first frame. The pink-haired woman in gold armor stands in the dusk courtyard holding the jade pendant. She looks at the pendant, then raises her eyes to the camera and speaks softly in Mandarin Chinese, clear female voice, calm and a little sad: \"这块玉佩，是我母亲留给我的。\" Subtle wind moves her hair. Static camera, medium shot. Natural ambient courtyard sound, no music.",
+  "refs_local": [
+    "outputs/gate0/0-6-A_fast_20260923-100010/refs/0-3v-fast_00001_.png"
+  ],
+  "images_uploaded": [
+    "0-3v-fast_00001_.png"
+  ],
+  "audio_uploaded": null,
+  "prompt_id": "1c29e37a-df8c-4eb8-8d39-dba0dfa06dc9",
+  "elapsed_sec": 433.0,
+  "outputs": [
+    "0-6-A_00001_.mp4"
+  ]
+}

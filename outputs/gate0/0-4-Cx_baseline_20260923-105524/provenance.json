@@ -1,0 +1,35 @@
+{
+  "gate": "0-4-Cx",
+  "at": "20260923-105524",
+  "model": "minimax_h3_ref2va_pruned_fp8_scaled.safetensors",
+  "text_encoder": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+  "vae": [
+    "minimax_h3_video_vae_fp16.safetensors",
+    "minimax_h3_audio_vae_fp32.safetensors"
+  ],
+  "loras": [],
+  "preset": "baseline",
+  "steps": 20,
+  "seconds": 8.0,
+  "frames": 192,
+  "size": [
+    768,
+    1344
+  ],
+  "ref_image_size": "match",
+  "seed": 1002,
+  "prompt": "<Picture 1> is the first frame. The pink-haired woman in gold armor stands in the dusk courtyard holding the jade pendant, static camera, medium shot, natural ambient sound, no music. She speaks in Mandarin Chinese: \"如果你真的在乎我，就把真相告诉我。\"",
+  "refs_local": [
+    "outputs/gate0/0-4-Cx_baseline_20260923-105524/refs/0-3v-fast_00001_.png"
+  ],
+  "images_uploaded": [
+    "0-3v-fast_00001_.png"
+  ],
+  "audio_uploaded": null,
+  "prompt_id": "2d7e33b5-9815-4312-b839-e12718faffc6",
+  "elapsed_sec": 958.5,
+  "outputs": [
+    "0-4-Cx_00001_.mp4"
+  ],
+  "attached": false
+}

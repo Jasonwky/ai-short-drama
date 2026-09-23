@@ -1,0 +1,35 @@
+{
+  "gate": "0-4-N",
+  "at": "20260923-111907",
+  "model": "minimax_h3_ref2va_pruned_fp8_scaled.safetensors",
+  "text_encoder": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+  "vae": [
+    "minimax_h3_video_vae_fp16.safetensors",
+    "minimax_h3_audio_vae_fp32.safetensors"
+  ],
+  "loras": [],
+  "preset": "baseline",
+  "steps": 20,
+  "seconds": 8.0,
+  "frames": 192,
+  "size": [
+    768,
+    1344
+  ],
+  "ref_image_size": "match",
+  "seed": 1001,
+  "prompt": "<Picture 1> is the first frame. The black-haired young man in a navy scholar robe stands still against a plain background, static camera, medium shot, no music. He speaks in Mandarin Chinese with a deep, low, husky middle-aged male voice: \"我等了他整整三年，他却再也没有回来。\"",
+  "refs_local": [
+    "outputs/gate0/0-4-N_baseline_20260923-111907/refs/0-3-charB_00001_.png"
+  ],
+  "images_uploaded": [
+    "0-3-charB_00001_.png"
+  ],
+  "audio_uploaded": null,
+  "prompt_id": "3846e218-2992-436f-a023-6a3eb88c7adb",
+  "elapsed_sec": 926.9,
+  "outputs": [
+    "0-4-N_00001_.mp4"
+  ],
+  "attached": false
+}
