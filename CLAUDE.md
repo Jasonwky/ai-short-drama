@@ -2,10 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Language
+## 语言(硬约束)
 
-Converse with the user and write all documentation in Chinese (简体中文). Code identifiers,
-commit messages, and inline code comments stay in English to match the existing codebase.
+**对话与文档一律使用简体中文。**
+
+- **对话**:回复用户的每一轮都用中文 —— 包括进度播报、监控事件的简短回应、提问与选项、收尾汇报。
+  长会话、上下文压缩之后也不许漂回英文(2026-09-23 实际发生过:压缩后连续多轮用英文回复,用户专门纠正)
+- **文档**:`docs/`、`version_records/`、`findings/`、计划、调研落档、CLAUDE.md 本身,全部中文
+- **保持英文的只有**:代码标识符、commit message、代码内注释(与现有代码库一致)
 
 ---
 
