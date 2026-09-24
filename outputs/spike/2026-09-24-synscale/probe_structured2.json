@@ -1,0 +1,119 @@
+{
+  "deepseek-v4-pro-0813": {
+    "responses_json_schema": {
+      "http": 200,
+      "sec": 25.1,
+      "status": "completed",
+      "usage": {
+        "input_tokens": 48,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 536,
+        "total_tokens": 584
+      },
+      "violations": [
+        "不是合法 JSON:Expecting value: line 1 column 1 (char 0)"
+      ],
+      "raw": "```json\n{\n  \"mood\": \"nostalgic\",\n  \"shots\": [\n    {\n      \"shot_id\": 1,\n      \"type\": \"close-up\",\n      \"duration_sec\": 4,\n      \"description\": \"林小雨的手指轻轻抚过掌心的玉佩，玉佩的温润光泽在柔光下若隐若现。\"\n    },\n    {\n      \"s"
+    },
+    "chat_strict_tool": {
+      "http": 200,
+      "sec": 36.8,
+      "finish": "tool_calls",
+      "n_calls": 1,
+      "usage": {
+        "prompt_tokens": 477,
+        "completion_tokens": 2015,
+        "total_tokens": 2492,
+        "completion_tokens_details": {
+          "reasoning_tokens": 1905
+        }
+      },
+      "violations": [],
+      "raw": "{\"mood\": \"sad\", \"shots\": [{\"line\": \"这块玉佩\", \"speaker\": \"林小雨\"}, {\"line\": \"是我母亲\", \"speaker\": \"林小雨\"}, {\"line\": \"留给我的。\", \"speaker\": \"林小雨\"}]}"
+    },
+    "chat_json_object": {
+      "http": 200,
+      "sec": 24.3,
+      "json_ok": true,
+      "raw": "{\n  \"line\": \"林小雨说：「这块玉佩，是我母亲留给我的。」\",\n  \"mood\": \"nostalgic\",\n  \"shots\": [\n    {\n      \"shot_id\": 1,\n      \"type\": \"close-"
+    }
+  },
+  "gpt-5.6-terra": {
+    "responses_json_schema": {
+      "http": 200,
+      "sec": 44.9,
+      "status": "completed",
+      "usage": {
+        "input_tokens": 60,
+        "output_tokens": 577,
+        "total_tokens": 637
+      },
+      "violations": [
+        "不是合法 JSON:Expecting value: line 1 column 1 (char 0)"
+      ],
+      "raw": "```json\n{\n  \"scene\": {\n    \"mood\": \"nostalgic\",\n    \"extra_note\": \"整体节奏放慢，以玉佩作为情感核心，通过细节特写和林小雨的克制表情，传达她对母亲的思念与珍视。\",\n    \"shots\": [\n      {\n        \"shot_id\": 1,\n        \"shot_type\": \"特写\",\n        \"画面\""
+    },
+    "chat_strict_tool": {
+      "http": 200,
+      "sec": 29.4,
+      "finish": "tool_calls",
+      "n_calls": 1,
+      "usage": {
+        "prompt_tokens": 122,
+        "completion_tokens": 141,
+        "total_tokens": 263,
+        "completion_tokens_details": {
+          "reasoning_tokens": 55
+        }
+      },
+      "violations": [],
+      "raw": "{\"mood\":\"calm\",\"shots\":[{\"line\":\"林小雨说：「这块玉佩，是我母亲留给我的。」（extra_note：建议以玉佩特写开场，配合柔和回忆感光线，随后切到林小雨的神情。）\",\"speaker\":\"林小雨\"}]}"
+    },
+    "chat_json_object": {
+      "http": 200,
+      "sec": 31.5,
+      "json_ok": true,
+      "raw": "{\n  \"shots\": [\n    {\n      \"shot_id\": 1,\n      \"shot_type\": \"中近景\",\n      \"description\": \"林小雨低头看着手中的玉佩，神情温柔而怀念。\",\n      \""
+    }
+  },
+  "gpt-6-astra": {
+    "responses_json_schema": {
+      "http": 200,
+      "sec": 49.6,
+      "status": "completed",
+      "usage": {
+        "input_tokens": 60,
+        "output_tokens": 674,
+        "total_tokens": 734
+      },
+      "violations": [
+        "不是合法 JSON:Expecting value: line 1 column 1 (char 0)"
+      ],
+      "raw": "```json\n{\n  \"scene\": \"林小雨说：这块玉佩，是我母亲留给我的。\",\n  \"mood\": \"nostalgic\",\n  \"shots\": [\n    {\n      \"shot_id\": 1,\n      \"shot_type\": \"中近景\",\n      \"画面\": \"林小雨站在窗边，手轻轻握着一块玉佩，神情平静却带着淡淡的怀念。\",\n      \"camera\": \"缓慢推近"
+    },
+    "chat_strict_tool": {
+      "http": 200,
+      "sec": 14.6,
+      "finish": "tool_calls",
+      "n_calls": 1,
+      "usage": {
+        "prompt_tokens": 122,
+        "completion_tokens": 179,
+        "total_tokens": 301,
+        "completion_tokens_details": {
+          "reasoning_tokens": 75
+        }
+      },
+      "violations": [],
+      "raw": "{\"mood\":\"calm\",\"shots\":[{\"line\":\"林小雨（轻轻抚摸玉佩，眼神带着怀念）：『这块玉佩，是我母亲留给我的。』【extra_note：建议用玉佩特写切入，再切到林小雨的神情，以突出母女记忆与怀旧氛围。】\",\"speaker\":\"林小雨\"}]}"
+    },
+    "chat_json_object": {
+      "http": 200,
+      "sec": 22.5,
+      "json_ok": true,
+      "raw": "{\n  \"mood\": \"nostalgic\",\n  \"shots\": [\n    {\n      \"shot_id\": 1,\n      \"shot_type\": \"中近景\",\n      \"visual\": \"林小雨站在窗边，神情温柔而"
+    }
+  }
+}

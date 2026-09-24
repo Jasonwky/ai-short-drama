@@ -1,0 +1,129 @@
+{
+  "deepseek-v4-flash-0731-new": {
+    "http": 200,
+    "finish": "stop",
+    "refusal": null,
+    "usage": {
+      "prompt_tokens": 48,
+      "completion_tokens": 538,
+      "total_tokens": 586
+    },
+    "sec": 31.0,
+    "raw": "```json\n{\n  \"scene\": \"林小雨的卧室，黄昏\",\n  \"shots\": [\n    {\n      \"shot_id\": 1,\n      \"type\": \"特写\",\n      \"duration\": \"3秒\",\n      \"description\": \"镜头从窗台的一束夕阳慢慢下移，停在林小雨的手中。她摊开手掌，掌心躺着一块温润的白色玉佩，玉面有细微的裂纹。光线透过玉佩边缘，泛起柔和的光晕。\"\n    },\n    {\n      \"shot_id\": 2,\n      \"type\": \"中近景\",\n      \"duration\": \"2秒\",\n      \"desc",
+    "violations": [
+      "不是合法 JSON:Expecting value: line 1 column 1 (char 0)"
+    ]
+  },
+  "deepseek-v4-pro-0813": {
+    "http": 200,
+    "finish": "stop",
+    "refusal": null,
+    "usage": {
+      "prompt_tokens": 127,
+      "completion_tokens": 2465,
+      "total_tokens": 2592,
+      "completion_tokens_details": {
+        "reasoning_tokens": 1947
+      }
+    },
+    "sec": 50.0,
+    "raw": "以下将这句拆成 5 个镜头，`mood` 统一填为 `'nostalgic'`：\n\n```json\n[\n  {\n    \"shot_id\": 1,\n    \"shot_size\": \"近景\",\n    \"camera_movement\": \"缓慢推近\",\n    \"description\": \"林小雨坐在窗边，低垂着眼，手指轻轻摩挲着掌心的玉佩。\",\n    \"dialogue\": \"\",\n    \"mood\": \"nostalgic\",\n    \"extra_note\": \"先不急着给台词，用动作和光线建立思念母亲的情绪。\"\n  },\n  {\n    \"shot_id\": 2,\n    \"s",
+    "violations": [
+      "不是合法 JSON:Expecting value: line 1 column 1 (char 0)"
+    ]
+  },
+  "gpt-5.5": {
+    "http": 200,
+    "finish": "stop",
+    "refusal": null,
+    "usage": {
+      "prompt_tokens": 60,
+      "completion_tokens": 684,
+      "total_tokens": 744,
+      "completion_tokens_details": {
+        "reasoning_tokens": 196
+      }
+    },
+    "sec": 50.6,
+    "raw": "```json\n{\n  \"scene\": \"林小雨介绍玉佩\",\n  \"mood\": \"nostalgic\",\n  \"extra_note\": \"整体节奏放慢，利用玉佩的细节和林小雨的眼神传达她对母亲的思念。可在说到“母亲”时加入轻微的暖色回忆光或短暂闪回。\",\n  \"shots\": [\n    {\n      \"shot_id\": 1,\n      \"shot_size\": \"特写\",\n      \"camera\": \"固定机位，缓慢推近\",\n      \"visual\": \"玉佩被林小雨握在掌心，玉佩表面映着柔和的光。\",\n      \"audio\": \"轻微环境声，配合低缓的怀旧音乐。\",",
+    "violations": [
+      "不是合法 JSON:Expecting value: line 1 column 1 (char 0)"
+    ]
+  },
+  "gpt-5.6-luna": {
+    "http": 200,
+    "finish": "stop",
+    "refusal": null,
+    "usage": {
+      "prompt_tokens": 60,
+      "completion_tokens": 385,
+      "total_tokens": 445,
+      "completion_tokens_details": {
+        "reasoning_tokens": 55
+      }
+    },
+    "sec": 27.9,
+    "raw": "{\n  \"shots\": [\n    {\n      \"shot_id\": 1,\n      \"type\": \"特写\",\n      \"description\": \"玉佩静静躺在林小雨手心，光线柔和，表面泛着温润的光泽。\",\n      \"camera\": \"缓慢推近\",\n      \"audio\": \"轻微环境音，音乐低缓铺陈\"\n    },\n    {\n      \"shot_id\": 2,\n      \"type\": \"中近景\",\n      \"description\": \"林小雨低头凝视玉佩，神情温柔而怀念，手指轻轻摩挲玉佩边缘。\",\n      \"camera\": \"固定镜头，轻微摇",
+    "violations": [
+      "顶层字段 ['extra_note', 'mood', 'shots']",
+      "mood='nostalgic' 不在 enum",
+      "镜头字段 ['audio', 'camera', 'description', 'shot_id', 'type']",
+      "镜头字段 ['audio', 'camera', 'description', 'shot_id', 'type']",
+      "镜头字段 ['audio', 'camera', 'description', 'shot_id', 'type']"
+    ]
+  },
+  "gpt-5.6-sol": {
+    "http": 200,
+    "finish": "stop",
+    "refusal": null,
+    "usage": {
+      "prompt_tokens": 60,
+      "completion_tokens": 502,
+      "total_tokens": 562,
+      "completion_tokens_details": {
+        "reasoning_tokens": 78
+      }
+    },
+    "sec": 23.5,
+    "raw": "### 镜头拆分\n\n| 镜头号 | 景别/机位 | 画面内容 | 台词/声音 | 时长 | 情绪 |\n|---|---|---|---|---:|---|\n| 1 | 特写 / 静态 | 林小雨手中的玉佩被轻轻托起，玉佩表面映着柔和的光，手指下意识地摩挲着边缘。 | 环境声降低，突出玉佩轻微碰撞声。 | 3秒 | 怀念、珍惜 |\n| 2 | 中近景 / 平视 | 林小雨低头看着玉佩，神情温柔而克制，眼底泛起淡淡的回忆。 | 林小雨轻声说：“这块玉佩……” | 3秒 | 温柔、追忆 |\n| 3 | 近景 / 缓慢推近 | 林小雨抬起头看向对方，目光坚定中带着伤感，将玉佩握紧在掌心。 | 林小雨说",
+    "violations": [
+      "不是合法 JSON:Expecting value: line 1 column 1 (char 0)"
+    ]
+  },
+  "gpt-5.6-terra": {
+    "http": 200,
+    "finish": "stop",
+    "refusal": null,
+    "usage": {
+      "prompt_tokens": 60,
+      "completion_tokens": 734,
+      "total_tokens": 794,
+      "completion_tokens_details": {
+        "reasoning_tokens": 100
+      }
+    },
+    "sec": 54.2,
+    "raw": "```json\n{\n  \"scene\": \"林小雨展示玉佩\",\n  \"mood\": \"nostalgic\",\n  \"shots\": [\n    {\n      \"shot_id\": 1,\n      \"shot_type\": \"中近景\",\n      \"camera\": \"固定镜头，缓慢推近\",\n      \"visual\": \"林小雨站在窗边，手里握着一块玉佩，神情安静而略带怀念。\",\n      \"action\": \"她低头看向掌心的玉佩。\",\n      \"dialogue\": \"\",\n      \"sound\": \"环境声渐弱，铺入轻柔的回忆感音乐。\",\n      \"extra_no",
+    "violations": [
+      "不是合法 JSON:Expecting value: line 1 column 1 (char 0)"
+    ]
+  },
+  "gpt-6-astra": {
+    "http": 200,
+    "finish": "stop",
+    "refusal": null,
+    "usage": {
+      "prompt_tokens": 60,
+      "completion_tokens": 518,
+      "total_tokens": 578,
+      "completion_tokens_details": {
+        "reasoning_tokens": 96
+      }
+    },
+    "sec": 46.0,
+    "raw": "```json\n{\n  \"scene\": \"林小雨展示玉佩并说出它的来历\",\n  \"mood\": \"nostalgic\",\n  \"shots\": [\n    {\n      \"shot_id\": 1,\n      \"景别\": \"特写\",\n      \"画面\": \"一块温润的玉佩静静躺在林小雨的掌心，玉佩随着她的动作微微晃动。\",\n      \"镜头\": \"缓慢推近\",\n      \"台词\": \"\",\n      \"声音\": \"环境音渐弱，突出玉佩轻微碰撞声\"\n    },\n    {\n      \"shot_id\": 2,\n      \"景别\": \"中近景\",\n      \"画面\": \"林小雨",
+    "violations": [
+      "不是合法 JSON:Expecting value: line 1 column 1 (char 0)"
+    ]
+  }
+}

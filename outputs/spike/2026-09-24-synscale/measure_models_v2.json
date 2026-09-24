@@ -1,0 +1,359 @@
+{
+  "gpt-5.6-terra": [
+    {
+      "run": 1,
+      "ok": false,
+      "rounds": 3,
+      "why": "measure-gpt-5.6-terra:3 轮都没过判卷。最后一轮的问题:剧本 258 字(约 31 秒),段落数应在 2–4,当前 5",
+      "sec": 251.7,
+      "problems_per_round": [
+        1,
+        1,
+        1
+      ],
+      "first_round_problems": [
+        "剧本 258 字(约 31 秒),段落数应在 2–4,当前 5"
+      ],
+      "tokens": 12680
+    },
+    {
+      "run": 2,
+      "ok": false,
+      "rounds": 3,
+      "why": "measure-gpt-5.6-terra:3 轮都没过判卷。最后一轮的问题:段落4:子镜头 5 个,应为 2–4 个(按【镜头N】计)",
+      "sec": 280.7,
+      "problems_per_round": [
+        1,
+        1,
+        1
+      ],
+      "first_round_problems": [
+        "剧本 258 字(约 31 秒),段落数应在 2–4,当前 5"
+      ],
+      "tokens": 13307
+    },
+    {
+      "run": 3,
+      "ok": false,
+      "rounds": 3,
+      "why": "measure-gpt-5.6-terra:3 轮都没过判卷。最后一轮的问题:段落2:子镜头 6 个,应为 2–4 个(按【镜头N】计);段落3:子镜头 6 个,应为 2–4 个(按【镜头N】计)",
+      "sec": 261.8,
+      "problems_per_round": [
+        1,
+        2,
+        2
+      ],
+      "first_round_problems": [
+        "剧本 258 字(约 31 秒),段落数应在 2–4,当前 5"
+      ],
+      "tokens": 12058
+    }
+  ],
+  "gpt-6-astra": [
+    {
+      "run": 1,
+      "ok": true,
+      "rounds": 3,
+      "segments": 4,
+      "sec": 254.2,
+      "problems_per_round": [
+        2,
+        1,
+        0
+      ],
+      "first_round_problems": [
+        "段落3:video_prompt 里的 @灯笼挂上树枝的动作 不是本段绑定的素材",
+        "剧本 258 字(约 31 秒),段落数应在 2–4,当前 5"
+      ],
+      "tokens": 12358
+    },
+    {
+      "run": 2,
+      "ok": false,
+      "rounds": 3,
+      "why": "measure-gpt-6-astra:3 轮都没过判卷。最后一轮的问题:段落2:子镜头 6 个,应为 2–4 个(按【镜头N】计)",
+      "sec": 277.8,
+      "problems_per_round": [
+        1,
+        1,
+        1
+      ],
+      "first_round_problems": [
+        "剧本 258 字(约 31 秒),段落数应在 2–4,当前 5"
+      ],
+      "tokens": 12425
+    },
+    {
+      "run": 3,
+      "ok": false,
+      "rounds": 3,
+      "why": "measure-gpt-6-astra:3 轮都没过判卷。最后一轮的问题:剧本 258 字(约 31 秒),段落数应在 2–4,当前 5",
+      "sec": 275.3,
+      "problems_per_round": [
+        1,
+        2,
+        1
+      ],
+      "first_round_problems": [
+        "剧本 258 字(约 31 秒),段落数应在 2–4,当前 5"
+      ],
+      "tokens": 12066
+    }
+  ],
+  "gpt-5.6-sol": [
+    {
+      "run": 1,
+      "ok": false,
+      "rounds": 3,
+      "why": "measure-gpt-5.6-sol:3 轮都没过判卷。最后一轮的问题:段落4:子镜头 7 个,应为 2–4 个(按【镜头N】计)",
+      "sec": 135.3,
+      "problems_per_round": [
+        1,
+        1,
+        1
+      ],
+      "first_round_problems": [
+        "剧本台词「那我母亲，为什么会有它？」没有出现在任何段落里"
+      ],
+      "tokens": 12115
+    },
+    {
+      "run": 2,
+      "ok": true,
+      "rounds": 3,
+      "segments": 4,
+      "sec": 136.7,
+      "problems_per_round": [
+        1,
+        1,
+        0
+      ],
+      "first_round_problems": [
+        "剧本 258 字(约 31 秒),段落数应在 2–4,当前 5"
+      ],
+      "tokens": 13211
+    },
+    {
+      "run": 3,
+      "ok": true,
+      "rounds": 2,
+      "segments": 3,
+      "sec": 82.7,
+      "problems_per_round": [
+        2,
+        0
+      ],
+      "first_round_problems": [
+        "段落1:绑定了「沈墨」但 image_prompt 没有 @ 它",
+        "段落3:子镜头 6 个,应为 2–4 个(按【镜头N】计)"
+      ],
+      "tokens": 6457
+    }
+  ],
+  "gpt-5.6-luna": [
+    {
+      "run": 1,
+      "ok": true,
+      "rounds": 3,
+      "segments": 4,
+      "sec": 269.1,
+      "problems_per_round": [
+        1,
+        1,
+        0
+      ],
+      "first_round_problems": [
+        "剧本 258 字(约 31 秒),段落数应在 2–4,当前 5"
+      ],
+      "tokens": 13586
+    },
+    {
+      "run": 2,
+      "ok": true,
+      "rounds": 3,
+      "segments": 4,
+      "sec": 254.0,
+      "problems_per_round": [
+        1,
+        1,
+        0
+      ],
+      "first_round_problems": [
+        "剧本台词「那我母亲，为什么会有它？」没有出现在任何段落里"
+      ],
+      "tokens": 10895
+    },
+    {
+      "run": 3,
+      "ok": false,
+      "rounds": 3,
+      "why": "measure-gpt-5.6-luna:3 轮都没过判卷。最后一轮的问题:段落4:子镜头 6 个,应为 2–4 个(按【镜头N】计)",
+      "sec": 267.5,
+      "problems_per_round": [
+        1,
+        1,
+        1
+      ],
+      "first_round_problems": [
+        "剧本 258 字(约 31 秒),段落数应在 2–4,当前 5"
+      ],
+      "tokens": 12637
+    }
+  ],
+  "gpt-5.5": [
+    {
+      "run": 1,
+      "ok": false,
+      "rounds": 3,
+      "why": "measure-gpt-5.5:3 轮都没过判卷。最后一轮的问题:段落2:子镜头 5 个,应为 2–4 个(按【镜头N】计)",
+      "sec": 225.6,
+      "problems_per_round": [
+        1,
+        1,
+        1
+      ],
+      "first_round_problems": [
+        "剧本 258 字(约 31 秒),段落数应在 2–4,当前 5"
+      ],
+      "tokens": 13439
+    },
+    {
+      "run": 2,
+      "ok": true,
+      "rounds": 3,
+      "segments": 4,
+      "sec": 303.2,
+      "problems_per_round": [
+        1,
+        1,
+        0
+      ],
+      "first_round_problems": [
+        "剧本 258 字(约 31 秒),段落数应在 2–4,当前 5"
+      ],
+      "tokens": 13284
+    },
+    {
+      "run": 3,
+      "ok": true,
+      "rounds": 1,
+      "segments": 4,
+      "sec": 94.9,
+      "problems_per_round": [
+        0
+      ],
+      "first_round_problems": [],
+      "tokens": 2633
+    }
+  ],
+  "deepseek-v4-pro-0813": [
+    {
+      "run": 1,
+      "ok": true,
+      "rounds": 2,
+      "segments": 3,
+      "sec": 94.3,
+      "problems_per_round": [
+        1,
+        0
+      ],
+      "first_round_problems": [
+        "段落1:绑定了「老宅庭院」但 image_prompt 没有 @ 它"
+      ],
+      "tokens": 8196
+    },
+    {
+      "run": 2,
+      "ok": true,
+      "rounds": 2,
+      "segments": 3,
+      "sec": 96.9,
+      "problems_per_round": [
+        6,
+        0
+      ],
+      "first_round_problems": [
+        "段落1:绑定了「沈墨」但 image_prompt 没有 @ 它",
+        "段落1:绑定了「老宅庭院」但 image_prompt 没有 @ 它",
+        "段落2:绑定了「老宅庭院」但 image_prompt 没有 @ 它",
+        "段落2:绑定了「玉佩」但 image_prompt 没有 @ 它",
+        "段落3:绑定了「沈墨」但 image_prompt 没有 @ 它",
+        "段落3:绑定了「老宅书房」但 image_prompt 没有 @ 它"
+      ],
+      "tokens": 9178
+    },
+    {
+      "run": 3,
+      "ok": true,
+      "rounds": 2,
+      "segments": 3,
+      "sec": 71.2,
+      "problems_per_round": [
+        5,
+        0
+      ],
+      "first_round_problems": [
+        "段落1:绑定了「老宅庭院」但 image_prompt 没有 @ 它",
+        "段落2:绑定了「老宅庭院」但 image_prompt 没有 @ 它",
+        "段落2:绑定了「玉佩」但 image_prompt 没有 @ 它",
+        "段落3:绑定了「沈墨」但 image_prompt 没有 @ 它",
+        "段落3:绑定了「老宅书房」但 image_prompt 没有 @ 它"
+      ],
+      "tokens": 7970
+    }
+  ],
+  "deepseek-v4-flash-0731-new": [
+    {
+      "run": 1,
+      "ok": true,
+      "rounds": 2,
+      "segments": 4,
+      "sec": 32.3,
+      "problems_per_round": [
+        1,
+        0
+      ],
+      "first_round_problems": [
+        "段落4:绑定了「玉佩」但 image_prompt 没有 @ 它"
+      ],
+      "tokens": 5019
+    },
+    {
+      "run": 2,
+      "ok": true,
+      "rounds": 2,
+      "segments": 4,
+      "sec": 62.0,
+      "problems_per_round": [
+        5,
+        0
+      ],
+      "first_round_problems": [
+        "段落1:绑定了「老宅庭院」但 image_prompt 没有 @ 它",
+        "段落2:绑定了「老宅庭院」但 image_prompt 没有 @ 它",
+        "段落3:绑定了「沈墨」但 image_prompt 没有 @ 它",
+        "段落3:绑定了「老宅书房」但 image_prompt 没有 @ 它",
+        "段落4:绑定了「老宅书房」但 image_prompt 没有 @ 它"
+      ],
+      "tokens": 5283
+    },
+    {
+      "run": 3,
+      "ok": true,
+      "rounds": 2,
+      "segments": 4,
+      "sec": 31.0,
+      "problems_per_round": [
+        4,
+        0
+      ],
+      "first_round_problems": [
+        "段落1:绑定了「老宅庭院」但 image_prompt 没有 @ 它",
+        "段落2:绑定了「老宅庭院」但 image_prompt 没有 @ 它",
+        "段落3:绑定了「老宅书房」但 image_prompt 没有 @ 它",
+        "段落4:绑定了「老宅书房」但 image_prompt 没有 @ 它"
+      ],
+      "tokens": 5566
+    }
+  ]
+}
