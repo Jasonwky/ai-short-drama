@@ -32,7 +32,10 @@ def _node(store: Store, root: Path, path: str) -> dict:
     t = _task_for(store, path)
     if t is None:
         return node
-    host = repo.get(store, "host", t["host_id"])["label"] if t["host_id"] is not None else "本机"
+    if t["host_id"] is not None:
+        host = repo.get(store, "host", t["host_id"])["label"]
+    else:   # 本地确定性生成没有 external_id;有 external_id 却没有 host 的,是从别处导入的工程
+        host = "本机" if t["external_id"] is None else "未登记的机器(导入的工程)"
     node["task"] = {"id": t["id"], "kind": t["kind"], "model": t["model"], "params": json.loads(t["params_json"]),
                     "seed": t["seed"], "prompt": t["prompt"], "host": host, "external_id": t["external_id"],
                     "created_at": t["created_at"], "finished_at": t["finished_at"],

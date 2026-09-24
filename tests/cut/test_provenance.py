@@ -2,6 +2,7 @@
 from tests.cut.conftest import done_task
 from tools.cut import provenance, tailframe
 from tools.drama import repo
+from tools.serve.hosts import add_host
 
 
 def _videos(store, s):
@@ -49,3 +50,20 @@ def test_replaced_file_and_untracked_asset_are_reported(store, two_segments):
     assert any("frame.png 的内容与 task" in p and "被替换过" in p for p in probs)
     assert any("段落 2:视频 manual/clip.mp4 在 task 表里没有生成记录" in p for p in probs)
     assert "无生成记录(人工提供)" in provenance.to_markdown(r)
+
+
+def test_host_label_says_where_it_ran(store, two_segments):
+    """有登记的机器写机器名;本地抽帧写「本机」;有云端编号却没有机器的(导入的工程)照实写。"""
+    s, root = two_segments, two_segments["root"]
+    hid = add_host(store, label="4090", ssh_host="h", ssh_port=1, ssh_user="root", key_ref="k", local_port=8188,
+                   vram_gb=24.0, models_dir="/m")
+    store.conn.execute("UPDATE task SET host_id = ? WHERE result_path = 'outputs/tasks/v1/clip.mp4'", (hid,))
+    repo.update(store, "segment", s["seg2"], first_frame_path=None, video_path=None)
+    tailframe.confirm_tail(store, root, tailframe.plan_tail(store, root, s["seg1"]))
+    done_task(store, root, s["seg2"], "video", "outputs/tasks/v2b/clip.mp4", b"v2b",
+              refs=[repo.get(store, "segment", s["seg2"])["first_frame_path"]])
+    r = provenance.build(store, root, s["episode"], produce_id="ASD-1", producer="P1", videos=_videos(store, s))
+    v1, v2 = r["segments"][0]["video"], r["segments"][1]["video"]
+    assert v1["task"]["host"] == "4090"
+    assert v2["inputs"][0]["task"]["host"] == "本机"
+    assert v2["task"]["host"] == "未登记的机器(导入的工程)"
