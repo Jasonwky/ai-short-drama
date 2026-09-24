@@ -54,6 +54,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   轮次上限 fail-loud、每轮落 `journal/llm/`。产物进 `llm_run`(落盘不可改、批准即锁定、假产物触发器拦审批),
   **人在审阅页批准才写回**。新增 LLM 任务 = 在 `service.TASKS` 登记一个模块(SYSTEM / schema / user_message / judge_factory / apply)
   + 一条真 LLM 契约测试
+- 增量补全 `tools/gen/fill.py` 与单条生成共用规划器的纯检查函数(`*_problems`);**一律两态**,确认时只认确认页列出的目标。
+  工程包 `tools/drama/bundle.py`:导入永远新建一部剧(id 重映射、路径加 `imports/<编号>/` 前缀、逐文件校验 sha256)
 - `tools/cut/`:成片与合规。只调本机 ffmpeg(找不到就 400 报原因,ffmpeg 失败抛 `CutError`,不吞)。
   导出两态:`export.begin` 当场核对(★服务提供者编码、每段有视频、溯源成立)→ `run` 后台出带 / 不带显式标识两版 +
   溯源报告 + **7 项读回自检,不过 = 导出失败**。元数据按 GB 45438-2025 **附录 E**(不是附录 F 的示例,它拼错了键名)。
