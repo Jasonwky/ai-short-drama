@@ -1,0 +1,194 @@
+# -*- coding: utf-8 -*-
+"""成片导出:拼接 → 显式标识 → 隐式元数据 → 溯源报告 → **读回自检**。
+
+一次导出出两个文件(设计 §6.8):
+- `labeled.mp4`:带显式标识「AI 生成」(左上角、**全程**;标准下限是起始画面 ≥ 2 s);
+- `plain.mp4`:无显式标识版(办法允许应用户申请提供),隐式标识照样写。
+两者共用同一个 ProduceID(同一个作品),各自的 ReservedCode1 是各自视频流的 SHA-256。
+
+两态:`begin` 当场核对前提(★必答的服务提供者编码、每段有视频、尺寸一致、有音轨、溯源成立),
+不满足就报原因不开工;`run` 在后台跑(一集 1–3 分钟),结束时整行锁定(触发器)。
+**自检不过 = 导出失败**:文件留着给人查原因,但状态是 failed,界面标「不可发布」。
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from tools.cut import aigc, media, provenance
+from tools.drama import repo
+from tools.drama.db import Store, now
+from tools.serve.dispatch import sha256_file
+
+SETTING = "content_producer"
+COMMENT = "Powered by MiniMax H3"                     # MiniMax H3 许可证 III.3.a,随文件走
+ALLOWED_TAGS = {"major_brand", "minor_version", "compatible_brands", "encoder", aigc.TAG, "comment"}
+
+
+def saved_producer(store: Store) -> str:
+    row = store.conn.execute("SELECT value FROM setting WHERE key = ?", (SETTING,)).fetchone()
+    return row[0] if row else ""
+
+
+def get(store: Store, export_id: int):
+    row = store.conn.execute("SELECT * FROM export WHERE id = ?", (export_id,)).fetchone()
+    if row is None:
+        raise KeyError(f"导出 {export_id} 不存在")
+    return row
+
+
+def list_for(store: Store, episode_id: int) -> list:
+    return store.conn.execute("SELECT * FROM export WHERE episode_id = ? ORDER BY id", (episode_id,)).fetchall()
+
+
+def _segments(store: Store, episode_id: int) -> list:
+    return store.conn.execute("SELECT * FROM segment WHERE episode_id = ? ORDER BY number", (episode_id,)).fetchall()
+
+
+def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
+    """面板上的轻量检查(不读视频内容):缺什么。空 = 可以点导出。"""
+    segs = _segments(store, episode_id)
+    problems = [] if segs else ["这一集还没有段落"]
+    for s in segs:
+        if not s["video_path"]:
+            problems.append(f"段落 {s['number']} 还没有视频")
+        elif not (Path(data_root) / s["video_path"]).is_file():
+            problems.append(f"段落 {s['number']} 的视频文件不在本机:{s['video_path']}")
+    try:
+        media.require_ffmpeg()
+    except ValueError as e:
+        problems.append(str(e))
+    if not media.FONT.is_file():
+        problems.append(f"找不到显式标识用的字体 {media.FONT}(Noto Sans SC,SIL OFL)")
+    return problems
+
+
+def begin(store: Store, data_root: Path, episode_id: int, producer: str) -> int:
+    root = Path(data_root)
+    producer = producer.strip()
+    problems = aigc.producer_problems(producer) + readiness(store, root, episode_id)
+    if problems:
+        raise ValueError(";".join(problems))
+    segs = _segments(store, episode_id)
+    probes = {s["number"]: media.probe(root / s["video_path"]) for s in segs}
+    sizes = {(p.width, p.height) for p in probes.values()}
+    if len(sizes) != 1:
+        problems.append(f"各段视频尺寸不一致:{ {n: (p.width, p.height) for n, p in probes.items()} }")
+    problems += [f"段落 {n} 的视频没有音轨" for n, p in probes.items() if not p.has_audio]
+    videos = [{"segment_id": s["id"], "number": s["number"], "video_path": s["video_path"],
+               "sha256": sha256_file(root / s["video_path"])} for s in segs]
+    problems += provenance.problems(provenance.build(store, root, episode_id, produce_id="", producer=producer,
+                                                     videos=videos))
+    if problems:
+        raise ValueError(";".join(problems))
+    with store.write() as c:
+        c.execute("INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                  (SETTING, producer))
+        return c.execute("INSERT INTO export (episode_id, produce_id, content_producer, inputs_json, created_at)"
+                         " VALUES (?, ?, ?, ?, ?)",
+                         (episode_id, aigc.new_produce_id(), producer, json.dumps(videos, ensure_ascii=False),
+                          now())).lastrowid
+
+
+def _finish(store: Store, export_id: int, state: str, **fields) -> None:
+    sets = {"state": state, "finished_at": now(), **fields}
+    with store.write() as c:
+        c.execute(f"UPDATE export SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?",
+                  (*sets.values(), export_id))
+
+
+def fail(store: Store, export_id: int, error: str) -> None:
+    if not error.strip():
+        raise ValueError("失败必须写明原因")
+    _finish(store, export_id, "failed", error=error)
+
+
+def fail_stale(store: Store) -> int:
+    """控制台重启时,上次没跑完的导出不会再有人接着跑:标失败,别让它永远显示「导出中」。"""
+    ids = [r[0] for r in store.conn.execute("SELECT id FROM export WHERE state = 'running'")]
+    for i in ids:
+        fail(store, i, "控制台重启,这次导出中断了(产物不完整,不可发布)—— 请重新导出")
+    return len(ids)
+
+
+def run(store: Store, data_root: Path, export_id: int) -> None:
+    row = get(store, export_id)
+    root = Path(data_root)
+    videos = json.loads(row["inputs_json"])
+    clips = [root / v["video_path"] for v in videos]
+    changed = [v["number"] for v, c in zip(videos, clips) if sha256_file(c) != v["sha256"]]
+    if changed:
+        raise media.CutError(f"段落 {changed} 的视频在点导出之后被换掉了 —— 请重新导出")
+    out = Path("outputs/exports") / row["produce_id"]
+    first = media.probe(clips[0])
+    label = media.Label.for_size(first.width, first.height)
+    rel = {"labeled": (out / "labeled.mp4").as_posix(), "plain": (out / "plain.mp4").as_posix()}
+    for key, lab in (("plain", None), ("labeled", label)):
+        raw = root / out / f"{key}.raw.mp4"
+        media.encode_episode(clips, raw, lab)
+        tag = aigc.build(row["content_producer"], row["produce_id"], media.stream_sha256(raw))
+        media.write_tags(raw, root / rel[key], {aigc.TAG: tag, "comment": COMMENT})
+        raw.unlink()
+    report = provenance.build(store, root, row["episode_id"], produce_id=row["produce_id"],
+                              producer=row["content_producer"], videos=videos)
+    report_rel = (out / "provenance.json").as_posix()
+    (root / report_rel).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    (root / out / "provenance.md").write_text(provenance.to_markdown(report), encoding="utf-8")
+    checks = check(store, root, row, rel["labeled"], rel["plain"], report_rel, label)
+    bad = [c["name"] for c in checks if not c["ok"]]
+    _finish(store, export_id, "failed" if bad else "done", labeled_path=rel["labeled"], plain_path=rel["plain"],
+            report_path=report_rel, checks_json=json.dumps(checks, ensure_ascii=False),
+            error=f"自检不通过:{'、'.join(bad)}(不可发布)" if bad else None)
+
+
+def _label_check(labeled: Path, plain: Path, label: media.Label) -> tuple[bool, str]:
+    """显式标识:逐时刻比对两版画面,差异框 = 标识。要求:每个时刻都在、在左上角、字高(扣掉描边)≥ 最短边 5%。"""
+    p = media.probe(labeled)
+    w, h, short = p.width, p.height, min(p.width, p.height)
+    times = sorted({0.0, min(1.0, p.duration / 2), p.duration / 2, max(0.0, p.duration - 0.1)})
+    notes = []
+    for t in times:
+        box = media.diff_bbox(media.gray_frame(labeled, t, w, h), media.gray_frame(plain, t, w, h), w)
+        if box is None:
+            return False, f"{t:.1f}s 处看不到标识"
+        x0, y0, x1, y1 = box
+        glyph = (y1 - y0 + 1) - 2 * label.border
+        if glyph < 0.05 * short:
+            return False, f"{t:.1f}s 处字高 {glyph}px < 最短边 5%({0.05 * short:.1f}px)"
+        if x1 >= w / 2 or y1 >= h / 4:
+            return False, f"{t:.1f}s 处标识不在左上角:差异框 {box}"
+        notes.append(f"{t:.1f}s 字高 {glyph}px")
+    return True, f"{'、'.join(notes)}(最短边 5% = {0.05 * short:.1f}px)"
+
+
+def check(store: Store, root: Path, row, labeled_rel: str, plain_rel: str, report_rel: str,
+          label: media.Label) -> list[dict]:
+    """读回自检。每项 PASS / FAIL 带依据;不看代码怎么写的,只看文件里实际有什么。"""
+    out = []
+
+    def add(name: str, ok: bool, detail: str) -> None:
+        out.append({"name": name, "ok": ok, "detail": detail})
+
+    for key, rel in (("带标识版", labeled_rel), ("无标识版", plain_rel)):
+        f = root / rel
+        tags = media.format_tags(f)
+        probs = aigc.check(tags, producer=row["content_producer"], produce_id=row["produce_id"],
+                           reserved1=media.stream_sha256(f))
+        add(f"隐式标识(附录 E)· {key}", not probs, ";".join(probs) or "7 个键齐全,注 1 一致,ReservedCode1 = 视频流哈希")
+        extra = sorted(set(tags) - ALLOWED_TAGS)
+        add(f"原有元数据已清空 · {key}", not extra, f"多出 {extra}" if extra else f"只有 {sorted(tags)}")
+    ok, detail = _label_check(root / labeled_rel, root / plain_rel, label)
+    add("显式标识(5.4)", ok, detail)
+    videos = json.loads(row["inputs_json"])
+    want = sum(media.probe(root / v["video_path"]).duration for v in videos)
+    got = media.probe(root / labeled_rel).duration
+    tol = 0.1 * len(videos) + 0.1
+    add("时长 = 各段之和", abs(got - want) <= tol, f"成片 {got:.2f}s,各段合计 {want:.2f}s(容差 {tol:.1f}s)")
+    saved = json.loads((root / report_rel).read_text(encoding="utf-8"))
+    fresh = provenance.build(store, root, row["episode_id"], produce_id=row["produce_id"],
+                             producer=row["content_producer"], videos=videos)
+    probs = provenance.problems(saved)
+    same = saved == fresh
+    add("溯源报告与 task 表一致", same and not probs,
+        ";".join(probs) or ("报告按库重算逐项相同,每个文件哈希与 task 记录一致" if same else "报告与按库重算的结果不同"))
+    return out
