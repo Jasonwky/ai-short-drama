@@ -37,6 +37,23 @@ def create_task(store: Store, *, kind: str, target_type: str, target_id: int, mo
              json.dumps(list(refs), ensure_ascii=False), now(), now())).lastrowid
 
 
+def record_local(store: Store, *, kind: str, target_type: str, target_id: int, model: str, params: dict,
+                 prompt: str, refs: list[str], result_path: str, result_sha256: str) -> int:
+    """控制面本地、确定性的生成(如从视频抽尾帧):不经云机,**创建即完成**。
+
+    一个事务写入 done 状态 —— worker 永远看不到它处在 pending,不会把它当云端任务派出去。
+    没有随机性,种子记 0。它照样进 task 表:溯源链与「用这一版」都靠它。
+    """
+    ts = now()
+    with store.write() as c:
+        return c.execute(
+            "INSERT INTO task (kind, target_type, target_id, model, params_json, seed, prompt, refs_json,"
+            " created_at, state, result_path, result_sha256, started_at, finished_at, state_since)"
+            " VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 'done', ?, ?, ?, ?, ?)",
+            (kind, target_type, target_id, model, json.dumps(params, ensure_ascii=False, sort_keys=True),
+             prompt, json.dumps(list(refs), ensure_ascii=False), ts, result_path, result_sha256, ts, ts, ts)).lastrowid
+
+
 def set_task_state(store: Store, task_id: int, state: str, *, external_id: str | None = None,
                    host_id: int | None = None, result_path: str | None = None,
                    result_sha256: str | None = None, error: str | None = None) -> None:
