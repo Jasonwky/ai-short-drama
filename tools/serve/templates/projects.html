@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>立项</h1>
+<div class="row">
+  <section class="card" style="flex: 2; min-width: 360px">
+    <h2>我的剧</h2>
+    <table data-drama-list>
+      <tr><th>剧名</th><th>画幅</th><th>风格</th><th>集数</th><th></th></tr>
+      {% for d in dramas %}
+        <tr>
+          <td>{{ d.title }}</td><td>{{ d.aspect_ratio }}</td><td>{{ styles.get(d.style, "未选") }}</td><td>{{ d.n_episodes }}</td>
+          <td><a href="/drama/{{ d.id }}/script">打开</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="empty">还没有剧,在右边新建一部</td></tr>
+      {% endfor %}
+    </table>
+  </section>
+  <section class="card" style="flex: 1; min-width: 260px">
+    <h2>新建剧</h2>
+    <form method="post" action="/dramas" data-create-drama>
+      <label>剧名</label><input type="text" name="title" required>
+      <label>画幅(建后不可改 —— 改画幅等于全部参考帧和视频作废)</label>
+      <select name="aspect_ratio"><option value="9:16">9:16 竖屏</option><option value="16:9">16:9 横屏</option></select>
+      <label>风格预设</label>
+      <select name="style">
+        {% for s in style_list %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
+      </select>
+      <p class="hint">写实真人:角色一律是生成的虚构人物,不使用任何真实存在的人。</p>
+      <button class="btn primary" type="submit">新建</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

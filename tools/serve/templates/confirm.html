@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card confirm">
+  <h2>确认这次改动</h2>
+  <p class="cost" data-cost>{{ summary }}</p>
+  <p class="hint">改动会让已经生成的产物作废。旧产物不会删除,之后还能在历史版本里挑回来。</p>
+  <form method="post" action="{{ action }}">
+    {% for k, v in fields.items() %}
+      {% if v is string %}<input type="hidden" name="{{ k }}" value="{{ v }}">
+      {% else %}{% for item in v %}<input type="hidden" name="{{ k }}" value="{{ item }}">{% endfor %}{% endif %}
+    {% endfor %}
+    <input type="hidden" name="confirm" value="1">
+    <button class="btn danger" type="submit" data-confirm>确认改动</button>
+    <a class="btn" href="{{ back }}">取消</a>
+  </form>
+</section>
+{% endblock %}

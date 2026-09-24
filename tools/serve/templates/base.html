@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}AI 短剧控制台{% endblock %}</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/console.css">
+  <script src="/static/console.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">AI 短剧控制台</a>
+    {% if drama %}
+      <span class="crumb">《{{ drama.title }}》 · {{ drama.aspect_ratio }} · {{ styles.get(drama.style, "未选风格") }}</span>
+      {% if episodes %}
+        <select class="ep-switch" data-ep-switch aria-label="切换集">
+          {% for e in episodes %}<option value="{{ e.id }}" {% if e.id == episode_id %}selected{% endif %}>第 {{ e.number }} 集</option>{% endfor %}
+        </select>
+      {% endif %}
+    {% endif %}
+    <span class="backend {% if backend.fake %}fake{% endif %}">执行面:{{ backend.label }}</span>
+  </header>
+  {% if backend.fake %}
+    <div class="banner-fake">⚠️ 假后端:本页的图片与视频不是真生成的,只用于测试控制台本身</div>
+  {% endif %}
+  <div class="layout">
+    <nav class="steps">
+      {% for n in nav %}
+        {% if n.url %}
+          <a class="step {% if n.active %}active{% endif %}" href="{{ n.url }}" data-nav="{{ n.key }}">{{ loop.index }}. {{ n.title }}</a>
+        {% else %}
+          <span class="step disabled" data-nav="{{ n.key }}" title="先选剧 / 先建一集">{{ loop.index }}. {{ n.title }}</span>
+        {% endif %}
+      {% endfor %}
+    </nav>
+    <main data-panel="{{ panel_key }}">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <footer class="foot">Powered by MiniMax H3</footer>
+</body>
+</html>

@@ -1,0 +1,38 @@
+{# 任务历史:缩略图 / 播放器 + 状态 + 失败原因 + 「用这一版」 #}
+{% macro history(tasks, current, state_label, next_url) %}
+<div class="history" {% if tasks | selectattr("state", "in", ["pending", "queued", "running", "waiting_host"]) | list %}data-inflight{% endif %}>
+  {% for t in tasks | reverse %}
+    <div class="ver {% if t.result_path and t.result_path == current %}current{% endif %} state-{{ t.state }}" data-task="{{ t.id }}">
+      {% if t.result_path %}
+        {% if t.result_path.endswith(".mp4") %}
+          <video src="/media/{{ t.result_path }}" controls preload="metadata"></video>
+        {% else %}
+          <a href="/media/{{ t.result_path }}" target="_blank"><img src="/media/{{ t.result_path }}" alt="task {{ t.id }}"></a>
+        {% endif %}
+      {% endif %}
+      <div class="meta">
+        #{{ t.id }} · 种子 {{ t.seed }} · <b>{{ state_label[t.state] }}</b>
+        {% if t.result_path and t.result_path == current %}<span class="tag">当前版</span>{% endif %}
+      </div>
+      {% if t.error %}<div class="err" data-task-error>{{ t.error }}</div>{% endif %}
+      {% if t.state == "done" and t.result_path != current %}
+        <form method="post" action="/task/{{ t.id }}/pick">
+          <input type="hidden" name="next" value="{{ next_url }}">
+          <button class="btn small" type="submit">用这一版</button>
+        </form>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty">还没有生成记录</div>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{# readiness 检查清单:每项一行人话 #}
+{% macro checklist(checks) %}
+<ul class="checklist">
+  {% for c in checks %}
+    <li class="{% if c.ok %}{% if c.warn %}warn{% else %}ok{% endif %}{% else %}bad{% endif %}" data-check="{{ c.key }}">{{ c.msg }}</li>
+  {% endfor %}
+</ul>
+{% endmacro %}

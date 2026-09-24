@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card refused">
+  <h2>做不了</h2>
+  <p class="reason" data-error>{{ message }}</p>
+  <a class="btn" href="{{ back }}">返回</a>
+</section>
+{% endblock %}
