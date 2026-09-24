@@ -40,10 +40,11 @@ def _slot_refs(seg, assets) -> tuple[list[refs.Ref], list[refs.Ref]]:
     return refs.allocate_slots(weighted, scene_ref, prop_refs, QWEN_IMAGE_EDIT_2511.max_ref_images)
 
 
-def plan_first_frame(store: Store, segment_id: int, *, seed: int) -> int:
+def first_frame_problems(store: Store, segment_id: int) -> list[str]:
+    """出首帧还差什么(只看内容,不建任务)。空 = 可以规划。增量补全靠它判「不能做」。"""
     seg = repo.get(store, "segment", segment_id)
     if seg["reference_mode"] != "first":
-        raise ValueError(f"参考模式 {seg['reference_mode']} 的首帧规划尚未实现(当前只支持 first)")
+        return [f"参考模式 {seg['reference_mode']} 的首帧规划尚未实现(当前只支持 first)"]
     assets = repo.segment_assets(store, segment_id)
     chars, scene, props = assets["characters"], assets["scene"], assets["props"]
 
@@ -61,9 +62,15 @@ def plan_first_frame(store: Store, segment_id: int, *, seed: int) -> int:
     problems += [f"@{u} 不是本镜绑定的素材" for u in unknown]
     if len(bound) >= 2:
         problems += [f"绑定了「{n}」但首帧图提示词从未 @ 它" for n in bound if n not in found]
+    return problems
+
+
+def plan_first_frame(store: Store, segment_id: int, *, seed: int) -> int:
+    problems = first_frame_problems(store, segment_id)
     if problems:
         raise ValueError(";".join(problems))
-
+    seg = repo.get(store, "segment", segment_id)
+    assets = repo.segment_assets(store, segment_id)
     kept, dropped = _slot_refs(seg, assets)
     prompt = tags.expand(seg["image_prompt"], kept, dropped, "qwen")
     params = {
@@ -75,15 +82,24 @@ def plan_first_frame(store: Store, segment_id: int, *, seed: int) -> int:
                        params=params, seed=seed, prompt=prompt, refs=params["image_refs"])
 
 
-def plan_video(store: Store, segment_id: int, *, seed: int) -> int:
+def video_problems(store: Store, segment_id: int) -> list[str]:
+    """出视频还差什么(只看内容;云机与模型是提交时的事)。空 = 可以规划。"""
     checks = segment_readiness(store, segment_id, video_cap=MINIMAX_H3, image_cap=QWEN_IMAGE_EDIT_2511,
                                host_ok=True, host_msg="提交时检查", model_ok=True, model_msg="提交时检查")
     blocking = [c.msg for c in checks if not c.ok and c.key not in RUNTIME_KEYS]
     if blocking:
-        raise ValueError(";".join(blocking))
+        return blocking
     seg = repo.get(store, "segment", segment_id)
     if seg["reference_mode"] != "first":
-        raise ValueError(f"参考模式 {seg['reference_mode']} 的视频生成尚未实现(ref2va 只接首帧参考)")
+        return [f"参考模式 {seg['reference_mode']} 的视频生成尚未实现(ref2va 只接首帧参考)"]
+    return []
+
+
+def plan_video(store: Store, segment_id: int, *, seed: int) -> int:
+    problems = video_problems(store, segment_id)
+    if problems:
+        raise ValueError(";".join(problems))
+    seg = repo.get(store, "segment", segment_id)
 
     assets = repo.segment_assets(store, segment_id)
     everyone = ([refs.Ref("character", c["name"], None) for c in assets["characters"]]

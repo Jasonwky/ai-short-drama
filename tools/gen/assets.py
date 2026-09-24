@@ -58,7 +58,8 @@ def asset_prompt(table: str, style_key: str, final_prompt: str) -> str:
             f"{SPEC[table][2]} Avoid: {style.avoid}.")
 
 
-def plan_asset_image(store: Store, table: str, row_id: int, *, seed: int) -> int:
+def asset_problems(store: Store, table: str, row_id: int) -> list[str]:
+    """出资产图还差什么(不建任务)。空 = 可以规划。"""
     if table not in SPEC:
         raise ValueError(f"不是资产表:{table}")
     row = repo.get(store, table, row_id)
@@ -68,8 +69,15 @@ def plan_asset_image(store: Store, table: str, row_id: int, *, seed: int) -> int
         problems.append("这部剧还没选风格预设(在「立项」里选)")
     if not row["final_prompt"].strip():
         problems.append(f"「{row['name']}」缺少生成描述(final_prompt)")
+    return problems
+
+
+def plan_asset_image(store: Store, table: str, row_id: int, *, seed: int) -> int:
+    problems = asset_problems(store, table, row_id)
     if problems:
         raise ValueError(";".join(problems))
+    row = repo.get(store, table, row_id)
+    drama = repo.get(store, "drama", row["drama_id"])
     writes, size_of, _ = SPEC[table]
     params = {
         "workflow": "qwen_image", "preset": "baseline", "size": list(size_of(drama["aspect_ratio"])),
