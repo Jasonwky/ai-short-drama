@@ -2,13 +2,14 @@
 """验收入口:一条命令跑完三层(设计 §十一、CLAUDE.md 控制台纪律)。
 
     1 单测                 python -m pytest -q
-    2 Playwright 有头自测   遍历注册表每个面板 + 点按钮链路,逐个截图存档
-    3 功能整链(真云机)     一个段落出首帧 + 视频,溯源齐全(字幕 / 标识 / 拼接在 P5,本层暂只覆盖到视频)
+    2 真 LLM 契约           python -m pytest -m real_llm -q(黄金样本打真 LLM;没有 key 就 SKIP)
+    3 Playwright 有头自测   遍历注册表每个面板 + 点按钮链路,逐个截图存档
+    4 功能整链(真云机)     一个段落出首帧 + 视频,溯源齐全(字幕 / 标识 / 拼接在 P5,本层暂只覆盖到视频)
 
 判决四态 PASS / FAIL / PARTIAL / SKIP —— **SKIP 永不计为 PASS**(M-6)。任一层没跑,总判决就不是 PASS。
 **入口拒绝无头模式**:Playwright 测试一律有头(CLAUDE.md 硬约束);无头的验收是「人看不见的验收」。
 
-    python -X utf8 -m tools.serve.accept                                 # 第 3 层 SKIP → 总判决 PARTIAL
+    python -X utf8 -m tools.serve.accept                                 # 第 4 层 SKIP → 总判决 PARTIAL
     python -X utf8 -m tools.serve.accept --real-ssh-host H --real-ssh-port P --key-ref K \\
         --models-dir /root/autodl-tmp/comfyui-models --character C --scene S --prop R
 """
@@ -21,6 +22,8 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+
+from tools.llm.client import KEY_FILE
 
 REAL_ARGS = ("real_ssh_host", "real_ssh_port", "key_ref", "models_dir", "character", "scene", "prop")
 
@@ -64,10 +67,17 @@ def main(argv: list[str] | None = None) -> int:
     rc = _run([*py, "-m", "pytest", "-q"], out / "1_pytest.log")
     layers.append({"layer": "单测", "state": "PASS" if rc == 0 else "FAIL", "log": str(out / "1_pytest.log")})
 
-    print("第 2 层 Playwright 有头自测(会弹出浏览器)…", flush=True)
-    rc = _run([*py, "-m", "tools.serve.selftest", "--out", str(out / "selftest")], out / "2_selftest.log")
+    if KEY_FILE.exists():
+        print("第 2 层 真 LLM 契约(黄金样本,几分钟)…", flush=True)
+        rc = _run([*py, "-m", "pytest", "-m", "real_llm", "-q"], out / "2_real_llm.log")
+        layers.append({"layer": "真 LLM 契约", "state": "PASS" if rc == 0 else "FAIL", "log": str(out / "2_real_llm.log")})
+    else:
+        layers.append({"layer": "真 LLM 契约", "state": "SKIP", "reason": f"没有 {KEY_FILE.name} —— 这一层没跑,不算通过"})
+
+    print("第 3 层 Playwright 有头自测(会弹出浏览器)…", flush=True)
+    rc = _run([*py, "-m", "tools.serve.selftest", "--out", str(out / "selftest")], out / "3_selftest.log")
     layers.append({"layer": "Playwright 有头自测", "state": "PASS" if rc == 0 else "FAIL",
-                   "log": str(out / "2_selftest.log"), "screenshots": str(out / "selftest")})
+                   "log": str(out / "3_selftest.log"), "screenshots": str(out / "selftest")})
 
     given = [k for k in REAL_ARGS if getattr(a, k)]
     if not given:
@@ -77,14 +87,14 @@ def main(argv: list[str] | None = None) -> int:
         missing = sorted(set(REAL_ARGS) - set(given))
         layers.append({"layer": "功能整链(真云机)", "state": "FAIL", "reason": f"云机参数不全:缺 {missing}"})
     else:
-        print("第 3 层 功能整链(真云机,约 17 分钟)…", flush=True)
+        print("第 4 层 功能整链(真云机,约 17 分钟)…", flush=True)
         env = {**os.environ, "MSYS_NO_PATHCONV": "1"}
         rc = _run([*py, "-u", "-m", "tools.serve.e2e_first_segment", "--data-root", str(out / "e2e"),
                    "--ssh-host", a.real_ssh_host, "--ssh-port", str(a.real_ssh_port), "--key-ref", a.key_ref,
                    "--models-dir", a.models_dir, "--character", a.character, "--scene", a.scene, "--prop", a.prop],
-                  out / "3_e2e.log", env=env)
+                  out / "4_e2e.log", env=env)
         layers.append({"layer": "功能整链(真云机)", "state": "PASS" if rc == 0 else "FAIL",
-                       "log": str(out / "3_e2e.log"), "note": "字幕 / 标识 / 拼接在 P5,本层暂只覆盖到视频"})
+                       "log": str(out / "4_e2e.log"), "note": "字幕 / 标识 / 拼接在 P5,本层暂只覆盖到视频"})
 
     result = {"verdict": verdict(layers), "layers": layers}
     (out / "report.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
