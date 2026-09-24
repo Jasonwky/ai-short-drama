@@ -17,13 +17,13 @@ import argparse
 import sys
 import time
 from collections.abc import Callable
-from datetime import datetime, timezone
 from pathlib import Path
 
 from tools.drama.db import Store
 from tools.gen import preflight
 from tools.gen.comfy_client import ComfyClient
 from tools.serve.collect import IN_FLIGHT, Collector
+from tools.serve import journal
 from tools.serve.dispatch import dispatch, pick_next
 from tools.serve.hosts import Host, get_host
 from tools.serve.tunnel import TunnelManager
@@ -96,16 +96,11 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     data_root = Path(args.data_root)
-    journal = data_root / "journal" / "worker.log"
-    journal.parent.mkdir(parents=True, exist_ok=True)
     worker = Worker(Store(args.db), args.host_id, data_root=data_root)
     while True:
-        stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        lines = [f"{stamp} host={args.host_id} {line}" for line in worker.tick()]
+        lines = journal.append(data_root, worker.tick(), prefix=f"host={args.host_id} ")
         if lines:
             print("\n".join(lines), flush=True)
-            with journal.open("a", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n")
         if args.once:
             return 0
         time.sleep(POLL_SEC)
