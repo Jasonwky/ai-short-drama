@@ -22,6 +22,7 @@ REGISTRY: tuple[Panel, ...] = (
     Panel("projects", "立项", "global", "/"),
     Panel("script", "剧本", "drama", "/drama/{drama_id}/script"),
     Panel("assets", "资产", "drama", "/drama/{drama_id}/assets"),
+    Panel("storyboard", "分镜", "episode", "/episode/{episode_id}/storyboard"),
 )
 
 

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>分镜 · 第 {{ ep.number }} 集</h1>
+<section class="card">
+  <table data-segment-list>
+    <tr><th>#</th><th>时长</th><th>参考模式</th><th>场景</th><th>角色</th><th>道具</th><th>描述</th><th>就绪</th><th></th></tr>
+    {% for s in segs %}
+      <tr data-segment="{{ s.row.id }}">
+        <td>{{ s.row.number }}</td>
+        <td>{{ s.row.duration_sec or "—" }}</td>
+        <td>{{ s.row.reference_mode }}</td>
+        <td>{{ s.scene or "—" }}</td>
+        <td>{{ s.chars | join("、") or "—" }}</td>
+        <td>{{ s.props | join("、") or "—" }}</td>
+        <td style="max-width: 320px">{{ s.row.description[:80] }}{% if s.row.description | length > 80 %}…{% endif %}</td>
+        <td>
+          {% if s.missing %}<span class="status-bad">差 {{ s.missing | length }} 项</span>
+            <div class="hint">{{ s.missing[0] }}</div>
+          {% else %}<span class="status-ok">就绪</span>{% endif %}
+        </td>
+        <td><a class="btn small" href="/segment/{{ s.row.id }}/edit">编辑</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="empty">还没有段落</td></tr>
+    {% endfor %}
+  </table>
+  <form method="post" action="/episode/{{ ep.id }}/segments"><button class="btn primary" type="submit" data-add-segment>+ 新建段落</button></form>
+</section>
+{% endblock %}
