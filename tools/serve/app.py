@@ -15,8 +15,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from tools.llm.client import LLMError
-from tools.serve.panels import (assets, common, final, frames, llm, machines, outline, picks, projects, script,
-                                  storyboard, videos)
+from tools.serve.panels import (assets, bundles, common, fill, final, frames, llm, machines, outline, picks, projects,
+                                  script, storyboard, videos)
 from tools.serve.runtime import Runtime
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -26,7 +26,8 @@ def create_app(runtime: Runtime) -> FastAPI:
     app = FastAPI(title="AI 短剧控制台", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.runtime = runtime
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
-    for mod in (projects, outline, script, assets, storyboard, frames, videos, final, machines, picks, llm):
+    for mod in (projects, outline, script, assets, storyboard, frames, videos, final, machines, picks, llm, fill,
+                bundles):
         app.include_router(mod.router)
 
     @app.exception_handler(ValueError)

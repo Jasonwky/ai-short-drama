@@ -9,7 +9,9 @@
       {% for d in dramas %}
         <tr>
           <td>{{ d.title }}</td><td>{{ d.aspect_ratio }}</td><td>{{ styles.get(d.style, "未选") }}</td><td>{{ d.n_episodes }}</td>
-          <td><a href="/drama/{{ d.id }}/script">打开</a></td>
+          <td><a href="/drama/{{ d.id }}/script">打开</a>
+            <form method="post" action="/drama/{{ d.id }}/bundle" style="display: inline">
+              <button class="btn small" type="submit" data-export-bundle>导出工程</button></form></td>
         </tr>
       {% else %}
         <tr><td colspan="5" class="empty">还没有剧,在右边新建一部</td></tr>
@@ -31,4 +33,17 @@
     </form>
   </section>
 </div>
+<section class="card" id="bundles">
+  <h2>工程包</h2>
+  <p class="hint">导出:整部剧连同全部生成历史(每一版图片 / 视频)、段落与资产的绑定、LLM 审批记录打成一个 zip;有在途任务时不许导出。
+    导入:作为一部<b>新剧</b>导入,不碰已有数据;每个文件按清单校验 sha256。云机登记与成片导出记录不在包里。</p>
+  <ul data-bundle-list>
+    {% for b in bundles %}<li><a href="/media/{{ b }}" data-bundle-link>{{ b.split("/")[-1] }}</a></li>
+    {% else %}<li class="empty">还没有导出过</li>{% endfor %}
+  </ul>
+  <form method="post" action="/bundles/import" enctype="multipart/form-data" class="row" data-import-bundle>
+    <div><label>工程包(.zip)</label><input type="file" name="file" accept=".zip" required data-bundle-file></div>
+    <div><button class="btn primary" type="submit" data-import-button>导入为新剧</button></div>
+  </form>
+</section>
 {% endblock %}

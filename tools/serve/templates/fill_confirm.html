@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card confirm" data-fill-confirm>
+  <h2>确认补全</h2>
+  <p class="cost" data-cost>{{ plan.summary() }}</p>
+  <p class="hint">只提交「要做」的:没有产物的、上次失败至今没有产物的。已有的不动(换版本用「用这一版」),在途的不重复交。</p>
+  <table>
+    <tr><th>目标</th><th>状态</th><th>种子</th><th>说明</th></tr>
+    {% for i in plan.items %}
+      <tr data-fill-item="{{ i.status }}">
+        <td>{{ i.label }}</td>
+        <td class="{{ 'status-ok' if i.status == 'todo' else ('status-bad' if i.status == 'blocked' else '') }}">{{ status[i.status] }}</td>
+        <td>{{ seeds.get((i.target_type, i.target_id), "—") }}</td>
+        <td>{{ i.reason }}{% if i.status == "todo" %}约 {{ "%.1f" | format(i.est_seconds / 60) }} 分钟(估算){% endif %}</td>
+      </tr>
+    {% endfor %}
+  </table>
+  <form method="post" action="{{ action }}">
+    <input type="hidden" name="base_seed" value="{{ base_seed }}">
+    {% for i in plan.todo %}<input type="hidden" name="t" value="{{ i.target_type }}:{{ i.target_id }}">{% endfor %}
+    <input type="hidden" name="confirm" value="1">
+    <button class="btn danger" type="submit" data-confirm {% if not plan.todo %}disabled{% endif %}>确认提交</button>
+    <a class="btn" href="{{ back }}">取消</a>
+  </form>
+</section>
+{% endblock %}

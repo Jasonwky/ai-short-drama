@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% from "_macros.html" import history, checklist %}
+{% from "_macros.html" import history, checklist, fill_form %}
 {% block content %}
 <h1>视频 · 第 {{ ep.number }} 集</h1>
 <p class="hint">MiniMax H3 ref2va,20 步档(实测 4090 上约 43 秒/步)。台词取自段落描述,逐字进提示词;不喂参考音频(闸门 0-4)。</p>
+{{ fill_form("videos", ep.id, seed, "补全本集缺的视频") }}
 {% for s in segs %}
   <section class="card" id="seg-{{ s.row.id }}" data-segment="{{ s.row.id }}">
     <h2>段落 {{ s.row.number }} <a class="btn small" href="/segment/{{ s.row.id }}/edit">编辑段落</a></h2>

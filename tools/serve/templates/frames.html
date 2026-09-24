@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% from "_macros.html" import history %}
+{% from "_macros.html" import history, fill_form %}
 {% block content %}
 <h1>参考帧 · 第 {{ ep.number }} 集</h1>
 <p class="hint">首帧由本段绑定的角色 / 场景 / 道具参考图合成,尺寸取剧的画幅。本版只支持「首帧参考」。也可以用上一段视频的尾帧作本段首帧,两段画面物理连续。</p>
+{{ fill_form("frames", ep.id, seed, "补全本集缺的首帧") }}
 {% for s in segs %}
   <section class="card" id="seg-{{ s.row.id }}" data-segment="{{ s.row.id }}">
     <h2>段落 {{ s.row.number }} <a class="btn small" href="/segment/{{ s.row.id }}/edit">编辑段落</a></h2>

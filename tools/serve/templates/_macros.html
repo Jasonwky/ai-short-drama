@@ -28,6 +28,17 @@
 </div>
 {% endmacro %}
 
+{# 增量补全:只提交缺的 / 失败的,先出确认页 #}
+{% macro fill_form(kind, scope_id, seed, label) %}
+<section class="card">
+  <form method="post" action="/fill/{{ kind }}/{{ scope_id }}" class="row" data-fill="{{ kind }}">
+    <div><label>起始种子(第 n 条用「起始 + n」)</label><input type="number" name="base_seed" value="{{ seed }}"></div>
+    <div><button class="btn" type="submit" data-fill-button>{{ label }}</button></div>
+  </form>
+  <p class="hint">只提交缺的 / 上次失败的;已有、在途、内容不就绪的跳过。提交前先列清单和估算耗时,确认才交。</p>
+</section>
+{% endmacro %}
+
 {# readiness 检查清单:每项一行人话 #}
 {% macro checklist(checks) %}
 <ul class="checklist">

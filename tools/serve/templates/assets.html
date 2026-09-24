@@ -1,7 +1,8 @@
 {% extends "base.html" %}
-{% from "_macros.html" import history, llm_run_list %}
+{% from "_macros.html" import history, llm_run_list, fill_form %}
 {% block content %}
 <h1>资产</h1>
+{{ fill_form("assets", drama.id, seed, "补全本剧缺的资产图") }}
 <section class="card">
   <form method="post" action="/drama/{{ drama.id }}/assets" class="row" data-add-asset>
     <div><label>类型</label><select name="kind"><option value="character">角色</option><option value="scene">场景</option><option value="prop">道具</option></select></div>

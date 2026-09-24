@@ -3,8 +3,9 @@
 
 - **遍历注册表里每一个面板**:打开、断言无 JS 报错、无 5xx、关键元素真渲染出来,逐个截图存档;
 - 再走几条**真点按钮**的链路:参考帧面板点「生成首帧」→ 等图出现;视频面板点「生成视频」→ 等播放器出现;
-  段落 2 点「用段落 1 视频的尾帧」→ 首帧出现 → 生成段落 2 视频;成片面板填服务提供者编码点「导出成片」
-  → 等自检通过、成片播放器出现(本机真 ffmpeg);
+  段落 2 点「用段落 1 视频的尾帧」→ 首帧出现 → 视频面板「补全本集缺的视频」→ 确认页 → 段落 2 视频出现;
+  成片面板填服务提供者编码点「导出成片」→ 等自检通过、成片播放器出现(本机真 ffmpeg);
+  立项面板「导出工程」→ 工程包链接出现 →「导入为新剧」→ 新剧的资产面板打开;
   资产面板点「LLM 定声音」→ 审阅页出现待审产物,且假 LLM 的「批准」按钮是灰的;
 - 在**全新临时目录**里建演示工程、用**假后端**跑 —— 假产物碰不到真工程,页面顶部标着「假后端」;
 - **一律有头**(CLAUDE.md 硬约束,用户 2026-09-24 明确要求):人要看得见它点开了每个面板。
@@ -150,23 +151,31 @@ def run(out_dir: Path) -> dict:
                                          "problems": problems, "screenshot": str(shot)})
 
             seg, seg2 = ids["segment"], ids["segment2"]
-            for n, (key, label, fill, button, wait_sel, timeout) in enumerate((
-                    ("frames", "生成首帧", {}, f"#seg-{seg} [data-generate-frame]", f"#seg-{seg} .current-media img", 40),
-                    ("videos", "生成视频", {}, f"#seg-{seg} [data-generate-video]", f"#seg-{seg} .current-media video", 60),
-                    ("frames", "用段落 1 视频的尾帧", {}, f"#seg-{seg2} [data-tail-frame]",
+            bundle_zip = lambda: next((work / "outputs" / "bundles").glob("*.zip"))   # noqa: E731 —— 上一条链路才产生
+            for n, (key, label, fill, buttons, wait_sel, timeout) in enumerate((
+                    ("frames", "生成首帧", {}, [f"#seg-{seg} [data-generate-frame]"], f"#seg-{seg} .current-media img", 40),
+                    ("videos", "生成视频", {}, [f"#seg-{seg} [data-generate-video]"], f"#seg-{seg} .current-media video", 60),
+                    ("frames", "用段落 1 视频的尾帧", {}, [f"#seg-{seg2} [data-tail-frame]"],
                      f"#seg-{seg2} .current-media img", 20),
-                    ("videos", "生成视频(段落 2)", {}, f"#seg-{seg2} [data-generate-video]",
+                    ("videos", "补全本集缺的视频 → 确认", {}, ["[data-fill-button]", "[data-confirm]"],
                      f"#seg-{seg2} .current-media video", 60),
-                    ("final", "导出成片", {"[data-producer]": "SELFTEST-ONLY"}, "[data-export]",
+                    ("final", "导出成片", {"[data-producer]": "SELFTEST-ONLY"}, ["[data-export]"],
                      '[data-export-state="done"] [data-export-video]', 90),
-                    ("assets", "LLM 定声音", {}, "[data-llm-voice]",
+                    ("projects", "导出工程", {}, ["[data-export-bundle]"], "[data-bundle-link]", 20),
+                    ("projects", "导入为新剧", {"[data-bundle-file]": bundle_zip}, ["[data-import-button]"],
+                     "[data-asset-col=character] [data-asset]", 20),
+                    ("assets", "LLM 定声音", {}, ["[data-llm-voice]"],
                      '[data-llm-state="proposed"] ~ section [data-approve][disabled]', 40)), 1):
                 errors.clear()
                 p = next(x for x in REGISTRY if x.key == key)
                 page.goto(base + url_for(p, ids["drama"], ids["episode"]))
                 for sel, value in fill.items():
-                    page.locator(sel).fill(value)
-                page.locator(button).first.click()
+                    if callable(value):
+                        page.locator(sel).set_input_files(str(value()))
+                    else:
+                        page.locator(sel).fill(value)
+                for button in buttons:
+                    page.locator(button).first.click()
                 appeared = _wait_for(page, wait_sel, timeout)
                 shot = out_dir / f"flow_{n}_{key}.png"
                 page.screenshot(path=str(shot), full_page=True)

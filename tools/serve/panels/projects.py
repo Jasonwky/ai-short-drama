@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""立项:剧列表 + 新建剧(画幅建后不可改 —— 数据库触发器兜底;风格预设是数据)。"""
+"""立项:剧列表 + 新建剧(画幅建后不可改 —— 数据库触发器兜底;风格预设是数据)+ 工程导出 / 导入。"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Form, Request
@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse
 
 from tools.drama import repo
 from tools.drama.styles import STYLES, get_style
+from tools.serve.panels.bundles import listing
 from tools.serve.panels.common import render, rt
 
 router = APIRouter()
@@ -14,10 +15,12 @@ router = APIRouter()
 
 @router.get("/")
 def page(request: Request):
-    dramas = rt(request).store.conn.execute(
+    runtime = rt(request)
+    dramas = runtime.store.conn.execute(
         "SELECT d.*, (SELECT COUNT(*) FROM episode e WHERE e.drama_id = d.id) AS n_episodes "
         "FROM drama d ORDER BY d.id DESC").fetchall()
-    return render(request, "projects.html", "projects", dramas=dramas, style_list=STYLES)
+    return render(request, "projects.html", "projects", dramas=dramas, style_list=STYLES,
+                  bundles=listing(runtime.data_root))
 
 
 @router.post("/dramas")
