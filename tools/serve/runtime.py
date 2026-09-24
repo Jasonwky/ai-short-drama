@@ -8,6 +8,7 @@
 - `Backend` 决定怎么连执行面。正式入口只用真实后端;假后端只给测试与 Playwright 自测。
 - LLM 任务(一次 30–80 秒)放进**单线程**池在后台跑(M-21 落盘单线程),页面立刻返回、自动刷新看结果。
   真实后端点按钮时才读 key:没有 key 就明确报「LLM 不可用」,**不静默切假 LLM**。
+- 成片导出(一集 1–3 分钟 ffmpeg)同样放进单线程池后台跑;控制台启动时把上次没跑完的导出标失败。
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from tools.cut import export
 from tools.drama.db import Store
 from tools.gen import preflight
 from tools.gen.comfy_client import ComfyClient, ComfyUnreachable
@@ -82,6 +84,8 @@ class Runtime:
         self.last_error = ""          # 后台线程最近一次异常,主机面板上显示
         self._llm_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="drama-llm")
         self._llm_jobs: list[Future] = []
+        self._cut_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="drama-cut")
+        self._cut_jobs: list[Future] = []
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -131,7 +135,33 @@ class Runtime:
         for f in self._llm_jobs:
             f.result(timeout=timeout)
 
+    def start_export(self, episode_id: int, producer: str) -> int:
+        """开一次成片导出。前提不满足当场报错(ValueError → 400);满足就后台跑。"""
+        eid = export.begin(self.store, self.data_root, episode_id, producer)
+        journal.append(self.data_root, [f"export {eid} 开始:episode {episode_id}"], prefix="runtime ")
+        self._cut_jobs.append(self._cut_pool.submit(self._finish_export, eid))
+        return eid
+
+    def _finish_export(self, eid: int) -> None:
+        try:
+            export.run(self.store, self.data_root, eid)
+            row = export.get(self.store, eid)
+            journal.append(self.data_root, [f"export {eid} {row['state']}:{row['error'] or row['labeled_path']}"],
+                           prefix="runtime ")
+        except Exception as e:     # 不吞:落成 failed 带原因、进 journal
+            export.fail(self.store, eid, f"{type(e).__name__}: {e}")
+            journal.append(self.data_root, [f"export {eid} 失败:{type(e).__name__}: {e}"], prefix="runtime ")
+
+    def wait_exports(self, timeout: float = 300) -> None:
+        """测试用:等后台导出全部结束。"""
+        for f in self._cut_jobs:
+            f.result(timeout=timeout)
+
     def start(self) -> None:
+        n = export.fail_stale(self.store)
+        if n:
+            journal.append(self.data_root, [f"上次有 {n} 次导出没跑完,已标失败"], prefix="runtime ")
+
         def loop():
             while not self._stop.is_set():
                 try:
@@ -149,3 +179,4 @@ class Runtime:
         if self._thread is not None:
             self._thread.join(timeout=30)
         self._llm_pool.shutdown(wait=False, cancel_futures=True)
+        self._cut_pool.shutdown(wait=False, cancel_futures=True)

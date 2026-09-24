@@ -42,6 +42,7 @@ KEY_SELECTOR = {
     "storyboard": "[data-segment-list] [data-segment]",
     "frames": "[data-generate-frame]",
     "videos": "[data-readiness] .checklist",
+    "final": "[data-export-form]",
     "hosts": "[data-host-status]",
 }
 

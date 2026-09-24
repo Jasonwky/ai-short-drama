@@ -66,3 +66,4 @@ pre.log { background: #111827; color: #e5e7eb; padding: 10px; border-radius: 6px
 .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .side-by-side pre, pre.text { white-space: pre-wrap; background: #fafafa; border: 1px solid var(--line); border-radius: 6px; padding: 8px; max-height: 420px; overflow: auto; font: 13px/1.6 system-ui, "Microsoft YaHei", sans-serif; }
 .rounds li { margin-bottom: 4px; }
+.export-row { border-top: 1px solid var(--line); padding: 8px 0 12px; }
