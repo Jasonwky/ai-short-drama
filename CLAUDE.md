@@ -33,7 +33,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **启动控制台**:`python -X utf8 -m tools.serve.console --db <库> --data-root <素材根>`,浏览器开 http://127.0.0.1:8700/
   (只听本机;后台 worker 随控制台一起跑;没有假后端开关)
 - **Playwright 全面自测**(一律有头,会弹浏览器;没有无头开关):`python -X utf8 -m tools.serve.selftest`;截图在 `outputs/selftest/<时间>/`
-- **验收**:`python -X utf8 -m tools.serve.accept`(三层;不给云机参数时第 3 层 SKIP,总判决 PARTIAL,不算通过)
+- **验收**:`python -X utf8 -m tools.serve.accept`(四层:单测 → 真 LLM 契约 → Playwright 有头 → 真云机整链;
+  没有 `llm.txt` 或不给云机参数时对应层 SKIP,总判决 PARTIAL,不算通过)
+- **LLM**:key 放仓库根 `llm.txt`(已 gitignore,**绝不提交**);服务 SynScale(OpenAI 兼容,只有 http),默认模型见 `tools/llm/service.py`
+- **真 LLM 契约测试**(花钱、每条 10–90 秒,默认 `pytest -q` 不跑):`python -X utf8 -m pytest -m real_llm -q`;记录在 `tmp/contract_llm/`
 
 ### 代码布局(读多个文件才看得出的部分)
 
@@ -47,6 +50,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 控制台:`tools/serve/app.py` + `tools/serve/panels/`。**面板登记在 `panels/__init__.py` 的 `REGISTRY`**,
   Playwright 自测遍历这张表;新面板 = 登记 + 在 `selftest.KEY_SELECTOR` 给判据(`test_selftest` 会拦住漏给的)。
   面板只**规划**任务,提交与推进由 `runtime` 里的后台 worker 负责。假后端(`tools/serve/fakes.py`)只进测试与自测
+- `tools/llm/`:LLM 一律经 `gate.run_gated` —— 只用 strict 工具调用、客户端 JSON Schema 再校验、代码判卷、带错误回炉、
+  轮次上限 fail-loud、每轮落 `journal/llm/`。产物进 `llm_run`(落盘不可改、批准即锁定、假产物触发器拦审批),
+  **人在审阅页批准才写回**。新增 LLM 任务 = 在 `service.TASKS` 登记一个模块(SYSTEM / schema / user_message / judge_factory / apply)
+  + 一条真 LLM 契约测试
 - `tools/gate0/` 是闸门 0 的**实验脚本**,不是产品代码;正式逻辑以 `tools/drama/` 为准
 
 已有调研:`docs/superpowers/spike-results/2026-09-22-AI短剧成熟工作流调研.md`。
@@ -171,6 +178,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   人工闸门**。所以面板"看得见效果"不是锦上添花,是这类风险的唯一防线。
 
 ### 实现补充(2026-09-06,已用 `claude-api` 权威参考核实)
+
+> **2026-09-24 起本项目实际用的是 SynScale(OpenAI 兼容),不是 Anthropic API**,下面的 Anthropic 细节作为参考保留。
+> 实测(`spike-results/2026-09-24-SynScale结构化输出实测.md`):`response_format: json_schema` **被静默忽略**;
+> strict 工具调用能把 schema 送进模型,但**不是服务端约束解码**(出过非法 JSON、多余字段、enum 外的值)—— 客户端校验是唯一保证。
 
 - **硬约束已经有了,不要引第三方库。** Anthropic Structured Outputs 就是 **constrained decoding**(服务端做)。
   canonical 形态是 `client.messages.create(output_config={"format": {...}})`;推荐用 `client.messages.parse(output_format=Model)`。
