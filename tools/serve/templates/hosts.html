@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>主机</h1>
+{% if last_error %}<section class="card refused"><p class="reason">后台 worker 最近一次异常:{{ last_error }}</p></section>{% endif %}
+{% for h in hosts %}
+  <section class="card" data-host="{{ h.host.id }}">
+    <h2>{{ h.host.label }} · {{ h.host.ssh_user }}@{{ h.host.ssh_host }}:{{ h.host.ssh_port }}</h2>
+    {% if h.status %}
+      <p class="{% if h.status.comfy_ok %}status-ok{% else %}status-bad{% endif %}" data-host-status>{{ h.status.message }}</p>
+      <p class="hint">隧道 {{ "✅" if h.status.tunnel_ok else "❌" }} · ComfyUI {{ "✅" if h.status.comfy_ok else "❌" }} · 最近一轮 {{ h.status.last_tick }}</p>
+    {% else %}
+      <p class="hint" data-host-status>worker 还没跑完第一轮</p>
+    {% endif %}
+    <p class="hint">本机端口 {{ h.host.local_port }} → 云机 ComfyUI {{ h.host.remote_comfy_port }} · 模型目录 {{ h.host.models_dir }} · 私钥文件 {{ h.host.key_ref }}</p>
+    <form method="post" action="/host/{{ h.host.id }}/port" class="row">
+      <div><label>SSH 端口(AutoDL 每次开机都会变)</label><input type="number" name="ssh_port" value="{{ h.host.ssh_port }}"></div>
+      <div><button class="btn" type="submit">改端口</button></div>
+    </form>
+  </section>
+{% else %}
+  <section class="card empty">还没有登记云机</section>
+{% endfor %}
+<section class="card">
+  <h2>登记云机</h2>
+  <form method="post" action="/hosts" data-add-host>
+    <div class="row">
+      <div><label>名字</label><input type="text" name="label" value="4090" required></div>
+      <div><label>SSH 地址</label><input type="text" name="ssh_host" required></div>
+      <div><label>SSH 端口</label><input type="number" name="ssh_port" required></div>
+      <div><label>用户</label><input type="text" name="ssh_user" value="root"></div>
+    </div>
+    <label>私钥<b>文件路径</b>(不要粘贴私钥内容 —— 私钥不入库)</label><input type="text" name="key_ref" required>
+    <div class="row">
+      <div><label>本机端口</label><input type="number" name="local_port" value="8188"></div>
+      <div><label>显存 GB</label><input type="number" step="1" name="vram_gb" value="24"></div>
+      <div style="flex: 1"><label>云机模型目录</label><input type="text" name="models_dir" value="/root/autodl-tmp/comfyui-models"></div>
+    </div>
+    <button class="btn primary" type="submit">登记</button>
+  </form>
+</section>
+<section class="card">
+  <h2>worker 日志(journal/worker.log 最近 40 行)</h2>
+  <pre class="log" data-journal>{% for line in log %}{{ line }}
+{% else %}(还没有记录){% endfor %}</pre>
+</section>
+{% endblock %}
