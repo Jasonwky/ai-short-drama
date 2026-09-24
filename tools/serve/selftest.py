@@ -2,7 +2,8 @@
 """Playwright 全面自测(CLAUDE.md 控制台纪律,硬门)。
 
 - **遍历注册表里每一个面板**:打开、断言无 JS 报错、无 5xx、关键元素真渲染出来,逐个截图存档;
-- 再走一条**真点按钮**的链路:参考帧面板点「生成首帧」→ 等图出现;视频面板点「生成视频」→ 等播放器出现;
+- 再走几条**真点按钮**的链路:参考帧面板点「生成首帧」→ 等图出现;视频面板点「生成视频」→ 等播放器出现;
+  资产面板点「LLM 定声音」→ 审阅页出现待审产物,且假 LLM 的「批准」按钮是灰的;
 - 在**全新临时目录**里建演示工程、用**假后端**跑 —— 假产物碰不到真工程,页面顶部标着「假后端」;
 - **一律有头**(CLAUDE.md 硬约束,用户 2026-09-24 明确要求):人要看得见它点开了每个面板。
   **不提供 `--headless` 开关** —— 有头跑抓到过无头发现不了的问题(浏览器请求 /favicon.ico 的 404)。
@@ -53,7 +54,7 @@ def seed_demo(store: Store, data_root: Path) -> dict:
     d = repo.create_drama(store, "玉佩(自测)", "9:16", "realistic")
     ep = repo.add_episode(store, d, 1, "script", script="林小雨在老宅庭院里回忆母亲。" * 20)
     lin = repo.add_character(store, d, "林小雨", turnaround_path="assets/lin.png", voice_desc="年轻女声,清亮",
-                             final_prompt="A young woman in a cream blouse.")
+                             appearance="二十出头,长发,素色上衣", final_prompt="A young woman in a cream blouse.")
     yard = repo.add_scene(store, d, "老宅庭院", image_path="assets/yard.png", final_prompt="An empty courtyard at dusk.")
     jade = repo.add_prop(store, d, "玉佩", image_path="assets/jade.png", final_prompt="A green jade pendant.")
     seg = repo.add_segment(
@@ -139,9 +140,11 @@ def run(out_dir: Path) -> dict:
                                          "problems": problems, "screenshot": str(shot)})
 
             seg = ids["segment"]
-            for key, button, wait_sel, timeout in (
-                    ("frames", "[data-generate-frame]", f"#seg-{seg} .current-media img", 40),
-                    ("videos", "[data-generate-video]", f"#seg-{seg} .current-media video", 60)):
+            for key, label, button, wait_sel, timeout in (
+                    ("frames", "生成首帧", "[data-generate-frame]", f"#seg-{seg} .current-media img", 40),
+                    ("videos", "生成视频", "[data-generate-video]", f"#seg-{seg} .current-media video", 60),
+                    ("assets", "LLM 定声音", "[data-llm-voice]",
+                     '[data-llm-state="proposed"] ~ section [data-approve][disabled]', 40)):
                 errors.clear()
                 p = next(x for x in REGISTRY if x.key == key)
                 page.goto(base + url_for(p, ids["drama"], ids["episode"]))
@@ -150,7 +153,7 @@ def run(out_dir: Path) -> dict:
                 shot = out_dir / f"flow_{key}.png"
                 page.screenshot(path=str(shot), full_page=True)
                 problems = list(errors) + ([] if appeared else [f"{timeout}s 内没等到 {wait_sel}"])
-                report["flows"].append({"flow": f"{key}: 点「生成」→ 产物出现在面板上", "ok": not problems,
+                report["flows"].append({"flow": f"{key}: 点「{label}」→ 产物出现在面板上", "ok": not problems,
                                         "problems": problems, "screenshot": str(shot)})
             browser.close()
     finally:

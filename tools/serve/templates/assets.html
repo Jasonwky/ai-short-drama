@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import history %}
+{% from "_macros.html" import history, llm_run_list %}
 {% block content %}
 <h1>资产</h1>
 <section class="card">
@@ -30,6 +30,10 @@
             <div><label>种子</label><input type="number" name="seed" value="{{ seed + loop.index }}"></div>
             <div><button class="btn primary" type="submit" data-generate>生成参考图</button></div>
           </form>
+          {% if col.table == "character" %}
+            <form method="post" action="/llm/start/voice/{{ it.row.id }}"><button class="btn small" type="submit" data-llm-voice title="角色设定与台词会发送给 LLM 服务">LLM 定声音</button></form>
+            {{ llm_run_list(it.llm_runs, llm_state) }}
+          {% endif %}
           {{ history(it.tasks, it.current, state_label, "/drama/" ~ drama.id ~ "/assets") }}
         </div>
       {% else %}

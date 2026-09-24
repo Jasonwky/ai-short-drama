@@ -13,6 +13,7 @@ from fastapi.responses import RedirectResponse
 from tools.drama import repo
 from tools.drama.tasks import tasks_for
 from tools.gen.assets import SPEC, ensure_canvas, plan_asset_image
+from tools.llm import runs
 from tools.serve.panels.common import new_seed, render, rt
 
 router = APIRouter()
@@ -36,7 +37,8 @@ def page(request: Request, drama_id: int):
     for table in ("character", "scene", "prop"):
         items = []
         for row in store.conn.execute(f"SELECT * FROM {table} WHERE drama_id = ? ORDER BY id", (drama_id,)):
-            items.append({"row": row, "current": row[SPEC[table][0]], "tasks": tasks_for(store, table, row["id"])})
+            items.append({"row": row, "current": row[SPEC[table][0]], "tasks": tasks_for(store, table, row["id"]),
+                          "llm_runs": runs.history(store, "character", row["id"], "voice") if table == "character" else []})
         cols.append({"table": table, "label": KIND_LABEL[table], "entries": items, "fields": FIELDS[table]})
     return render(request, "assets.html", "assets", drama_id=drama_id, cols=cols, seed=new_seed())
 

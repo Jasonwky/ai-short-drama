@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% from "_macros.html" import llm_run_list %}
 {% block content %}
 <h1>剧本</h1>
 <section class="card">
-  <p class="hint">本版支持<b>自带剧本</b>;小说改编、梗概生成需要 LLM,在 P4 接入。</p>
+  <p class="hint">三个入口:直接粘贴<b>自带剧本</b>;从<b>梗概</b>让 LLM 写;小说改编先去「大纲」面板拆集,再在这里<b>按大纲改写</b>。LLM 写的剧本要你批准才写回。</p>
   <form method="post" action="/drama/{{ drama.id }}/episodes"><button class="btn" type="submit" data-add-episode>+ 新建一集</button></form>
 </section>
 {% for e in eps %}
@@ -16,6 +17,28 @@
       <p class="hint">按字数估算本集应拆 <b>{{ e.range[0] }}–{{ e.range[1] }}</b> 个段落;当前 {{ e.n_segments }} 个。</p>
       {% for p in e.problems %}<p class="status-bad">❌ {{ p }}</p>{% endfor %}
     {% endif %}
+    {% if e.n_segments == 0 %}
+      <div class="row">
+        <form method="post" action="/llm/start/script_synopsis/{{ e.row.id }}" style="flex: 2; min-width: 320px" data-llm-synopsis>
+          <label>从梗概生成(LLM)</label><textarea name="synopsis" placeholder="一两段梗概,至少 20 字"></textarea>
+          <label>目标时长(分钟)</label>
+          <select name="minutes"><option>1</option><option selected>2</option><option>3</option></select>
+          <button class="btn" type="submit">LLM 写剧本</button>
+          <p class="hint">梗概会发送给 LLM 服务;生成的剧本要你批准才写回。</p>
+        </form>
+        {% if e.row.source_type == "novel" %}
+          <form method="post" action="/llm/start/script_adapt/{{ e.row.id }}" style="flex: 1; min-width: 200px" data-llm-adapt>
+            <label>按大纲改写原文(LLM)</label>
+            <select name="minutes"><option>1</option><option selected>2</option><option>3</option></select>
+            <button class="btn" type="submit">LLM 改写</button>
+            <p class="hint">本集原文与大纲会发送给 LLM 服务。</p>
+          </form>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="hint">这一集已经拆了分镜,LLM 重写剧本本版不支持(会让全部段落作废)。</p>
+    {% endif %}
+    {{ llm_run_list(e.llm_runs, llm_state) }}
   </section>
 {% else %}
   <section class="card empty">还没有集,点上面「新建一集」</section>

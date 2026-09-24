@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import llm_run_list %}
 {% block content %}
 <h1>分镜 · 第 {{ ep.number }} 集</h1>
 <section class="card">
@@ -25,5 +26,16 @@
     {% endfor %}
   </table>
   <form method="post" action="/episode/{{ ep.id }}/segments"><button class="btn primary" type="submit" data-add-segment>+ 新建段落</button></form>
+</section>
+<section class="card">
+  <h2>LLM 拆分镜</h2>
+  {% if not segs %}
+    <p class="hint">按本集剧本自动拆段落:场景 / 角色 / 道具只能从这部剧已有的资产里选;台词逐字照抄剧本;时长由代码按台词字数算。
+      不合格自动退回重做,<b>你批准后</b>才会建出段落。剧本会发送给 LLM 服务。</p>
+    <form method="post" action="/llm/start/storyboard/{{ ep.id }}"><button class="btn primary" type="submit" data-llm-storyboard>LLM 拆分镜</button></form>
+  {% else %}
+    <p class="hint">这一集已经有段落。本版只给空集拆分镜。</p>
+  {% endif %}
+  {{ llm_run_list(llm_runs, llm_state) }}
 </section>
 {% endblock %}

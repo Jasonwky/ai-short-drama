@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""剧本:按集编辑剧本。本版只有「自带剧本」入口;小说改编 / 梗概生成要 LLM,在 P4。
+"""剧本:按集编辑剧本。三个入口汇到同一份剧本:自带剧本(直接编辑)、梗概生成、小说大纲改写(后两者走 LLM,人审批才写回)。
 
 改剧本 = 该集全部段落作废(`invalidation` 的 script 事件)—— 有已生成产物时先报代价再确认。
 """
@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse
 
 from tools.drama import invalidation, repo, rules
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
+from tools.llm import runs
 from tools.serve.panels.common import confirm_page, needs_confirm, render, rt
 
 router = APIRouter()
@@ -25,7 +26,8 @@ def page(request: Request, drama_id: int):
         n = store.conn.execute("SELECT COUNT(*) FROM segment WHERE episode_id = ?", (e["id"],)).fetchone()[0]
         lo, hi = rules.expected_segment_range(e["script"]) if e["script"].strip() else (0, 0)
         eps.append({"row": e, "n_segments": n, "range": (lo, hi),
-                    "problems": rules.check_episode(e["script"], n) if e["script"].strip() and n else []})
+                    "problems": rules.check_episode(e["script"], n) if e["script"].strip() and n else [],
+                    "llm_runs": [r for r in runs.history(store, "episode", e["id"]) if r["task"].startswith("script_")]})
     return render(request, "script.html", "script", drama_id=drama_id, eps=eps)
 
 

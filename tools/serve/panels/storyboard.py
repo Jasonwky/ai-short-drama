@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from tools.drama import invalidation, repo, rules
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
+from tools.llm import runs
 from tools.serve.panels.common import confirm_page, needs_confirm, readiness, render, rt
 
 router = APIRouter()
@@ -51,7 +52,8 @@ def page(request: Request, episode_id: int):
                                    "WHERE sp.segment_id = ? ORDER BY sp.position", s["id"]),
             "missing": [c.msg for c in checks if not c.ok],
         })
-    return render(request, "storyboard.html", "storyboard", episode_id=episode_id, ep=ep, segs=segs)
+    return render(request, "storyboard.html", "storyboard", episode_id=episode_id, ep=ep, segs=segs,
+                  llm_runs=runs.history(store, "episode", episode_id, "storyboard"))
 
 
 @router.post("/episode/{episode_id}/segments")
