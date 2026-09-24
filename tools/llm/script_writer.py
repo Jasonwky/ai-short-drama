@@ -37,6 +37,12 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["scenes"
                                "speaker": {"type": ["string", "null"]}, "text": {"type": "string"}}}}}}}}}
 
 
+def char_range(minutes: int) -> tuple[int, int]:
+    """目标字数区间(±20%),按 `rules.count_chars` 的口径:不含标点和空白。"""
+    mid = minutes * rules.CHARS_PER_MINUTE
+    return round(mid * 0.8), round(mid * 1.2)
+
+
 def _base(store: Store, episode_id: int, minutes: int) -> tuple:
     ep = repo.get(store, "episode", episode_id)
     problems = []
@@ -74,7 +80,9 @@ def schema(ctx: dict) -> dict:
 
 def user_message(ctx: dict) -> str:
     who = "、".join(ctx["characters"]) or "(还没有,按需要起名)"
-    head = f"目标时长:{ctx['minutes']} 分钟(约 {ctx['minutes'] * rules.CHARS_PER_MINUTE} 字)\n已有角色:{who}\n"
+    lo, hi = char_range(ctx["minutes"])
+    head = (f"目标时长:{ctx['minutes']} 分钟,剧本正文要 {lo}–{hi} 字(按不含标点和空格的字数计)\n"
+            f"已有角色:{who}\n")
     if ctx["kind"] == "adapt":
         return head + f"本集大纲:\n{ctx['outline']}\n\n<source>\n{ctx['source']}\n</source>\n请把原文改编成本集剧本。"
     return head + f"<source>\n{ctx['source']}\n</source>\n请根据这段梗概写本集剧本。"
@@ -93,7 +101,7 @@ def render(args: dict) -> str:
 
 
 def judge_factory(ctx: dict):
-    target = ctx["minutes"] * 60
+    lo, hi = char_range(ctx["minutes"])
 
     def judge(args: dict) -> list[str]:
         problems = []
@@ -115,10 +123,12 @@ def judge_factory(ctx: dict):
                     problems.append(f"{where}:{ln['kind']} 行的 speaker 必须是 null")
         if n_dialogue == 0:
             problems.append("整集没有一句台词")
-        text = render(args)
-        sec = rules.count_chars(text) / rules.CHARS_PER_MINUTE * 60
-        if not target * 0.8 <= sec <= target * 1.2:
-            problems.append(f"篇幅约 {sec:.0f} 秒({rules.count_chars(text)} 字),目标 {target} 秒 ±20%")
+        # 反馈给出具体字数:验收时真 LLM 只拿到「约 45 秒,目标 60 秒」,不知道补多少,3 轮越改越短
+        n = rules.count_chars(render(args))
+        if not lo <= n <= hi:
+            gap = (lo + hi) // 2 - n
+            what = f"还差约 {gap} 字(多写动作描写和台词)" if gap > 0 else f"多了约 {-gap} 字(删减)"
+            problems.append(f"篇幅不对:要 {lo}–{hi} 字(不含标点),现在 {n} 字,{what}")
         return problems
     return judge
 

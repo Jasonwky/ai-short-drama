@@ -49,6 +49,19 @@ def test_length_is_judged_against_the_target():
     assert any("篇幅" in p for p in sw.judge_factory({"minutes": 3})(args))
 
 
+def test_length_feedback_says_how_many_characters_to_add():
+    # 验收时真 LLM 3 轮没收敛:反馈只说「约 45 秒,目标 60 秒」,模型不知道该补多少,越改越短
+    args = _script_args(40)
+    n = rules.count_chars(sw.render(args))
+    (msg,) = [p for p in sw.judge_factory({"minutes": 3})(args) if "篇幅" in p]
+    assert "1200–1800 字" in msg and f"现在 {n} 字" in msg and f"还差约 {1500 - n} 字" in msg
+
+
+def test_prompt_says_how_characters_are_counted():
+    ctx = {"kind": "synopsis", "source": "x" * 30, "outline": "", "minutes": 2, "characters": []}
+    assert "800–1200 字" in sw.user_message(ctx) and "不含标点" in sw.user_message(ctx)
+
+
 def test_format_violations_go_back():
     args = _script_args(40)
     args["scenes"][0]["lines"][1]["speaker"] = None
