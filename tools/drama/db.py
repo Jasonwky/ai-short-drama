@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -162,12 +162,43 @@ BEFORE UPDATE OF kind, target_type, target_id, model, params_json, seed, prompt,
 BEGIN SELECT RAISE(ABORT, 'task 的生成参数不可变 —— 这是溯源的前提;要重跑请新建一条 task'); END;
 """
 
+# v3:LLM 产物。落盘即不可改;人工批准即锁定;假 LLM 的产物永远过不了审批(CLAUDE.md LLM 纪律)。
+LLM_RUN_DDL = [
+    """CREATE TABLE llm_run (
+  id INTEGER PRIMARY KEY,
+  task TEXT NOT NULL,
+  target_type TEXT NOT NULL CHECK (target_type IN ('drama', 'episode', 'character')),
+  target_id INTEGER NOT NULL,
+  model TEXT NOT NULL,
+  input_sha TEXT NOT NULL,
+  params_json TEXT NOT NULL,
+  llm_mode TEXT NOT NULL CHECK (llm_mode IN ('real', 'fake')),
+  state TEXT NOT NULL DEFAULT 'running' CHECK (state IN ('running', 'proposed', 'failed', 'approved', 'rejected')),
+  output_json TEXT,
+  journal_path TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  decided_at TEXT
+)""",
+    """CREATE TRIGGER llm_run_identity_immutable
+BEFORE UPDATE OF task, target_type, target_id, model, input_sha, params_json, llm_mode, created_at ON llm_run
+BEGIN SELECT RAISE(ABORT, 'llm_run 的身份字段不可变'); END""",
+    """CREATE TRIGGER llm_run_output_locked BEFORE UPDATE OF output_json ON llm_run
+WHEN OLD.output_json IS NOT NULL
+BEGIN SELECT RAISE(ABORT, 'LLM 产物一经落盘不可改 —— 要改就重跑一条'); END""",
+    """CREATE TRIGGER llm_run_fake_never_approved BEFORE UPDATE OF state ON llm_run
+WHEN NEW.state = 'approved' AND OLD.llm_mode = 'fake'
+BEGIN SELECT RAISE(ABORT, '假 LLM 的产物不许通过审批闸门'); END""",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in LLM_RUN_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
     #     host.models_dir 给 LoRA 预检定位远端模型文件
     1: ["ALTER TABLE task ADD COLUMN state_since TEXT",
         "ALTER TABLE host ADD COLUMN models_dir TEXT NOT NULL DEFAULT ''"],
+    2: LLM_RUN_DDL,
 }
 
 

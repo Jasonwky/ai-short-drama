@@ -14,6 +14,7 @@ def _make_v1(path):
     d = repo.create_drama(s, "玉佩", "9:16")
     s.conn.execute("ALTER TABLE task DROP COLUMN state_since")
     s.conn.execute("ALTER TABLE host DROP COLUMN models_dir")
+    s.conn.execute("DROP TABLE llm_run")          # v3 新增(触发器随表一起删)
     s.conn.execute("UPDATE meta SET value = '1' WHERE key = 'schema_version'")
     s.close()
     return d
