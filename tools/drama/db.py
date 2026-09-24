@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -192,6 +192,36 @@ BEGIN SELECT RAISE(ABORT, '假 LLM 的产物不许通过审批闸门'); END""",
 ]
 SCHEMA += "".join(f"{stmt};\n" for stmt in LLM_RUN_DDL)
 
+# v4:成片导出。ProduceID 与溯源报告绑定,身份字段不可改;导出结束(done / failed)后整行不可改。
+# setting 只收白名单里的键:服务提供者编码是★必答项,由运营方填,记住后下次预填。
+EXPORT_DDL = [
+    """CREATE TABLE setting (
+  key TEXT PRIMARY KEY CHECK (key IN ('content_producer')),
+  value TEXT NOT NULL
+)""",
+    """CREATE TABLE export (
+  id INTEGER PRIMARY KEY,
+  episode_id INTEGER NOT NULL REFERENCES episode(id),
+  produce_id TEXT NOT NULL UNIQUE,
+  content_producer TEXT NOT NULL,
+  inputs_json TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'running' CHECK (state IN ('running', 'done', 'failed')),
+  labeled_path TEXT,
+  plain_path TEXT,
+  report_path TEXT,
+  checks_json TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  finished_at TEXT
+)""",
+    """CREATE TRIGGER export_identity_immutable
+BEFORE UPDATE OF episode_id, produce_id, content_producer, inputs_json, created_at ON export
+BEGIN SELECT RAISE(ABORT, '导出记录的身份字段不可变 —— ProduceID 与溯源报告绑定'); END""",
+    """CREATE TRIGGER export_finished_locked BEFORE UPDATE ON export WHEN OLD.state != 'running'
+BEGIN SELECT RAISE(ABORT, '导出已结束,记录不可再改 —— 要重导就新建一条'); END""",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in EXPORT_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -199,6 +229,7 @@ MIGRATIONS: dict[int, list[str]] = {
     1: ["ALTER TABLE task ADD COLUMN state_since TEXT",
         "ALTER TABLE host ADD COLUMN models_dir TEXT NOT NULL DEFAULT ''"],
     2: LLM_RUN_DDL,
+    3: EXPORT_DDL,
 }
 
 
