@@ -2,7 +2,7 @@
 {% from "_macros.html" import history %}
 {% block content %}
 <h1>参考帧 · 第 {{ ep.number }} 集</h1>
-<p class="hint">首帧由本段绑定的角色 / 场景 / 道具参考图合成,尺寸取剧的画幅。本版只支持「首帧参考」;尾帧从上一镜视频抽取在 P5。</p>
+<p class="hint">首帧由本段绑定的角色 / 场景 / 道具参考图合成,尺寸取剧的画幅。本版只支持「首帧参考」。也可以用上一段视频的尾帧作本段首帧,两段画面物理连续。</p>
 {% for s in segs %}
   <section class="card" id="seg-{{ s.row.id }}" data-segment="{{ s.row.id }}">
     <h2>段落 {{ s.row.number }} <a class="btn small" href="/segment/{{ s.row.id }}/edit">编辑段落</a></h2>
@@ -16,6 +16,11 @@
         <label>种子</label><input type="number" name="seed" value="{{ seed + loop.index }}">
         <button class="btn primary" type="submit" data-generate-frame>生成首帧</button>
       </form>
+      {% if s.prev %}
+        <form method="post" action="/segment/{{ s.prev.id }}/tailframe">
+          <button class="btn" type="submit" data-tail-frame {% if not s.prev.video_path %}disabled title="段落 {{ s.prev.number }} 还没有视频"{% endif %}>用段落 {{ s.prev.number }} 视频的尾帧</button>
+        </form>
+      {% endif %}
     </div>
     {{ history(s.tasks, s.row.first_frame_path, state_label, "/episode/" ~ ep.id ~ "/frames") }}
   </section>

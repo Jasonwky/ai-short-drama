@@ -3,6 +3,8 @@
 
 - **遍历注册表里每一个面板**:打开、断言无 JS 报错、无 5xx、关键元素真渲染出来,逐个截图存档;
 - 再走几条**真点按钮**的链路:参考帧面板点「生成首帧」→ 等图出现;视频面板点「生成视频」→ 等播放器出现;
+  段落 2 点「用段落 1 视频的尾帧」→ 首帧出现 → 生成段落 2 视频;成片面板填服务提供者编码点「导出成片」
+  → 等自检通过、成片播放器出现(本机真 ffmpeg);
   资产面板点「LLM 定声音」→ 审阅页出现待审产物,且假 LLM 的「批准」按钮是灰的;
 - 在**全新临时目录**里建演示工程、用**假后端**跑 —— 假产物碰不到真工程,页面顶部标着「假后端」;
 - **一律有头**(CLAUDE.md 硬约束,用户 2026-09-24 明确要求):人要看得见它点开了每个面板。
@@ -48,7 +50,7 @@ KEY_SELECTOR = {
 
 
 def seed_demo(store: Store, data_root: Path) -> dict:
-    """一部写实风格的演示剧:一集、一个素材齐全的段落、一台假云机。"""
+    """一部写实风格的演示剧:一集、两个素材齐全的段落(第 2 段的首帧留给尾帧衔接)、一台假云机。"""
     for rel in ("assets/lin.png", "assets/yard.png", "assets/jade.png"):
         (data_root / rel).parent.mkdir(parents=True, exist_ok=True)
         (data_root / rel).write_bytes(_png(96, 160, 150))
@@ -65,9 +67,16 @@ def seed_demo(store: Store, data_root: Path) -> dict:
         video_prompt="@林小雨 在 @老宅庭院 低头看 @玉佩,然后抬眼说话")
     repo.bind_characters(store, seg, [lin])
     repo.bind_props(store, seg, [jade])
+    seg2 = repo.add_segment(
+        store, ep, 2, scene_id=yard, duration_sec=8.0, reference_mode="first",
+        description="【镜头1】林小雨把玉佩收进怀里。【镜头2】林小雨说：「我会一直带着它。」",
+        image_prompt="@林小雨 站在 @老宅庭院 里,把 @玉佩 收进怀里",
+        video_prompt="@林小雨 在 @老宅庭院 把 @玉佩 收进怀里,抬头说话")
+    repo.bind_characters(store, seg2, [lin])
+    repo.bind_props(store, seg2, [jade])
     add_host(store, label="假云机", ssh_host="fake.local", ssh_port=1, ssh_user="root", key_ref="C:/fake/key",
              local_port=8188, vram_gb=24.0, models_dir="/fake/models")
-    return {"drama": d, "episode": ep, "segment": seg}
+    return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2}
 
 
 def _free_port() -> int:
@@ -140,18 +149,26 @@ def run(out_dir: Path) -> dict:
                 report["panels"].append({"panel": p.key, "title": p.title, "url": url, "ok": not problems,
                                          "problems": problems, "screenshot": str(shot)})
 
-            seg = ids["segment"]
-            for key, label, button, wait_sel, timeout in (
-                    ("frames", "生成首帧", "[data-generate-frame]", f"#seg-{seg} .current-media img", 40),
-                    ("videos", "生成视频", "[data-generate-video]", f"#seg-{seg} .current-media video", 60),
-                    ("assets", "LLM 定声音", "[data-llm-voice]",
-                     '[data-llm-state="proposed"] ~ section [data-approve][disabled]', 40)):
+            seg, seg2 = ids["segment"], ids["segment2"]
+            for n, (key, label, fill, button, wait_sel, timeout) in enumerate((
+                    ("frames", "生成首帧", {}, f"#seg-{seg} [data-generate-frame]", f"#seg-{seg} .current-media img", 40),
+                    ("videos", "生成视频", {}, f"#seg-{seg} [data-generate-video]", f"#seg-{seg} .current-media video", 60),
+                    ("frames", "用段落 1 视频的尾帧", {}, f"#seg-{seg2} [data-tail-frame]",
+                     f"#seg-{seg2} .current-media img", 20),
+                    ("videos", "生成视频(段落 2)", {}, f"#seg-{seg2} [data-generate-video]",
+                     f"#seg-{seg2} .current-media video", 60),
+                    ("final", "导出成片", {"[data-producer]": "SELFTEST-ONLY"}, "[data-export]",
+                     '[data-export-state="done"] [data-export-video]', 90),
+                    ("assets", "LLM 定声音", {}, "[data-llm-voice]",
+                     '[data-llm-state="proposed"] ~ section [data-approve][disabled]', 40)), 1):
                 errors.clear()
                 p = next(x for x in REGISTRY if x.key == key)
                 page.goto(base + url_for(p, ids["drama"], ids["episode"]))
+                for sel, value in fill.items():
+                    page.locator(sel).fill(value)
                 page.locator(button).first.click()
                 appeared = _wait_for(page, wait_sel, timeout)
-                shot = out_dir / f"flow_{key}.png"
+                shot = out_dir / f"flow_{n}_{key}.png"
                 page.screenshot(path=str(shot), full_page=True)
                 problems = list(errors) + ([] if appeared else [f"{timeout}s 内没等到 {wait_sel}"])
                 report["flows"].append({"flow": f"{key}: 点「{label}」→ 产物出现在面板上", "ok": not problems,

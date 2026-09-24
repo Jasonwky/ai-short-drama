@@ -21,6 +21,9 @@ def test_demo_segment_only_lacks_its_first_frame(tmp_path):
     checks = segment_readiness(store, ids["segment"], video_cap=MINIMAX_H3, image_cap=QWEN_IMAGE_EDIT_2511,
                                host_ok=True, host_msg="", model_ok=True, model_msg="")
     assert [c.key for c in checks if not c.ok] == ["refs_ready"]
+    checks = segment_readiness(store, ids["segment2"], video_cap=MINIMAX_H3, image_cap=QWEN_IMAGE_EDIT_2511,
+                               host_ok=True, host_msg="", model_ok=True, model_msg="")
+    assert [c.key for c in checks if not c.ok] == ["refs_ready"]      # 第 2 段的首帧由尾帧衔接补上
     store.close()
 
 
