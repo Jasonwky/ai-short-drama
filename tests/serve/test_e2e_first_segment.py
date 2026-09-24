@@ -4,8 +4,7 @@ import json
 
 import pytest
 
-from tests.serve.fakes import FakeComfy
-from tests.serve.test_worker import FakeTunnel
+from tools.serve.fakes import FakeComfy, FakeTunnel
 from tools.serve.e2e_first_segment import run
 from tools.serve.worker import Worker
 

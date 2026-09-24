@@ -1,25 +1,11 @@
 # -*- coding: utf-8 -*-
 import pytest
 
-from tests.serve.fakes import FakeComfy
 from tools.drama import repo
 from tools.gen.planner import plan_first_frame, plan_video
+from tools.serve.fakes import FakeComfy, FakeTunnel
 from tools.serve.hosts import set_ssh_port
 from tools.serve.worker import Worker, main
-
-
-class FakeTunnel:
-    def __init__(self, up=True, owned=True):
-        self.up, self.owned, self.stopped = up, owned, []
-
-    def ensure(self, host):
-        return self.up
-
-    def owns(self, host_id):
-        return self.owned
-
-    def stop(self, host_id):
-        self.stopped.append(host_id)
 
 
 def _no_ssh(host):
