@@ -2,8 +2,8 @@
 """面板注册表。**Playwright 自测遍历的就是这张表** —— 新面板只要登记进来,自测自动覆盖它。
 
 scope 决定 URL 要什么上下文:global 不要;drama 要 drama_id;episode 要 episode_id。
-大纲(P4,依赖 LLM)与成片(P5)在它们有真后端之前**不登记** —— 没有后端的面板只能是空壳,
-违反 CLAUDE.md「每个环节是它自己真正的操作面板」。
+成片(P5)在有真后端之前**不登记** —— 没有后端的面板只能是空壳,
+违反 CLAUDE.md「每个环节是它自己真正的操作面板」。大纲在 P4 接上 LLM 后登记。
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ class Panel:
 
 REGISTRY: tuple[Panel, ...] = (
     Panel("projects", "立项", "global", "/"),
+    Panel("outline", "大纲", "drama", "/drama/{drama_id}/outline"),
     Panel("script", "剧本", "drama", "/drama/{drama_id}/script"),
     Panel("assets", "资产", "drama", "/drama/{drama_id}/assets"),
     Panel("storyboard", "分镜", "episode", "/episode/{episode_id}/storyboard"),

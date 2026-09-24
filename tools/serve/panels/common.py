@@ -22,6 +22,7 @@ TEMPLATES.env.filters["fromjson"] = json.loads
 STATE_LABEL = {"pending": "待提交", "queued": "已提交", "running": "生成中", "waiting_host": "等云机",
                "done": "完成", "failed": "失败"}
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
+LLM_STATE = {"running": "生成中", "proposed": "待审", "failed": "失败", "approved": "已批准", "rejected": "已驳回"}
 
 
 def rt(request: Request) -> Runtime:
@@ -57,7 +58,7 @@ def render(request: Request, template: str, panel_key: str, *, drama_id: int | N
     return TEMPLATES.TemplateResponse(request, template, {
         "panel_key": panel_key, "nav": nav, "drama": drama, "episodes": episodes, "episode_id": ep,
         "backend": runtime.backend, "styles": {s.key: s.label for s in STYLES},
-        "state_label": STATE_LABEL, **ctx}, status_code=status_code)
+        "state_label": STATE_LABEL, "llm_state": LLM_STATE, **ctx}, status_code=status_code)
 
 
 def confirm_page(request: Request, *, summary: str, action: str, fields: dict, back: str, panel_key: str,

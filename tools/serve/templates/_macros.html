@@ -36,3 +36,18 @@
   {% endfor %}
 </ul>
 {% endmacro %}
+
+{# LLM 任务记录:状态 + 模型 + 真/假 + 链到审阅页 #}
+{% macro llm_run_list(rows, llm_state) %}
+<ul class="llm-runs" {% if rows | selectattr("state", "equalto", "running") | list %}data-inflight{% endif %}>
+  {% for r in rows | reverse %}
+    <li data-llm-run="{{ r.id }}">
+      <a href="/llm/run/{{ r.id }}">#{{ r.id }} {{ llm_state[r.state] }}</a>
+      · {{ r.model }}{% if r.llm_mode == "fake" %} <span class="tag fake">假 LLM</span>{% endif %}
+      {% if r.error %}<span class="err">{{ r.error[:80] }}</span>{% endif %}
+    </li>
+  {% else %}
+    <li class="empty">还没有 LLM 记录</li>
+  {% endfor %}
+</ul>
+{% endmacro %}

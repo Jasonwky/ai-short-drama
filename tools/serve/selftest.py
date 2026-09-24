@@ -35,6 +35,7 @@ from tools.serve.runtime import Runtime
 # 每个面板「真渲染出来了」的判据:这个元素必须可见
 KEY_SELECTOR = {
     "projects": "[data-drama-list]",
+    "outline": "[data-outline]",
     "script": "[data-episode]",
     "assets": "[data-asset-col=character] [data-asset]",
     "storyboard": "[data-segment-list] [data-segment]",

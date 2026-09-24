@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_macros.html" import llm_run_list %}
+{% block content %}
+<h1>大纲</h1>
+<section class="card" data-outline>
+  {% if not eps %}
+    <h2>小说改编:原文 → 分集大纲</h2>
+    <p class="hint">LLM 按你要的集数拆大纲,并给出每集在原文里的起止原句;代码逐字核对原句、检查顺序与集数,不合格自动退回重做。
+      <b>你批准后</b>才会建出各集。小说原文会发送给 LLM 服务。</p>
+    <form method="post" action="/llm/start/outline/{{ drama.id }}" data-outline-form>
+      <label>小说原文(最多 6 万字;更长请分批)</label>
+      <textarea class="tall" name="novel" required></textarea>
+      <label>拆成几集</label><input type="number" name="n_episodes" value="3" min="1" max="30">
+      <button class="btn primary" type="submit" data-llm-outline>LLM 生成大纲</button>
+    </form>
+  {% else %}
+    <h2>各集大纲</h2>
+    {% for e in eps %}
+      <div class="card" data-episode="{{ e.id }}">
+        <h2>第 {{ e.number }} 集 <a class="btn small" href="/drama/{{ drama.id }}/script">去剧本 →</a></h2>
+        {% if e.outline %}
+          <div class="side-by-side">
+            <div><label>大纲</label><pre>{{ e.outline }}</pre></div>
+            <div><label>对应原文</label><pre>{{ e.source_text or "(无)" }}</pre></div>
+          </div>
+        {% else %}<p class="empty">这一集不是从小说大纲建的(来源:{{ e.source_type }})</p>{% endif %}
+      </div>
+    {% endfor %}
+  {% endif %}
+  <h2>LLM 记录</h2>
+  {{ llm_run_list(llm_runs, llm_state) }}
+</section>
+{% endblock %}

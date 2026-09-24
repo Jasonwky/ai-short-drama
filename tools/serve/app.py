@@ -3,6 +3,7 @@
 
 - 只听 127.0.0.1(见 `tools.serve.console`),纯本地,绝不上传;
 - 领域层抛的 `ValueError` 是「给人看的原因」(缺什么、为什么不行),统一渲染成 400 页面,不是 500;
+  LLM 不可用(没有 key、连不上)渲染成 503,明确说不可用 —— 不静默切假 LLM;
 - `/media/...` 只读地提供 data_root 里的素材与产物,拒绝跳出 data_root 的路径。
 """
 from __future__ import annotations
@@ -13,7 +14,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from tools.serve.panels import assets, common, frames, machines, picks, projects, script, storyboard, videos
+from tools.llm.client import LLMError
+from tools.serve.panels import (assets, common, frames, llm, machines, outline, picks, projects, script,
+                                  storyboard, videos)
 from tools.serve.runtime import Runtime
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -23,13 +26,18 @@ def create_app(runtime: Runtime) -> FastAPI:
     app = FastAPI(title="AI 短剧控制台", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.runtime = runtime
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
-    for mod in (projects, script, assets, storyboard, frames, videos, machines, picks):
+    for mod in (projects, outline, script, assets, storyboard, frames, videos, machines, picks, llm):
         app.include_router(mod.router)
 
     @app.exception_handler(ValueError)
     async def refused(request: Request, exc: ValueError):
         return common.render(request, "error.html", "", message=str(exc),
                              back=request.headers.get("referer") or "/", status_code=400)
+
+    @app.exception_handler(LLMError)
+    async def llm_down(request: Request, exc: LLMError):
+        return common.render(request, "error.html", "", message=f"LLM 不可用:{exc}",
+                             back=request.headers.get("referer") or "/", status_code=503)
 
     @app.exception_handler(KeyError)
     async def missing(request: Request, exc: KeyError):

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>LLM · {{ label }} <a class="btn small" href="{{ home }}">← 返回</a></h1>
+<section class="card" data-llm-run-page data-llm-state="{{ run.state }}" {% if run.state == "running" %}data-inflight{% endif %}>
+  <p>状态 <b>{{ llm_state[run.state] }}</b> · 模型 {{ run.model }}
+    {% if run.llm_mode == "fake" %}<span class="tag fake">假 LLM(测试用,不能批准)</span>{% endif %}
+    · 发起 {{ run.created_at }}{% if run.decided_at %} · 决定 {{ run.decided_at }}{% endif %}</p>
+  {% if run.state == "running" %}<p class="hint">正在生成(一次约 30–80 秒,不合格会自动退回重做,最多 3 轮)。页面每 10 秒自动刷新。</p>{% endif %}
+  {% if run.error %}<p class="status-bad" data-llm-error>{{ run.error }}</p>{% endif %}
+  {% if rounds %}
+    <h2>判卷记录</h2>
+    <ol class="rounds">
+      {% for r in rounds %}
+        <li>第 {{ r.n }} 轮 · {{ r.seconds }} 秒 · {{ r.tokens if r.tokens is not none else "?" }} tokens ·
+          {% if r.problems %}<span class="status-bad">{{ r.problems | length }} 个问题</span>
+            <ul>{% for p in r.problems[:8] %}<li class="hint">{{ p }}</li>{% endfor %}</ul>
+          {% else %}<span class="status-ok">通过</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+    <p class="hint">完整记录(含每轮原始输出):{{ run.journal_path }}</p>
+  {% endif %}
+</section>
+
+{% if preview %}
+<section class="card" data-llm-preview>
+  <h2>产物预览(批准后按这个写回)</h2>
+  {% if preview.segments %}
+    <table>
+      <tr><th>#</th><th>时长(代码算)</th><th>场景</th><th>角色</th><th>道具</th><th>描述</th><th>首帧图提示词</th></tr>
+      {% for s in preview.segments %}
+        <tr><td>{{ s.n }}</td><td>{{ s.duration }}</td><td>{{ s.scene }}</td><td>{{ s.characters | join("、") }}</td>
+          <td>{{ s.props | join("、") or "—" }}</td><td style="max-width: 360px">{{ s.description }}</td><td>{{ s.image_prompt }}</td></tr>
+      {% endfor %}
+    </table>
+  {% elif preview.voice is defined %}
+    <div class="side-by-side">
+      <div><label>现在</label><pre>{{ preview.current or "(空)" }}</pre></div>
+      <div><label>LLM 建议</label><pre>{{ preview.voice }}</pre></div>
+    </div>
+  {% elif preview.script is defined %}
+    <div class="side-by-side">
+      <div><label>现在的剧本</label><pre>{{ preview.current or "(空)" }}</pre></div>
+      <div><label>LLM 生成的剧本</label><pre>{{ preview.script }}</pre></div>
+    </div>
+  {% elif preview.episodes %}
+    {% for e in preview.episodes %}
+      <div class="side-by-side"><div><label>第 {{ loop.index }} 集大纲</label><pre>{{ e.outline }}</pre></div>
+        <div><label>对应原文</label><pre>{{ e.source }}</pre></div></div>
+    {% endfor %}
+  {% endif %}
+</section>
+{% endif %}
+
+{% if run.state == "proposed" %}
+<section class="card">
+  {% if run.llm_mode == "fake" %}
+    <p class="hint">假 LLM 的产物不许通过审批闸门(只用于测试控制台本身)。</p>
+    <button class="btn primary" type="button" disabled data-approve>批准并写回</button>
+  {% else %}
+    <form method="post" action="/llm/run/{{ run.id }}/approve" style="display:inline">
+      <button class="btn primary" type="submit" data-approve>批准并写回</button>
+    </form>
+  {% endif %}
+  <form method="post" action="/llm/run/{{ run.id }}/reject" style="display:inline">
+    <button class="btn" type="submit" data-reject>驳回</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}
