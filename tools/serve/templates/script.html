@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>剧本</h1>
+<section class="card">
+  <p class="hint">本版支持<b>自带剧本</b>;小说改编、梗概生成需要 LLM,在 P4 接入。</p>
+  <form method="post" action="/drama/{{ drama.id }}/episodes"><button class="btn" type="submit" data-add-episode>+ 新建一集</button></form>
+</section>
+{% for e in eps %}
+  <section class="card" data-episode="{{ e.row.id }}">
+    <h2>第 {{ e.row.number }} 集 <a class="btn small" href="/episode/{{ e.row.id }}/storyboard">去分镜 →</a></h2>
+    <form method="post" action="/episode/{{ e.row.id }}/script">
+      <textarea class="tall" name="script" placeholder="粘贴本集剧本">{{ e.row.script }}</textarea>
+      <button class="btn primary" type="submit">保存剧本</button>
+    </form>
+    {% if e.row.script.strip() %}
+      <p class="hint">按字数估算本集应拆 <b>{{ e.range[0] }}–{{ e.range[1] }}</b> 个段落;当前 {{ e.n_segments }} 个。</p>
+      {% for p in e.problems %}<p class="status-bad">❌ {{ p }}</p>{% endfor %}
+    {% endif %}
+  </section>
+{% else %}
+  <section class="card empty">还没有集,点上面「新建一集」</section>
+{% endfor %}
+{% endblock %}

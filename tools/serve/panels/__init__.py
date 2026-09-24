@@ -20,6 +20,7 @@ class Panel:
 
 REGISTRY: tuple[Panel, ...] = (
     Panel("projects", "立项", "global", "/"),
+    Panel("script", "剧本", "drama", "/drama/{drama_id}/script"),
 )
 
 
