@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "_macros.html" import history %}
+{% block content %}
+<h1>资产</h1>
+<section class="card">
+  <form method="post" action="/drama/{{ drama.id }}/assets" class="row" data-add-asset>
+    <div><label>类型</label><select name="kind"><option value="character">角色</option><option value="scene">场景</option><option value="prop">道具</option></select></div>
+    <div><label>名字(分镜里用 @名字 引用)</label><input type="text" name="name" required></div>
+    <div><button class="btn primary" type="submit">添加</button></div>
+  </form>
+</section>
+<div class="cols">
+  {% for col in cols %}
+    <section data-asset-col="{{ col.table }}">
+      <h2>{{ col.label }}</h2>
+      {% for it in col.entries %}
+        <div class="card" data-asset="{{ col.table }}-{{ it.row.id }}">
+          <h2>{{ it.row.name }}</h2>
+          <div class="current-media">
+            {% if it.current %}<img src="/media/{{ it.current }}" alt="{{ it.row.name }}">
+            {% else %}<p class="empty">还没有参考图</p>{% endif %}
+          </div>
+          <form method="post" action="/asset/{{ col.table }}/{{ it.row.id }}">
+            {% for key, label in col.fields %}
+              <label>{{ label }}</label><textarea name="{{ key }}">{{ it.row[key] }}</textarea>
+            {% endfor %}
+            <button class="btn" type="submit">保存描述</button>
+          </form>
+          <form method="post" action="/asset/{{ col.table }}/{{ it.row.id }}/generate" class="row">
+            <div><label>种子</label><input type="number" name="seed" value="{{ seed + loop.index }}"></div>
+            <div><button class="btn primary" type="submit" data-generate>生成参考图</button></div>
+          </form>
+          {{ history(it.tasks, it.current, state_label, "/drama/" ~ drama.id ~ "/assets") }}
+        </div>
+      {% else %}
+        <p class="empty">还没有{{ col.label }}</p>
+      {% endfor %}
+    </section>
+  {% endfor %}
+</div>
+{% endblock %}
