@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "_macros.html" import history %}
+{% block content %}
+<h1>参考帧 · 第 {{ ep.number }} 集</h1>
+<p class="hint">首帧由本段绑定的角色 / 场景 / 道具参考图合成,尺寸取剧的画幅。本版只支持「首帧参考」;尾帧从上一镜视频抽取在 P5。</p>
+{% for s in segs %}
+  <section class="card" id="seg-{{ s.row.id }}" data-segment="{{ s.row.id }}">
+    <h2>段落 {{ s.row.number }} <a class="btn small" href="/segment/{{ s.row.id }}/edit">编辑段落</a></h2>
+    <p class="hint">{{ s.row.image_prompt or "(还没写首帧图提示词)" }}</p>
+    <div class="row">
+      <div class="current-media">
+        {% if s.row.first_frame_path %}<img src="/media/{{ s.row.first_frame_path }}" alt="首帧">
+        {% else %}<p class="empty">还没有首帧</p>{% endif %}
+      </div>
+      <form method="post" action="/segment/{{ s.row.id }}/frame">
+        <label>种子</label><input type="number" name="seed" value="{{ seed + loop.index }}">
+        <button class="btn primary" type="submit" data-generate-frame>生成首帧</button>
+      </form>
+    </div>
+    {{ history(s.tasks, s.row.first_frame_path, state_label, "/episode/" ~ ep.id ~ "/frames") }}
+  </section>
+{% else %}
+  <section class="card empty">这一集还没有段落(去「分镜」新建)</section>
+{% endfor %}
+{% endblock %}
