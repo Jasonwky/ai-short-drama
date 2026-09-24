@@ -1,0 +1,51 @@
+# -*- coding: utf-8 -*-
+from tests.cut.conftest import done_task
+from tools.cut import provenance, tailframe
+from tools.drama import repo
+
+
+def _videos(store, s):
+    return [{"segment_id": i, "number": n, "video_path": repo.get(store, "segment", i)["video_path"]}
+            for n, i in ((1, s["seg1"]), (2, s["seg2"]))]
+
+
+def test_chain_goes_back_from_video_to_assets(store, two_segments):
+    s, root = two_segments, two_segments["root"]
+    lin = done_task(store, root, s["seg1"], "image", "outputs/tasks/a/lin.png", b"lin")   # 充当角色四视图
+    repo.update(store, "segment", s["seg1"], first_frame_path=None, video_path=None)
+    done_task(store, root, s["seg1"], "image", "outputs/tasks/f9/frame.png", b"f9", refs=["outputs/tasks/a/lin.png"])
+    done_task(store, root, s["seg1"], "video", "outputs/tasks/v9/clip.mp4", b"v9", refs=["outputs/tasks/f9/frame.png"])
+
+    r = provenance.build(store, root, s["episode"], produce_id="ASD-1", producer="P1", videos=_videos(store, s))
+    v = r["segments"][0]["video"]
+    assert v["task"]["model"] == "m-video" and v["inputs"][0]["path"] == "outputs/tasks/f9/frame.png"
+    assert v["inputs"][0]["inputs"][0]["task"]["id"] == lin
+    assert r["models"] == ["m-image", "m-video"] and provenance.problems(r) == []
+    md = provenance.to_markdown(r)
+    assert "`ASD-1`" in md and "## 段落 2" in md and "Powered by MiniMax H3" in md
+
+
+def test_tail_frame_links_segment_2_back_to_segment_1(store, two_segments):
+    s, root = two_segments, two_segments["root"]
+    repo.update(store, "segment", s["seg2"], first_frame_path=None, video_path=None)
+    tailframe.confirm_tail(store, root, tailframe.plan_tail(store, root, s["seg1"]))
+    done_task(store, root, s["seg2"], "video", "outputs/tasks/v2b/clip.mp4", b"v2b",
+              refs=[repo.get(store, "segment", s["seg2"])["first_frame_path"]])
+    r = provenance.build(store, root, s["episode"], produce_id="ASD-1", producer="P1", videos=_videos(store, s))
+    frame = r["segments"][1]["video"]["inputs"][0]
+    assert frame["task"]["model"] == "ffmpeg:last-frame" and frame["task"]["host"] == "本机"
+    assert frame["inputs"][0]["path"] == "outputs/tasks/v1/clip.mp4"
+    assert provenance.problems(r) == []
+
+
+def test_replaced_file_and_untracked_asset_are_reported(store, two_segments):
+    s, root = two_segments, two_segments["root"]
+    (root / "outputs/tasks/f1/frame.png").write_bytes(b"swapped")
+    repo.update(store, "segment", s["seg2"], video_path="manual/clip.mp4")
+    (root / "manual").mkdir()
+    (root / "manual/clip.mp4").write_bytes(b"x")
+    r = provenance.build(store, root, s["episode"], produce_id="ASD-1", producer="P1", videos=_videos(store, s))
+    probs = provenance.problems(r)
+    assert any("frame.png 的内容与 task" in p and "被替换过" in p for p in probs)
+    assert any("段落 2:视频 manual/clip.mp4 在 task 表里没有生成记录" in p for p in probs)
+    assert "无生成记录(人工提供)" in provenance.to_markdown(r)
