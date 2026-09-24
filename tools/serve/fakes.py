@@ -110,13 +110,14 @@ class FakeTunnel:
 
 
 def sample_mp4() -> bytes:
-    """1 秒 384x672 的测试图样 mp4,用本机 ffmpeg 现生成。没有 ffmpeg 就报错,不假装。"""
+    """1 秒 384x672 的测试图样 mp4(带音轨,和 H3 产物一样),用本机 ffmpeg 现生成。没有 ffmpeg 就报错,不假装。"""
     if shutil.which("ffmpeg") is None:
         raise RuntimeError("假 GPU 要用 ffmpeg 生成可播放的样片,本机找不到 ffmpeg")
     with tempfile.TemporaryDirectory() as d:
         out = Path(d) / "sample.mp4"
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=384x672:rate=24",
-                        "-t", "1", "-pix_fmt", "yuv420p", "-c:v", "libx264", str(out)], check=True)
+                        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=32000", "-t", "1",
+                        "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "aac", str(out)], check=True)
         return out.read_bytes()
 
 
