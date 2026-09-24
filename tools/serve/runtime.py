@@ -6,18 +6,24 @@
 - **判活分两层,界面上分开说**(设计 §四):隧道没通 / 隧道通了但 ComfyUI 没响应。
   P2 真链路实测:云机开机后 ComfyUI **不会自启**,只看隧道会把「ComfyUI 没起」误报成正常。
 - `Backend` 决定怎么连执行面。正式入口只用真实后端;假后端只给测试与 Playwright 自测。
+- LLM 任务(一次 30–80 秒)放进**单线程**池在后台跑(M-21 落盘单线程),页面立刻返回、自动刷新看结果。
+  真实后端点按钮时才读 key:没有 key 就明确报「LLM 不可用」,**不静默切假 LLM**。
 """
 from __future__ import annotations
 
 import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from tools.drama.db import Store
 from tools.gen import preflight
 from tools.gen.comfy_client import ComfyClient, ComfyUnreachable
+from tools.llm import runs, service
+from tools.llm.client import ChatClient, LLMUnavailable, read_key
+from tools.llm.service import LLMBackend
 from tools.serve import journal
 from tools.serve.hosts import Host, get_host
 from tools.serve.tunnel import TunnelManager
@@ -32,10 +38,15 @@ class Backend:
     run_for: Callable[[Host], preflight.Runner]
     fake: bool = False
     before_tick: Callable[[], None] | None = None   # 假 GPU 在这里「跑完」队列
+    llm: Callable[[], LLMBackend] | None = None     # 点「LLM 生成」时才调用
+
+
+def real_llm() -> LLMBackend:
+    return LLMBackend(ChatClient(read_key()), service.DEFAULT_MODEL, "real")
 
 
 def real_backend() -> Backend:
-    return Backend("云机(真实)", lambda h: ComfyClient(h.local_endpoint), TunnelManager(), _ssh_run)
+    return Backend("云机(真实)", lambda h: ComfyClient(h.local_endpoint), TunnelManager(), _ssh_run, llm=real_llm)
 
 
 @dataclass
@@ -69,6 +80,8 @@ class Runtime:
         self.status: dict[int, HostStatus] = {}
         self._workers: dict[int, Worker] = {}
         self.last_error = ""          # 后台线程最近一次异常,主机面板上显示
+        self._llm_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="drama-llm")
+        self._llm_jobs: list[Future] = []
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -96,6 +109,28 @@ class Runtime:
         ok = [s for s in self.status.values() if s.comfy_ok]
         return (True, ok[0].message) if ok else (False, next(iter(self.status.values())).message)
 
+    def start_llm(self, task: str, target_id: int, params: dict) -> tuple[int, bool]:
+        """开一条 LLM 任务。前提不满足 / LLM 不可用当场报错;有锁定版直接复用,不调 LLM。"""
+        if self.backend.llm is None:
+            raise LLMUnavailable("这个执行面没有配置 LLM")
+        llm = self.backend.llm()
+        rid, reused = service.begin(self.store, task, target_id, params, llm)
+        if not reused:
+            self._llm_jobs.append(self._llm_pool.submit(self._finish_llm, rid, llm))
+        return rid, reused
+
+    def _finish_llm(self, rid: int, llm: LLMBackend) -> None:
+        try:
+            service.finish(self.store, rid, llm, self.data_root / "journal")   # → journal/llm/*.json
+        except Exception as e:     # 不吞:落成 failed 带原因、进 journal(service 自己处理不了的意外)
+            runs.fail(self.store, rid, f"{type(e).__name__}: {e}")
+            journal.append(self.data_root, [f"llm_run {rid} 意外失败:{type(e).__name__}: {e}"], prefix="runtime ")
+
+    def wait_llm(self, timeout: float = 60) -> None:
+        """测试用:等后台 LLM 任务全部结束。"""
+        for f in self._llm_jobs:
+            f.result(timeout=timeout)
+
     def start(self) -> None:
         def loop():
             while not self._stop.is_set():
@@ -113,3 +148,4 @@ class Runtime:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=30)
+        self._llm_pool.shutdown(wait=False, cancel_futures=True)

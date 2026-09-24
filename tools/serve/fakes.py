@@ -142,10 +142,14 @@ class FakeGpu:
 
 
 def fake_backend():
-    """(Backend, FakeComfy):界面上标明「假后端」;每轮 tick 前假 GPU 把队列跑完。LoRA 预检一律放行(假后端没有模型文件)。"""
+    """(Backend, FakeComfy):界面上标明「假后端」;每轮 tick 前假 GPU 把队列跑完。LoRA 预检一律放行(假后端没有模型文件)。
+    LLM 用假 LLM:产物标 fake,永远过不了审批。"""
+    from tools.llm.fake import FakeLLM
+    from tools.llm.service import DEFAULT_MODEL, LLMBackend
     from tools.serve.runtime import Backend   # 延迟导入:runtime → worker → … 不依赖本模块,避免环
     comfy = FakeComfy()
     gpu = FakeGpu(comfy)
     backend = Backend("假后端(测试专用)", lambda host: comfy, FakeTunnel(), lambda host: (lambda args, stdin: (0, "")),
-                      fake=True, before_tick=gpu.run_pending)
+                      fake=True, before_tick=gpu.run_pending,
+                      llm=lambda: LLMBackend(FakeLLM(), DEFAULT_MODEL, "fake"))
     return backend, comfy
