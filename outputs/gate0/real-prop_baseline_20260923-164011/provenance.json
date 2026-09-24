@@ -1,0 +1,29 @@
+{
+  "gate": "real-prop",
+  "at": "20260923-164011",
+  "model": "qwen-image-edit-2511-Q4_K_M.gguf",
+  "text_encoder": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+  "vae": "qwen_image_vae.safetensors",
+  "loras": [],
+  "preset": "baseline",
+  "steps": 20,
+  "cfg": 4.0,
+  "size": [
+    1024,
+    1024
+  ],
+  "seed": 5103,
+  "prompt": "Completely replace the entire image with a photorealistic product photograph: one oval green jade pendant carved with a simple cloud pattern, with a red silk cord and small red tassel, centered on a pure white background, soft studio lighting, sharp focus, realistic stone texture. No people, no hands, no scenery, isolated object only.",
+  "refs_local": [
+    "outputs/gate0/real-prop_baseline_20260923-164011/refs/gray_1024.png"
+  ],
+  "refs_uploaded": [
+    "gray_1024.png"
+  ],
+  "prompt_id": "4e7c1a62-61d4-4fc9-b5ed-c02997d2743a",
+  "elapsed_sec": 63.9,
+  "outputs": [
+    "real-prop_00001_.png"
+  ],
+  "device": "cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync"
+}

@@ -1,0 +1,29 @@
+{
+  "gate": "real-scene",
+  "at": "20260923-163850",
+  "model": "qwen-image-edit-2511-Q4_K_M.gguf",
+  "text_encoder": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+  "vae": "qwen_image_vae.safetensors",
+  "loras": [],
+  "preset": "baseline",
+  "steps": 20,
+  "cfg": 4.0,
+  "size": [
+    928,
+    1664
+  ],
+  "seed": 5102,
+  "prompt": "Completely replace the entire image with a photorealistic photograph. An empty traditional Chinese courtyard of an old family house at dusk: grey stone paving, a wooden door with faded red lacquer, grey tiled roofs, a few hanging red lanterns glowing softly, an old osmanthus tree, warm sunset light with long shadows. Absolutely no people, no human figures, no silhouettes. Wide establishing shot, eye level, fixed camera. Real location photo, natural colors, not illustration, not 3D render.",
+  "refs_local": [
+    "outputs/gate0/real-scene_baseline_20260923-163850/refs/gray_928x1664.png"
+  ],
+  "refs_uploaded": [
+    "gray_928x1664.png"
+  ],
+  "prompt_id": "3d4b995b-3cbd-416a-ac1a-3e5f20b5ad72",
+  "elapsed_sec": 79.8,
+  "outputs": [
+    "real-scene_00001_.png"
+  ],
+  "device": "cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync"
+}

@@ -1,0 +1,29 @@
+{
+  "gate": "real-char",
+  "at": "20260923-163703",
+  "model": "qwen-image-edit-2511-Q4_K_M.gguf",
+  "text_encoder": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+  "vae": "qwen_image_vae.safetensors",
+  "loras": [],
+  "preset": "baseline",
+  "steps": 20,
+  "cfg": 4.0,
+  "size": [
+    928,
+    1664
+  ],
+  "seed": 5101,
+  "prompt": "Completely replace the entire image with a photorealistic photograph. A fictional young Chinese woman, about 22 years old, long straight black hair, natural light makeup, gentle expression, wearing a simple cream-colored cotton blouse and a long dark blue skirt, flat black shoes. Full body, standing straight, front view, arms relaxed at her sides, plain white studio background, soft even lighting. Real human, realistic skin texture, 50mm lens photo. Not anime, not illustration, not 3D render.",
+  "refs_local": [
+    "outputs/gate0/real-char_baseline_20260923-163703/refs/gray_928x1664.png"
+  ],
+  "refs_uploaded": [
+    "gray_928x1664.png"
+  ],
+  "prompt_id": "7d05fafa-1854-4b47-928b-3d3c95a74b93",
+  "elapsed_sec": 90.3,
+  "outputs": [
+    "real-char_00001_.png"
+  ],
+  "device": "cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync"
+}
