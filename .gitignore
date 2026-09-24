@@ -6,3 +6,7 @@ __pycache__/
 outputs/**
 !outputs/**/
 !outputs/**/*.json
+
+# LLM key: read at runtime, never committed (CLAUDE.md)
+llm.txt
+secrets/
