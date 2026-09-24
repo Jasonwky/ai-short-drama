@@ -30,6 +30,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   (`--once` 只跑一轮;日志同时追加到 `<素材根>/journal/worker.log`)
 - 真链路验收(要开卡):`python -X utf8 -m tools.serve.e2e_first_segment --help`;
   在 Git Bash 里跑要加 `MSYS_NO_PATHCONV=1`,否则 `/root/...` 会被改写成 Windows 路径
+- **启动控制台**:`python -X utf8 -m tools.serve.console --db <库> --data-root <素材根>`,浏览器开 http://127.0.0.1:8700/
+  (只听本机;后台 worker 随控制台一起跑;没有假后端开关)
+- **Playwright 全面自测**(一律有头,会弹浏览器;没有无头开关):`python -X utf8 -m tools.serve.selftest`;截图在 `outputs/selftest/<时间>/`
+- **验收**:`python -X utf8 -m tools.serve.accept`(三层;不给云机参数时第 3 层 SKIP,总判决 PARTIAL,不算通过)
 
 ### 代码布局(读多个文件才看得出的部分)
 
@@ -40,6 +44,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `tools/gen/planner.py` 只做**规划**(内容就绪即写出参数定死的 task);`tools/serve/` 负责**提交与推进**:
   worker 每轮「保隧道 → 按 external_id 推进在途 → 机器空闲才派下一条」。**接管不是单独流程** ——
   重启后在途任务照常推进,绝不重交。库里的素材/产物路径都相对 `data_root`
+- 控制台:`tools/serve/app.py` + `tools/serve/panels/`。**面板登记在 `panels/__init__.py` 的 `REGISTRY`**,
+  Playwright 自测遍历这张表;新面板 = 登记 + 在 `selftest.KEY_SELECTOR` 给判据(`test_selftest` 会拦住漏给的)。
+  面板只**规划**任务,提交与推进由 `runtime` 里的后台 worker 负责。假后端(`tools/serve/fakes.py`)只进测试与自测
 - `tools/gate0/` 是闸门 0 的**实验脚本**,不是产品代码;正式逻辑以 `tools/drama/` 为准
 
 已有调研:`docs/superpowers/spike-results/2026-09-22-AI短剧成熟工作流调研.md`。
