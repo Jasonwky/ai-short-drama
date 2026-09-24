@@ -1,0 +1,92 @@
+{
+  "base": "http://127.0.0.1:52099",
+  "work_dir": "C:\\Users\\WKY\\AppData\\Local\\Temp\\drama-selftest-bubovg7m",
+  "headed": true,
+  "panels": [
+    {
+      "panel": "projects",
+      "title": "立项",
+      "url": "http://127.0.0.1:52099/?d=1",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20260924-122400\\selftest\\01_projects.png"
+    },
+    {
+      "panel": "outline",
+      "title": "大纲",
+      "url": "http://127.0.0.1:52099/drama/1/outline",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20260924-122400\\selftest\\02_outline.png"
+    },
+    {
+      "panel": "script",
+      "title": "剧本",
+      "url": "http://127.0.0.1:52099/drama/1/script",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20260924-122400\\selftest\\03_script.png"
+    },
+    {
+      "panel": "assets",
+      "title": "资产",
+      "url": "http://127.0.0.1:52099/drama/1/assets",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20260924-122400\\selftest\\04_assets.png"
+    },
+    {
+      "panel": "storyboard",
+      "title": "分镜",
+      "url": "http://127.0.0.1:52099/episode/1/storyboard",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20260924-122400\\selftest\\05_storyboard.png"
+    },
+    {
+      "panel": "frames",
+      "title": "参考帧",
+      "url": "http://127.0.0.1:52099/episode/1/frames",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20260924-122400\\selftest\\06_frames.png"
+    },
+    {
+      "panel": "videos",
+      "title": "视频",
+      "url": "http://127.0.0.1:52099/episode/1/videos",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20260924-122400\\selftest\\07_videos.png"
+    },
+    {
+      "panel": "hosts",
+      "title": "主机",
+      "url": "http://127.0.0.1:52099/hosts?d=1",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20260924-122400\\selftest\\08_hosts.png"
+    }
+  ],
+  "flows": [
+    {
+      "flow": "frames: 点「生成首帧」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20260924-122400\\selftest\\flow_frames.png"
+    },
+    {
+      "flow": "videos: 点「生成视频」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20260924-122400\\selftest\\flow_videos.png"
+    },
+    {
+      "flow": "assets: 点「LLM 定声音」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20260924-122400\\selftest\\flow_assets.png"
+    }
+  ],
+  "ok": true
+}

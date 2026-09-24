@@ -1,0 +1,26 @@
+{
+  "verdict": "FAIL",
+  "layers": [
+    {
+      "layer": "单测",
+      "state": "PASS",
+      "log": "outputs\\accept\\20260924-121702\\1_pytest.log"
+    },
+    {
+      "layer": "真 LLM 契约",
+      "state": "FAIL",
+      "log": "outputs\\accept\\20260924-121702\\2_real_llm.log"
+    },
+    {
+      "layer": "Playwright 有头自测",
+      "state": "PASS",
+      "log": "outputs\\accept\\20260924-121702\\3_selftest.log",
+      "screenshots": "outputs\\accept\\20260924-121702\\selftest"
+    },
+    {
+      "layer": "功能整链(真云机)",
+      "state": "SKIP",
+      "reason": "没给云机参数 —— 这一层没跑,不算通过"
+    }
+  ]
+}
