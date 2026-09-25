@@ -139,3 +139,13 @@ def test_scene_and_prop_llm_runs_travel_too(store, project, tmp_path):
     jade = dest.conn.execute("SELECT id FROM prop WHERE drama_id = ?", (new,)).fetchone()[0]
     [run] = runs.history(dest, "prop", jade)
     assert run["task"] == "describe_prop" and runs.output(run) == {"description": "绿玉"}
+
+
+def test_imported_segments_do_not_take_ids_owned_by_old_history(store, project, tmp_path):
+    rel = bundle.export_bundle(store, project["root"], project["drama"])
+    create_task(store, kind="video", target_type="segment", target_id=900, model="m", params={}, seed=1,
+                prompt="p", refs=[])                               # 某个已删段落留下的历史
+    new = bundle.import_bundle(store, project["root"], project["root"] / rel)
+    ep = store.conn.execute("SELECT id FROM episode WHERE drama_id = ?", (new,)).fetchone()[0]
+    [seg] = [r[0] for r in store.conn.execute("SELECT id FROM segment WHERE episode_id = ?", (ep,))]
+    assert seg > 900

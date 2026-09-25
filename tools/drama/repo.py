@@ -94,8 +94,37 @@ def add_segment(store: Store, episode_id: int, number: int, scene_id: int | None
     _check_cols("segment", fields)
     if scene_id is not None:
         _check_same_drama(store.conn, _drama_of_episode(store.conn, episode_id), "scene", scene_id)
-    return _insert(store, "segment", {"episode_id": episode_id, "number": number,
-                                      "scene_id": scene_id, **fields})
+    row = {"episode_id": episode_id, "number": number, "scene_id": scene_id, **fields}
+    with store.write() as c:
+        new_id = next_segment_id(c)
+        c.execute(f"INSERT INTO segment (id, {', '.join(row)}) VALUES (?, {', '.join('?' * len(row))})",
+                  (new_id, *row.values()))
+    return new_id
+
+
+_HWM = "segment_id_hwm"
+
+
+def next_segment_id(c: sqlite3.Connection) -> int:
+    """段落编号**永不复用**:段落可以被删(重拆分镜),它的生成历史留在 task 表、成片导出记录里还引用着它;
+    新段落若拿到旧编号,旧历史就会被当成它的版本。取「现有段落、task 目标、删除时记下的高水位」中最大的 + 1。
+    调用方必须在写事务里调用并紧接着插入(单写锁保证不撞)。"""
+    return c.execute(
+        "SELECT MAX(m) + 1 FROM (SELECT COALESCE(MAX(id), 0) AS m FROM segment UNION ALL "
+        "SELECT COALESCE(MAX(target_id), 0) FROM task WHERE target_type = 'segment' UNION ALL "
+        "SELECT COALESCE(MAX(CAST(value AS INTEGER)), 0) FROM meta WHERE key = ?)", (_HWM,)).fetchone()[0]
+
+
+def delete_segments(store: Store, episode_id: int) -> list[int]:
+    """删掉一集的全部段落(重拆分镜 / 重写剧本,人确认后才调用)。绑定随之删除;
+    **生成历史(task)与文件都保留** —— 溯源和旧成片仍可查。返回被删的段落 id。"""
+    with store.write() as c:
+        ids = [r[0] for r in c.execute("SELECT id FROM segment WHERE episode_id = ? ORDER BY number", (episode_id,))]
+        c.execute("DELETE FROM segment WHERE episode_id = ?", (episode_id,))
+        if ids:
+            c.execute("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET "
+                      "value = MAX(CAST(value AS INTEGER), CAST(excluded.value AS INTEGER))", (_HWM, str(max(ids))))
+    return ids
 
 
 # ── 归属与绑定 ────────────────────────────────────────────────

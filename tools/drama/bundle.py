@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from tools.drama.db import SCHEMA_VERSION, Store, now
+from tools.drama.repo import next_segment_id
 
 FORMAT = 1
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
@@ -161,7 +162,7 @@ def _insert(store: Store, m: dict, prefix: str, root: Path) -> int:
         return f"{prefix}/{p}" if p else p
 
     def insert(c, table: str, row: dict, **over) -> int:
-        row = {k: v for k, v in row.items() if k != "id"} | over
+        row = {k: v for k, v in row.items() if k != "id"} | over      # over 里可以显式给 id
         return c.execute(f"INSERT INTO {table} ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
                          tuple(row.values())).lastrowid
 
@@ -181,7 +182,7 @@ def _insert(store: Store, m: dict, prefix: str, root: Path) -> int:
             over = {"episode_id": ids["episode"][r["episode_id"]], **{f: mv(r[f]) for f in PATH_FIELDS["segment"]}}
             if r["scene_id"] is not None:
                 over["scene_id"] = ids["scene"][r["scene_id"]]
-            ids["segment"][r["id"]] = insert(c, "segment", r, **over)
+            ids["segment"][r["id"]] = insert(c, "segment", r, id=next_segment_id(c), **over)   # 编号永不复用
         for link, col, table in (("segment_character", "character_id", "character"), ("segment_prop", "prop_id", "prop")):
             for r in t[link]:
                 c.execute(f"INSERT INTO {link} (segment_id, {col}, position) VALUES (?, ?, ?)",

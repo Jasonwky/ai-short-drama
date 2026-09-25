@@ -23,7 +23,10 @@ _AFFECTED = {
     "prop": "SELECT segment_id FROM segment_prop WHERE prop_id = ?",
     "layout": "SELECT id FROM segment WHERE id = ?",
     "segment_prompt": "SELECT id FROM segment WHERE id = ?",
+    # 声音描述逐字进视频提示词(闸门 0-4:音色靠文字描述维持),改了只影响视频,参考帧不受影响
+    "voice": "SELECT segment_id FROM segment_character WHERE character_id = ?",
 }
+_VIDEO_ONLY = {"voice"}
 _FRAME_FIELDS = ("first_frame_path", "last_frame_path")
 
 
@@ -33,6 +36,7 @@ class Impact:
     frames: int          # 要重出的参考帧张数(只算已经出过的)
     videos: int          # 要重跑的视频条数(只算已经出过的)
     est_seconds: float
+    videos_only: bool = False    # True:只作废视频,参考帧保留
 
     def summary(self) -> str:
         if self.videos == 0 and self.frames == 0:
@@ -55,15 +59,21 @@ def impact(store: Store, event: str, target_id: int, *, video_cap: Capability,
                 raise ValueError(f"段落 {sid} 有视频却没有时长 —— 数据不一致,不能估算")
             videos += 1
             est += video_cap.est_seconds(video_cap.frames_for(seg["duration_sec"]))
+        if event in _VIDEO_ONLY:
+            continue
         n = sum(1 for f in _FRAME_FIELDS if seg[f])
         frames += n
         est += n * image_cap.sec_per_item
-    return Impact(tuple(ids), frames, videos, est)
+    return Impact(tuple(ids), frames, videos, est, event in _VIDEO_ONLY)
 
 
 def apply(store: Store, imp: Impact) -> None:
     """人确认后才调用:清掉受影响段落的产物指针。"""
     with store.write() as c:
+        if imp.videos_only:
+            c.executemany("UPDATE segment SET video_path = NULL, subtitle_path = NULL WHERE id = ?",
+                          [(i,) for i in imp.segment_ids])
+            return
         c.executemany("UPDATE segment SET first_frame_path = NULL, last_frame_path = NULL,"
                       " video_path = NULL, subtitle_path = NULL WHERE id = ?",
                       [(i,) for i in imp.segment_ids])
