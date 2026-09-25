@@ -188,6 +188,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > **2026-09-24 起本项目实际用的是 SynScale(OpenAI 兼容),不是 Anthropic API**,下面的 Anthropic 细节作为参考保留。
 > 实测(`spike-results/2026-09-24-SynScale结构化输出实测.md`):`response_format: json_schema` **被静默忽略**;
 > strict 工具调用能把 schema 送进模型,但**不是服务端约束解码**(出过非法 JSON、多余字段、enum 外的值)—— 客户端校验是唯一保证。
+> 🔴 2026-09-24 再测(`spike-results/2026-09-24-视觉LLM反推描述实测.md`):同一个模型会被路由到不同上游,各自只认一种 `tool_choice` 拼法
+> (客户端按报错切换);默认模型**看不见图**却照样返回 200 —— 看图任务必须用视觉模型,并用印在图上的校验数字判「真看到了」。
 
 - **硬约束已经有了,不要引第三方库。** Anthropic Structured Outputs 就是 **constrained decoding**(服务端做)。
   canonical 形态是 `client.messages.create(output_config={"format": {...}})`;推荐用 `client.messages.parse(output_format=Model)`。
