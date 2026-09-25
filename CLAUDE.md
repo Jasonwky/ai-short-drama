@@ -41,7 +41,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 代码布局(读多个文件才看得出的部分)
 
 - `tools/drama/` 领域核心:`db.Store` 是唯一真相源(SQLite);画幅不可改、task 生成参数不可变
-  由**数据库触发器**强制,不靠调用方自觉。写入一律走 `repo` 的字段白名单
+  由**数据库触发器**强制,不靠调用方自觉。写入一律走 `repo` 的字段白名单。
+  段落编号**永不复用**(`repo.next_segment_id`):删段落只删段落与绑定,生成历史与文件保留;会删段落的 LLM 批准必须 `confirm_reset=True`
 - `tools/gen/capability.py` 后端能力声明:段落时长区间、参考槽位数、实测耗时都从这里读,
   **领域层不硬编码模型参数**(换模型只改声明)
 - `tools/gen/planner.py` 只做**规划**(内容就绪即写出参数定死的 task);`tools/serve/` 负责**提交与推进**:
