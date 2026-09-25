@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from tools.drama import repo
 from tools.drama.db import Store
-from tools.gen.assets import SPEC, asset_problems, plan_asset_image
+from tools.gen.assets import SPEC, asset_problems, locked_seed, plan_asset_image
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.gen.planner import first_frame_problems, plan_first_frame, plan_video, video_problems
 
@@ -33,6 +33,7 @@ class Item:
     status: str          # has / in_flight / blocked / todo
     reason: str = ""
     est_seconds: float = 0.0
+    seed: int | None = None      # 锁定种子(角色);None = 用「起始种子 + 序号」
 
 
 @dataclass(frozen=True)
@@ -70,7 +71,8 @@ def _item(store: Store, target_type: str, row, label: str, kind: str, field: str
     probs = problems()
     if probs:
         return Item(target_type, row["id"], label, "blocked", ";".join(probs))
-    return Item(target_type, row["id"], label, "todo", est_seconds=est)
+    return Item(target_type, row["id"], label, "todo", est_seconds=est,
+                seed=locked_seed(store, target_type, row["id"]) if target_type in SPEC else None)
 
 
 def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
@@ -99,7 +101,8 @@ def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
 
 
 def confirm_fill(store: Store, kind: str, scope_id: int, targets: list[tuple[str, int]], base_seed: int) -> list[int]:
-    """只为确认页上列出的 targets 建任务,种子 = base_seed + 在清单里的序号;期间状态变了的跳过。"""
+    """只为确认页上列出的 targets 建任务,种子 = base_seed + 在清单里的序号(锁了种子的角色用锁定种子);
+    期间状态变了的跳过。"""
     now_todo = {(i.target_type, i.target_id) for i in plan_fill(store, kind, scope_id).todo}
     created = []
     for n, (ttype, tid) in enumerate(targets):
@@ -111,5 +114,6 @@ def confirm_fill(store: Store, kind: str, scope_id: int, targets: list[tuple[str
         elif kind == "videos":
             created.append(plan_video(store, tid, seed=seed))
         else:
-            created.append(plan_asset_image(store, ttype, tid, seed=seed))
+            locked = locked_seed(store, ttype, tid)
+            created.append(plan_asset_image(store, ttype, tid, seed=seed if locked is None else locked))
     return created

@@ -72,8 +72,29 @@ def asset_problems(store: Store, table: str, row_id: int) -> list[str]:
     return problems
 
 
+def locked_seed(store: Store, table: str, row_id: int) -> int | None:
+    """角色的锁定种子(设计 §七「种子锁定」):锁了之后重出参考图只用它 —— 改了描述再出,长相也尽量不跑。"""
+    return repo.get(store, table, row_id)["seed"] if table == "character" else None
+
+
+def lock_seed(store: Store, character_id: int, task_id: int) -> int:
+    """把这个角色某一版参考图的种子锁定下来。只认这个角色自己的、已完成的生成记录。"""
+    t = repo.get(store, "task", task_id)
+    if (t["target_type"], t["target_id"]) != ("character", character_id) or t["state"] != "done":
+        raise ValueError(f"task {task_id} 不是这个角色已完成的参考图,不能锁它的种子")
+    repo.update(store, "character", character_id, seed=t["seed"])
+    return t["seed"]
+
+
+def unlock_seed(store: Store, character_id: int) -> None:
+    repo.update(store, "character", character_id, seed=None)
+
+
 def plan_asset_image(store: Store, table: str, row_id: int, *, seed: int) -> int:
     problems = asset_problems(store, table, row_id)
+    locked = locked_seed(store, table, row_id)
+    if locked is not None and seed != locked:
+        problems.append(f"种子已锁定为 {locked} —— 要换种子先解锁")
     if problems:
         raise ValueError(";".join(problems))
     row = repo.get(store, table, row_id)

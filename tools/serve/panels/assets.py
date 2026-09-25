@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """资产:角色 / 场景 / 道具三栏。编辑描述、生成参考图(灰底整幅替换)、上传参考图、从图反推描述、历史版本可挑。
 
+- **音色锁定**:角色的声音描述逐字进视频提示词,改它会让绑定段落的视频作废 → 先报代价再确认(参考帧不受影响);
+- **种子锁定**:锁定某一版参考图的种子后,重出参考图只用它(服务端强制,补全也一样),解锁才能换。
+
 生成走任务表:这里只规划(写一条参数定死的 task),由后台 worker 提交云机。
 """
 from __future__ import annotations
@@ -10,9 +13,10 @@ import sqlite3
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
 
-from tools.drama import repo, uploads
+from tools.drama import invalidation, repo, uploads
 from tools.drama.tasks import tasks_for
-from tools.gen.assets import SPEC, ensure_canvas, plan_asset_image
+from tools.gen.assets import SPEC, ensure_canvas, lock_seed, plan_asset_image, unlock_seed
+from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.llm import runs
 from tools.serve.panels.common import confirm_page, needs_confirm, new_seed, render, rt
 
@@ -62,8 +66,29 @@ async def edit(request: Request, table: str, row_id: int):
         raise ValueError(f"未知资产类型 {table}")
     form = await request.form()
     store = rt(request).store
-    repo.update(store, table, row_id, **{k: str(form.get(k, "")) for k, _ in FIELDS[table]})
-    return RedirectResponse(f"/drama/{repo.get(store, table, row_id)['drama_id']}/assets", status_code=303)
+    fields = {k: str(form.get(k, "")) for k, _ in FIELDS[table]}
+    row = repo.get(store, table, row_id)
+    back = f"/drama/{row['drama_id']}/assets"
+    if table == "character" and fields["voice_desc"] != row["voice_desc"]:
+        imp = invalidation.impact(store, "voice", row_id, video_cap=MINIMAX_H3, image_cap=QWEN_IMAGE_EDIT_2511)
+        if needs_confirm(imp, form):
+            return confirm_page(request, summary="改声音描述:" + imp.summary(), action=f"/asset/{table}/{row_id}",
+                                fields=fields, back=back, panel_key="assets", drama_id=row["drama_id"])
+        invalidation.apply(store, imp)
+    repo.update(store, table, row_id, **fields)
+    return RedirectResponse(back, status_code=303)
+
+
+@router.post("/asset/character/{row_id}/seed")
+async def seed(request: Request, row_id: int):
+    """锁定某一版参考图的种子(task_id),或解锁(unlock=1)。"""
+    store = rt(request).store
+    form = await request.form()
+    if form.get("unlock") == "1":
+        unlock_seed(store, row_id)
+    else:
+        lock_seed(store, row_id, int(str(form.get("task_id", "0")) or 0))
+    return RedirectResponse(f"/drama/{repo.get(store, 'character', row_id)['drama_id']}/assets", status_code=303)
 
 
 @router.post("/asset/{table}/{row_id}/generate")

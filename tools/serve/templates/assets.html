@@ -27,10 +27,31 @@
             {% endfor %}
             <button class="btn" type="submit">保存描述</button>
           </form>
+          {% set locked = it.row.seed if col.table == "character" else none %}
           <form method="post" action="/asset/{{ col.table }}/{{ it.row.id }}/generate" class="row">
-            <div><label>种子</label><input type="number" name="seed" value="{{ seed + loop.index }}"></div>
+            {% if locked is not none %}
+              <div><label>种子(已锁定)</label><input type="number" name="seed" value="{{ locked }}" readonly data-seed-locked></div>
+            {% else %}
+              <div><label>种子</label><input type="number" name="seed" value="{{ seed + loop.index }}"></div>
+            {% endif %}
             <div><button class="btn primary" type="submit" data-generate>生成参考图</button></div>
           </form>
+          {% if col.table == "character" %}
+            {% if locked is not none %}
+              <form method="post" action="/asset/character/{{ it.row.id }}/seed"><input type="hidden" name="unlock" value="1">
+                <button class="btn small" type="submit" data-unlock-seed>解锁种子</button></form>
+            {% else %}
+              {% set done = it.tasks | selectattr("state", "equalto", "done") | selectattr("seed") | list %}
+              {% if done %}
+                <form method="post" action="/asset/character/{{ it.row.id }}/seed" class="row">
+                  <div><label>锁定哪一版的种子</label><select name="task_id">
+                    {% for t in done | reverse %}<option value="{{ t.id }}">#{{ t.id }} · 种子 {{ t.seed }}{% if t.result_path == it.current %}(当前版){% endif %}</option>{% endfor %}
+                  </select></div>
+                  <div><button class="btn small" type="submit" data-lock-seed>锁定种子</button></div>
+                </form>
+              {% endif %}
+            {% endif %}
+          {% endif %}
           <form method="post" action="/asset/{{ col.table }}/{{ it.row.id }}/upload" enctype="multipart/form-data" class="row" data-upload>
             <div><label>上传参考图(PNG / JPEG)</label><input type="file" name="file" accept="image/png,image/jpeg" required data-upload-file></div>
             <div><button class="btn" type="submit" data-upload-button>上传</button></div>

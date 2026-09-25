@@ -37,7 +37,8 @@ async def fill(request: Request, kind: str, scope_id: int):
     back, ctx = _back(runtime.store, kind, scope_id)
     if form.get("confirm") != "1":
         plan = plan_fill(runtime.store, kind, scope_id)
-        seeds = {(i.target_type, i.target_id): base_seed + n for n, i in enumerate(plan.todo)}
+        seeds = {(i.target_type, i.target_id): base_seed + n if i.seed is None else i.seed
+                 for n, i in enumerate(plan.todo)}
         return render(request, "fill_confirm.html", ctx.pop("panel_key"), plan=plan, seeds=seeds, status=STATUS,
                       base_seed=base_seed, action=f"/fill/{kind}/{scope_id}", back=back, **ctx)
     targets = []
