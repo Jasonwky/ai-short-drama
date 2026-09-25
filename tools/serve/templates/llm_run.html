@@ -38,6 +38,11 @@
       <div><label>现在</label><pre>{{ preview.current or "(空)" }}</pre></div>
       <div><label>LLM 建议</label><pre>{{ preview.voice }}</pre></div>
     </div>
+  {% elif preview.describe %}
+    <table data-describe-preview>
+      <tr><th>字段</th><th>现在</th><th>从图反推(批准后写回)</th></tr>
+      {% for f in preview.describe %}<tr><td>{{ f.label }}</td><td>{{ f.current or "(空)" }}</td><td>{{ f.proposed }}</td></tr>{% endfor %}
+    </table>
   {% elif preview.script is defined %}
     <div class="side-by-side">
       <div><label>现在的剧本</label><pre>{{ preview.current or "(空)" }}</pre></div>

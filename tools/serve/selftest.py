@@ -6,6 +6,7 @@
   段落 2 点「用段落 1 视频的尾帧」→ 首帧出现 → 视频面板「补全本集缺的视频」→ 确认页 → 段落 2 视频出现;
   成片面板填服务提供者编码点「导出成片」→ 等自检通过、成片播放器出现(本机真 ffmpeg);
   立项面板「导出工程」→ 工程包链接出现 →「导入为新剧」→ 新剧的资产面板打开;
+  资产面板给没图的道具「上传」参考图 → 图出现;对它点「从图反推描述」→ 假 LLM 看不见图,被校验数字拦下(失败带原因);
   资产面板点「LLM 定声音」→ 审阅页出现待审产物,且假 LLM 的「批准」按钮是灰的;
 - 在**全新临时目录**里建演示工程、用**假后端**跑 —— 假产物碰不到真工程,页面顶部标着「假后端」;
 - **一律有头**(CLAUDE.md 硬约束,用户 2026-09-24 明确要求):人要看得见它点开了每个面板。
@@ -61,6 +62,8 @@ def seed_demo(store: Store, data_root: Path) -> dict:
                              appearance="二十出头,长发,素色上衣", final_prompt="A young woman in a cream blouse.")
     yard = repo.add_scene(store, d, "老宅庭院", image_path="assets/yard.png", final_prompt="An empty courtyard at dusk.")
     jade = repo.add_prop(store, d, "玉佩", image_path="assets/jade.png", final_prompt="A green jade pendant.")
+    photo = repo.add_prop(store, d, "旧照片")                  # 没有参考图:留给「上传」链路
+    (data_root / "upload_demo.png").write_bytes(_png(96, 96, 200))
     seg = repo.add_segment(
         store, ep, 1, scene_id=yard, duration_sec=8.0, reference_mode="first",
         description="【镜头1】林小雨低头看着玉佩。【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」",
@@ -77,7 +80,7 @@ def seed_demo(store: Store, data_root: Path) -> dict:
     repo.bind_props(store, seg2, [jade])
     add_host(store, label="假云机", ssh_host="fake.local", ssh_port=1, ssh_user="root", key_ref="C:/fake/key",
              local_port=8188, vram_gb=24.0, models_dir="/fake/models")
-    return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2}
+    return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2, "photo": photo}
 
 
 def _free_port() -> int:
@@ -150,7 +153,7 @@ def run(out_dir: Path) -> dict:
                 report["panels"].append({"panel": p.key, "title": p.title, "url": url, "ok": not problems,
                                          "problems": problems, "screenshot": str(shot)})
 
-            seg, seg2 = ids["segment"], ids["segment2"]
+            seg, seg2, photo = ids["segment"], ids["segment2"], ids["photo"]
             bundle_zip = lambda: next((work / "outputs" / "bundles").glob("*.zip"))   # noqa: E731 —— 上一条链路才产生
             for n, (key, label, fill, buttons, wait_sel, timeout) in enumerate((
                     ("frames", "生成首帧", {}, [f"#seg-{seg} [data-generate-frame]"], f"#seg-{seg} .current-media img", 40),
@@ -165,7 +168,11 @@ def run(out_dir: Path) -> dict:
                     ("projects", "导入为新剧", {"[data-bundle-file]": bundle_zip}, ["[data-import-button]"],
                      "[data-asset-col=character] [data-asset]", 20),
                     ("assets", "LLM 定声音", {}, ["[data-llm-voice]"],
-                     '[data-llm-state="proposed"] ~ section [data-approve][disabled]', 40)), 1):
+                     '[data-llm-state="proposed"] ~ section [data-approve][disabled]', 40),
+                    ("assets", "上传参考图", {f'[data-asset="prop-{photo}"] [data-upload-file]': lambda: work / "upload_demo.png"},
+                     [f'[data-asset="prop-{photo}"] [data-upload-button]'], f'[data-asset="prop-{photo}"] .current-media img', 20),
+                    ("assets", "从图反推描述", {}, [f'[data-asset="prop-{photo}"] [data-llm-describe]'],
+                     '[data-llm-state="failed"] [data-llm-error]', 40)), 1):
                 errors.clear()
                 p = next(x for x in REGISTRY if x.key == key)
                 page.goto(base + url_for(p, ids["drama"], ids["episode"]))

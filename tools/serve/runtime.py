@@ -118,14 +118,15 @@ class Runtime:
         if self.backend.llm is None:
             raise LLMUnavailable("这个执行面没有配置 LLM")
         llm = self.backend.llm()
-        rid, reused = service.begin(self.store, task, target_id, params, llm)
+        rid, reused = service.begin(self.store, task, target_id, params, llm, self.data_root)
         if not reused:
             self._llm_jobs.append(self._llm_pool.submit(self._finish_llm, rid, llm))
         return rid, reused
 
     def _finish_llm(self, rid: int, llm: LLMBackend) -> None:
         try:
-            service.finish(self.store, rid, llm, self.data_root / "journal")   # → journal/llm/*.json
+            service.finish(self.store, rid, llm, self.data_root / "journal",   # → journal/llm/*.json
+                           data_root=self.data_root)
         except Exception as e:     # 不吞:落成 failed 带原因、进 journal(service 自己处理不了的意外)
             runs.fail(self.store, rid, f"{type(e).__name__}: {e}")
             journal.append(self.data_root, [f"llm_run {rid} 意外失败:{type(e).__name__}: {e}"], prefix="runtime ")

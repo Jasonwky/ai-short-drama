@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""资产:角色 / 场景 / 道具三栏。编辑描述、生成参考图(灰底整幅替换)、历史版本可挑。
+"""资产:角色 / 场景 / 道具三栏。编辑描述、生成参考图(灰底整幅替换)、上传参考图、从图反推描述、历史版本可挑。
 
 生成走任务表:这里只规划(写一条参数定死的 task),由后台 worker 提交云机。
 """
@@ -7,14 +7,14 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
 
-from tools.drama import repo
+from tools.drama import repo, uploads
 from tools.drama.tasks import tasks_for
 from tools.gen.assets import SPEC, ensure_canvas, plan_asset_image
 from tools.llm import runs
-from tools.serve.panels.common import new_seed, render, rt
+from tools.serve.panels.common import confirm_page, needs_confirm, new_seed, render, rt
 
 router = APIRouter()
 
@@ -38,7 +38,7 @@ def page(request: Request, drama_id: int):
         items = []
         for row in store.conn.execute(f"SELECT * FROM {table} WHERE drama_id = ? ORDER BY id", (drama_id,)):
             items.append({"row": row, "current": row[SPEC[table][0]], "tasks": tasks_for(store, table, row["id"]),
-                          "llm_runs": runs.history(store, "character", row["id"], "voice") if table == "character" else []})
+                          "llm_runs": runs.history(store, table, row["id"])})
         cols.append({"table": table, "label": KIND_LABEL[table], "entries": items, "fields": FIELDS[table]})
     return render(request, "assets.html", "assets", drama_id=drama_id, cols=cols, seed=new_seed())
 
@@ -72,3 +72,29 @@ def generate(request: Request, table: str, row_id: int, seed: int = Form(...)):
     ensure_canvas(runtime.data_root)
     plan_asset_image(runtime.store, table, row_id, seed=seed)
     return RedirectResponse(f"/drama/{repo.get(runtime.store, table, row_id)['drama_id']}/assets", status_code=303)
+
+
+@router.post("/asset/{table}/{row_id}/upload")
+def upload(request: Request, table: str, row_id: int, file: UploadFile = File(...)):
+    """上传即暂存(按内容寻址);会让下游作废就先出确认页,否则直接换上。"""
+    runtime = rt(request)
+    rel = uploads.stage(runtime.data_root, file.file.read(uploads.MAX_BYTES + 1))   # 多读 1 字节才判得出超限
+    return _use(request, table, row_id, rel, file.filename or "upload", {})
+
+
+@router.post("/asset/{table}/{row_id}/upload/confirm")
+async def upload_confirm(request: Request, table: str, row_id: int):
+    form = await request.form()
+    return _use(request, table, row_id, str(form.get("rel", "")), str(form.get("filename", "upload")), form)
+
+
+def _use(request: Request, table: str, row_id: int, rel: str, filename: str, form):
+    runtime = rt(request)
+    imp = uploads.plan_use(runtime.store, table, row_id)
+    drama_id = repo.get(runtime.store, table, row_id)["drama_id"]
+    if needs_confirm(imp, form):
+        return confirm_page(request, summary="换成上传的参考图:" + imp.summary(),
+                            action=f"/asset/{table}/{row_id}/upload/confirm", fields={"rel": rel, "filename": filename},
+                            back=f"/drama/{drama_id}/assets", panel_key="assets", drama_id=drama_id)
+    uploads.confirm_use(runtime.store, runtime.data_root, table, row_id, rel, filename, imp)
+    return RedirectResponse(f"/drama/{drama_id}/assets", status_code=303)

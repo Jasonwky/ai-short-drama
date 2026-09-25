@@ -13,14 +13,15 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
 from tools.drama import repo
-from tools.llm import outline, runs, script_writer, service, storyboard, voices
+from tools.llm import describe, outline, runs, script_writer, service, storyboard, voices
 from tools.serve.panels.common import render, rt
 
 router = APIRouter()
 
 # 各任务从表单里取哪些参数、什么类型
 PARAMS = {"outline": {"novel": str, "n_episodes": int}, "script_synopsis": {"synopsis": str, "minutes": int},
-          "script_adapt": {"minutes": int}, "storyboard": {}, "voice": {}}
+          "script_adapt": {"minutes": int}, "storyboard": {}, "voice": {},
+          **{f"describe_{t}": {} for t in describe.FIELDS}}
 
 
 def _params(task: str, form) -> dict:
@@ -40,8 +41,8 @@ def _home(store, row) -> tuple[str, dict]:
     t, tid = row["target_type"], row["target_id"]
     if t == "drama":
         return f"/drama/{tid}/outline", {"panel_key": "outline", "drama_id": tid}
-    if t == "character":
-        did = repo.get(store, "character", tid)["drama_id"]
+    if t in ("character", "scene", "prop"):
+        did = repo.get(store, t, tid)["drama_id"]
         return f"/drama/{did}/assets", {"panel_key": "assets", "drama_id": did}
     if row["task"] == "storyboard":
         return f"/episode/{tid}/storyboard", {"panel_key": "storyboard", "episode_id": tid}
@@ -63,6 +64,11 @@ def _preview(store, row) -> dict:
                          "description": desc, "duration": storyboard.duration(desc, seg["pace"]),
                          "image_prompt": seg["image_prompt"], "video_prompt": seg["video_prompt"]})
         return {"segments": segs}
+    if task.startswith("describe_"):
+        table = row["target_type"]
+        cur = repo.get(store, table, row["target_id"])
+        return {"describe": [{"field": k, "label": label.split(":")[0], "current": cur[k], "proposed": out[k]}
+                             for k, label in describe.FIELDS[table].items()]}
     if task == "voice":
         return {"voice": voices.compose(out),
                 "current": repo.get(store, "character", row["target_id"])["voice_desc"]}
@@ -103,7 +109,7 @@ def review(request: Request, run_id: int):
 @router.post("/llm/run/{run_id}/approve")
 def approve(request: Request, run_id: int):
     store = rt(request).store
-    service.approve(store, run_id)
+    service.approve(store, run_id, rt(request).data_root)
     return RedirectResponse(_home(store, runs.get(store, run_id))[0], status_code=303)
 
 

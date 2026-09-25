@@ -31,10 +31,19 @@
             <div><label>种子</label><input type="number" name="seed" value="{{ seed + loop.index }}"></div>
             <div><button class="btn primary" type="submit" data-generate>生成参考图</button></div>
           </form>
-          {% if col.table == "character" %}
-            <form method="post" action="/llm/start/voice/{{ it.row.id }}"><button class="btn small" type="submit" data-llm-voice title="角色设定与台词会发送给 LLM 服务">LLM 定声音</button></form>
-            {{ llm_run_list(it.llm_runs, llm_state) }}
-          {% endif %}
+          <form method="post" action="/asset/{{ col.table }}/{{ it.row.id }}/upload" enctype="multipart/form-data" class="row" data-upload>
+            <div><label>上传参考图(PNG / JPEG)</label><input type="file" name="file" accept="image/png,image/jpeg" required data-upload-file></div>
+            <div><button class="btn" type="submit" data-upload-button>上传</button></div>
+          </form>
+          {% if col.table == "character" %}<p class="hint">写实风格下不要上传真实人物的照片 —— 剧中角色一律是虚构人物。</p>{% endif %}
+          <div class="row">
+            {% if col.table == "character" %}
+              <form method="post" action="/llm/start/voice/{{ it.row.id }}"><button class="btn small" type="submit" data-llm-voice title="角色设定与台词会发送给 LLM 服务">LLM 定声音</button></form>
+            {% endif %}
+            <form method="post" action="/llm/start/describe_{{ col.table }}/{{ it.row.id }}">
+              <button class="btn small" type="submit" data-llm-describe {% if not it.current %}disabled title="先上传或生成一张参考图"{% else %}title="参考图会发送给 LLM 服务"{% endif %}>从图反推描述</button></form>
+          </div>
+          {{ llm_run_list(it.llm_runs, llm_state) }}
           {{ history(it.tasks, it.current, state_label, "/drama/" ~ drama.id ~ "/assets") }}
         </div>
       {% else %}
