@@ -11,6 +11,7 @@ CLAUDE.md「LLM 调用纪律」在这里落成代码:
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from collections.abc import Callable
@@ -76,21 +77,30 @@ def input_sha(*parts) -> str:
     return hashlib.sha256(json.dumps(parts, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 
+def image_part(png_or_jpeg: bytes) -> dict:
+    """一张图片 → Chat 消息里的 image_url 段(data URL)。"""
+    mime = "image/png" if png_or_jpeg[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
+    return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{base64.b64encode(png_or_jpeg).decode()}"}}
+
+
 def run_gated(*, client, model: str, task: str, system: str, user: str, tool_name: str, description: str,
-              schema: dict, judge: Judge, journal_dir: Path, max_rounds: int = 3, max_tokens: int = 8000) -> GateResult:
+              schema: dict, judge: Judge, journal_dir: Path, max_rounds: int = 3, max_tokens: int = 8000,
+              images: list[bytes] = ()) -> GateResult:
     lint = strict_schema_problems(schema)
     if lint:
         raise ValueError("schema 不符合 strict 要求,不许发给 LLM:" + ";".join(lint))
-    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    content = [{"type": "text", "text": user}, *map(image_part, images)] if images else user
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
     rounds: list[Round] = []
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     path = Path(journal_dir) / "llm" / f"{stamp}-{task}-{input_sha(system, user, schema)[:8]}.json"
+    shown = [{"sha256": hashlib.sha256(b).hexdigest(), "bytes": len(b)} for b in images]   # journal 不存图本身
 
     def dump(status: str, args: dict | None, error: str = "") -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({
             "task": task, "model": model, "status": status, "error": error, "system": system, "user": user,
-            "schema": schema, "rounds": [r.__dict__ for r in rounds], "result": args,
+            "images": shown, "schema": schema, "rounds": [r.__dict__ for r in rounds], "result": args,
         }, ensure_ascii=False, indent=2), encoding="utf-8")
 
     for n in range(1, max_rounds + 1):

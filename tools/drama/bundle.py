@@ -63,7 +63,7 @@ def collect(store: Store, drama_id: int) -> dict:
     t["task"] = _rows(store, " UNION ".join(
         f"SELECT * FROM task WHERE target_type = '{k}' AND target_id IN ({_in(v)})" for k, v in owned.items())
         + " ORDER BY id", ())
-    llm_owned = {"drama": [drama_id], "episode": eps, "character": owned["character"]}
+    llm_owned = {"drama": [drama_id], "episode": eps, **{k: owned[k] for k in ("character", "scene", "prop")}}
     t["llm_run"] = _rows(store, " UNION ".join(
         f"SELECT * FROM llm_run WHERE target_type = '{k}' AND target_id IN ({_in(v)})" for k, v in llm_owned.items())
         + " ORDER BY id", ())

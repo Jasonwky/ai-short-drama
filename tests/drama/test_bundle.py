@@ -126,3 +126,16 @@ def test_not_a_bundle(store, tmp_path):
         z.writestr("readme.txt", "hi")
     with pytest.raises(ValueError, match="缺少 manifest.json"):
         bundle.import_bundle(store, tmp_path, tmp_path / "x.zip")
+
+
+def test_scene_and_prop_llm_runs_travel_too(store, project, tmp_path):
+    """v5 起场景 / 道具也能有 LLM 记录(从图反推描述),工程包要把它们带上。"""
+    rid = runs.start(store, task="describe_prop", target_type="prop", target_id=project["jade"], model="m",
+                     input_sha="s", llm_mode="real", params={})
+    runs.propose(store, rid, {"description": "绿玉"}, str(project["root"] / "journal/llm/run.json"))
+    rel = bundle.export_bundle(store, project["root"], project["drama"])
+    dest = Store(":memory:")
+    new = bundle.import_bundle(dest, tmp_path / "dst", project["root"] / rel)
+    jade = dest.conn.execute("SELECT id FROM prop WHERE drama_id = ?", (new,)).fetchone()[0]
+    [run] = runs.history(dest, "prop", jade)
+    assert run["task"] == "describe_prop" and runs.output(run) == {"description": "绿玉"}

@@ -136,6 +136,17 @@ def gray_frame(path: Path, t: float, width: int, height: int) -> bytes:
     return p.stdout
 
 
+def marked_png(src: Path, number: int, max_side: int = 768) -> bytes:
+    """缩到最长边 max_side,并在底部加一条蓝色色带、印上 number(白字)—— 给视觉 LLM 的校验标记。
+    标记和内容在**同一张图**里:答对了数字,就证明模型看到的正是这张图。"""
+    font = FONT.as_posix().replace(":", "\\:")
+    vf = (f"scale='if(gt(iw,ih),{max_side},-2)':'if(gt(iw,ih),-2,{max_side})',pad=iw:ih+ih/8:0:0:blue,"
+          f"drawtext=fontfile='{font}':text='{number}':fontcolor=white:fontsize=h/14:x=(w-text_w)/2:y=h-h/9+(h/9-text_h)/2")
+    p = _run(["ffmpeg", "-v", "error", "-i", str(src), "-vf", vf, "-frames:v", "1", "-f", "image2pipe",
+              "-vcodec", "png", "-"], binary=True)
+    return p.stdout
+
+
 def diff_bbox(a: bytes, b: bytes, width: int, threshold: int = 48, min_run: int = 3) -> tuple[int, int, int, int] | None:
     """两帧灰度差超过阈值的区域外接框 (x0, y0, x1, y1),没有差异返回 None。
 
