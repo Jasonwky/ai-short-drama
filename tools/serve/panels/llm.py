@@ -14,7 +14,7 @@ from fastapi.responses import RedirectResponse
 
 from tools.drama import repo
 from tools.llm import describe, outline, runs, script_writer, service, storyboard, voices
-from tools.serve.panels.common import render, rt
+from tools.serve.panels.common import confirm_page, render, rt
 
 router = APIRouter()
 
@@ -107,9 +107,18 @@ def review(request: Request, run_id: int):
 
 
 @router.post("/llm/run/{run_id}/approve")
-def approve(request: Request, run_id: int):
+async def approve(request: Request, run_id: int):
+    """会删掉本集已有段落的(重拆分镜 / 重写剧本),先出确认页报代价;确认了才带 confirm_reset 批准。"""
     store = rt(request).store
-    service.approve(store, run_id, rt(request).data_root)
+    form = await request.form()
+    cost = service.reset_cost(store, run_id)
+    if cost is not None and form.get("confirm") != "1":
+        n, imp = cost
+        home, ctx = _home(store, runs.get(store, run_id))
+        return confirm_page(request, summary=f"批准会删除本集已有的 {n} 个段落(生成历史保留,可在溯源里查到);"
+                                             + imp.summary(),
+                            action=f"/llm/run/{run_id}/approve", fields={}, back=f"/llm/run/{run_id}", **ctx)
+    service.approve(store, run_id, rt(request).data_root, confirm_reset=cost is not None)
     return RedirectResponse(_home(store, runs.get(store, run_id))[0], status_code=303)
 
 

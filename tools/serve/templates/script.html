@@ -17,7 +17,9 @@
       <p class="hint">按字数估算本集应拆 <b>{{ e.range[0] }}–{{ e.range[1] }}</b> 个段落;当前 {{ e.n_segments }} 个。</p>
       {% for p in e.problems %}<p class="status-bad">❌ {{ p }}</p>{% endfor %}
     {% endif %}
-    {% if e.n_segments == 0 %}
+    {% if e.n_segments %}
+      <p class="hint">这一集已经拆了 {{ e.n_segments }} 个段落:LLM 重写的剧本<b>批准时会删除这些段落</b>(按旧剧本拆的;先报代价、要你确认;生成历史保留),之后需要重拆分镜。</p>
+    {% endif %}
       <div class="row">
         <form method="post" action="/llm/start/script_synopsis/{{ e.row.id }}" style="flex: 2; min-width: 320px" data-llm-synopsis>
           <label>从梗概生成(LLM)</label><textarea name="synopsis" placeholder="一两段梗概,至少 20 字"></textarea>
@@ -35,9 +37,6 @@
           </form>
         {% endif %}
       </div>
-    {% else %}
-      <p class="hint">这一集已经拆了分镜,LLM 重写剧本本版不支持(会让全部段落作废)。</p>
-    {% endif %}
     {{ llm_run_list(e.llm_runs, llm_state) }}
   </section>
 {% else %}

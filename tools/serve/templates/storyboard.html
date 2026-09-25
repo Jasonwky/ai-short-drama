@@ -29,13 +29,10 @@
 </section>
 <section class="card">
   <h2>LLM 拆分镜</h2>
-  {% if not segs %}
-    <p class="hint">按本集剧本自动拆段落:场景 / 角色 / 道具只能从这部剧已有的资产里选;台词逐字照抄剧本;时长由代码按台词字数算。
-      不合格自动退回重做,<b>你批准后</b>才会建出段落。剧本会发送给 LLM 服务。</p>
-    <form method="post" action="/llm/start/storyboard/{{ ep.id }}"><button class="btn primary" type="submit" data-llm-storyboard>LLM 拆分镜</button></form>
-  {% else %}
-    <p class="hint">这一集已经有段落。本版只给空集拆分镜。</p>
-  {% endif %}
+  <p class="hint">按本集剧本自动拆段落:场景 / 角色 / 道具只能从这部剧已有的资产里选;台词逐字照抄剧本;时长由代码按台词字数算。
+    不合格自动退回重做,<b>你批准后</b>才会建出段落。剧本会发送给 LLM 服务。</p>
+  {% if segs %}<p class="hint">这一集已有 {{ segs | length }} 个段落:重拆的结果<b>批准时会先删除它们</b>(先报代价、要你确认;生成历史保留)。</p>{% endif %}
+  <form method="post" action="/llm/start/storyboard/{{ ep.id }}"><button class="btn primary" type="submit" data-llm-storyboard>{{ "LLM 重拆分镜" if segs else "LLM 拆分镜" }}</button></form>
   {{ llm_run_list(llm_runs, llm_state) }}
 </section>
 {% endblock %}

@@ -66,5 +66,6 @@ def test_bad_params_and_unmet_preconditions_are_400(client, store, sample):
     d = repo.create_drama(store, "新剧", "9:16", "realistic")
     r = client.post(f"/llm/start/outline/{d}", data={"novel": "x", "n_episodes": "三"})
     assert r.status_code == 400 and "要填整数" in r.text
-    r = client.post(f"/llm/start/storyboard/{sample['episode']}")
-    assert r.status_code == 400 and "已经有段落" in r.text
+    empty = repo.add_episode(store, sample["drama"], 2, "script")
+    r = client.post(f"/llm/start/storyboard/{empty}")
+    assert r.status_code == 400 and "还没有剧本" in r.text

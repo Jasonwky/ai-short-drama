@@ -84,8 +84,9 @@ def test_gate_failure_keeps_the_journal(store, sample, tmp_path):
 
 
 def test_preconditions_are_checked_before_any_run_exists(store, sample):
-    with pytest.raises(ValueError, match="已经有段落"):
-        service.begin(store, "storyboard", sample["episode"], {}, _real({}))
+    empty = repo.add_episode(store, sample["drama"], 2, "script")               # 没有剧本
+    with pytest.raises(ValueError, match="还没有剧本"):
+        service.begin(store, "storyboard", empty, {}, _real({}))
     assert store.conn.execute("SELECT COUNT(*) FROM llm_run").fetchone()[0] == 0
     with pytest.raises(ValueError, match="未知的 LLM 任务"):
         service.begin(store, "poem", 1, {}, _real({}))

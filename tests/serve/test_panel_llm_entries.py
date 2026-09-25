@@ -14,9 +14,9 @@ def test_novel_episode_offers_adaptation(client, store, sample):
     assert "data-llm-adapt" in client.get(f"/drama/{sample['drama']}/script").text
 
 
-def test_generated_segments_hide_the_llm_rewrite(client, sample):
+def test_segmented_episode_offers_rewrite_with_a_warning(client, sample):
     page = client.get(f"/drama/{sample['drama']}/script").text
-    assert "已经拆了分镜" in page                                     # 第 1 集有段落:不给 LLM 重写
+    assert "已经拆了 1 个段落" in page and "data-llm-synopsis" in page    # 有段落也能重写,但写明代价
 
 
 def test_panels_list_their_llm_runs(client, runtime, store, sample):

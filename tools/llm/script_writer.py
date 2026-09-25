@@ -48,8 +48,6 @@ def _base(store: Store, episode_id: int, minutes: int) -> tuple:
     problems = []
     if minutes not in MINUTES:
         problems.append(f"目标时长只能选 {MINUTES} 分钟")
-    if store.conn.execute("SELECT COUNT(*) FROM segment WHERE episode_id = ?", (episode_id,)).fetchone()[0]:
-        problems.append("这一集已经有段落 —— 本版只给还没拆分镜的集生成剧本")
     names = [r[0] for r in store.conn.execute("SELECT name FROM character WHERE drama_id = ? ORDER BY id",
                                               (ep["drama_id"],))]
     return ep, problems, names
@@ -134,8 +132,11 @@ def judge_factory(ctx: dict):
 
 
 def apply(store: Store, episode_id: int, args: dict, ctx: dict) -> None:
-    """人批准后才调用。写入前再核对一次前提(期间可能有人拆了分镜)。"""
+    """人批准后才调用。写入前再核对一次前提。已有段落是按旧剧本拆的:要由 `service.approve(confirm_reset=True)`
+    在人确认代价后先删掉,这里只认空集。"""
     _, problems, _ = _base(store, episode_id, ctx["minutes"])
+    if store.conn.execute("SELECT COUNT(*) FROM segment WHERE episode_id = ?", (episode_id,)).fetchone()[0]:
+        problems.append("这一集已经有段落(按旧剧本拆的)—— 要重写请在审阅页确认删除旧段落")
     if problems:
         raise ValueError(";".join(problems))
     fields = {"script": render(args)}

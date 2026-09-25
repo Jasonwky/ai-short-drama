@@ -4,6 +4,8 @@
 - `begin` 同步完成:前提不满足当场报错(`ValueError`,界面上是「做不了」页),有锁定版就直接复用、不问 LLM;
 - `finish` 是真正调 LLM 的部分,控制台放在后台线程里跑(一次 30–80 秒);失败**不吞**:落成 failed 带原因;
 - `approve` 用 run 里保存的输入参数**重建上下文**(同时重新核对前提),再调任务模块的 `apply` 写回。
+- 会让本集分镜作废的任务(拆分镜、写剧本)对**已有段落**的集也能跑;批准时必须 `confirm_reset=True`
+  (人在确认页看过代价)才先删旧段落再写回 —— 生成历史留在 task 表,段落编号永不复用。
 - 看图的任务(模块有 `images(ctx)`)要素材根 `data_root` 找图;图片的 sha256 进输入指纹,换了图锁定版就不再命中。
   任务可以指定自己的模型(`Spec.model`):默认模型看不见图(实测),从图反推描述只能用视觉模型。
 """
@@ -14,7 +16,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from tools.drama import invalidation, repo
 from tools.drama.db import Store
+from tools.drama.invalidation import Impact
+from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.llm import describe, outline, runs, script_writer, storyboard, voices
 from tools.llm.client import LLMError
 from tools.llm.gate import GateFailed, input_sha, run_gated
@@ -34,15 +39,19 @@ class Spec:
     label: str
     max_rounds: int = 3
     model: str | None = None        # 任务专用模型;None = 用后端的默认模型
+    resets_segments: bool = False   # 批准会让本集已有段落作废(删掉重来)
     needs_root: bool = False        # context 要不要 data_root(看图任务要找图)
 
 
 TASKS: dict[str, Spec] = {
     "outline": Spec(outline, "drama", outline.context, 12000, "小说 → 分集大纲"),
-    "script_synopsis": Spec(script_writer, "episode", script_writer.context_synopsis, 12000, "梗概 → 剧本"),
-    "script_adapt": Spec(script_writer, "episode", script_writer.context_adapt, 12000, "大纲 + 原文 → 剧本"),
+    "script_synopsis": Spec(script_writer, "episode", script_writer.context_synopsis, 12000, "梗概 → 剧本",
+                            resets_segments=True),
+    "script_adapt": Spec(script_writer, "episode", script_writer.context_adapt, 12000, "大纲 + 原文 → 剧本",
+                         resets_segments=True),
     # 分镜约束最多(段数 / 子镜头 / 台词逐字 / @绑定),实测默认模型 3 轮内约 1/12 收敛不了,多给一轮
-    "storyboard": Spec(storyboard, "episode", storyboard.context, 16000, "剧本 → 分镜", max_rounds=4),
+    "storyboard": Spec(storyboard, "episode", storyboard.context, 16000, "剧本 → 分镜", max_rounds=4,
+                       resets_segments=True),
     "voice": Spec(voices, "character", voices.context, 2000, "角色 → 声音描述"),
     **{f"describe_{t}": Spec(describe, t, lambda store, rid, data_root, t=t: describe.context(store, t, rid, data_root),
                              2000, f"从图反推{describe.KIND[t]}描述", model=VISION_MODEL, needs_root=True)
@@ -123,7 +132,18 @@ def finish(store: Store, run_id: int, llm: LLMBackend, journal_dir: Path, max_ro
         runs.propose(store, run_id, res.args, str(res.journal_path))
 
 
-def approve(store: Store, run_id: int, data_root: Path | None = None):
+def reset_cost(store: Store, run_id: int) -> tuple[int, Impact] | None:
+    """批准这条会删掉几个段落、作废多少产物;不会删段落的返回 None。"""
+    row = runs.get(store, run_id)
+    if not spec(row["task"]).resets_segments:
+        return None
+    n = store.conn.execute("SELECT COUNT(*) FROM segment WHERE episode_id = ?", (row["target_id"],)).fetchone()[0]
+    if not n:
+        return None
+    return n, invalidation.impact(store, "script", row["target_id"], video_cap=MINIMAX_H3, image_cap=QWEN_IMAGE_EDIT_2511)
+
+
+def approve(store: Store, run_id: int, data_root: Path | None = None, confirm_reset: bool = False):
     row = runs.get(store, run_id)
     if row["state"] != "proposed":
         raise ValueError(f"这条 LLM 产物是 {row['state']} 状态,只有待审的能批准")
@@ -132,6 +152,11 @@ def approve(store: Store, run_id: int, data_root: Path | None = None):
     p = prepare(store, row["task"], row["target_id"], runs.params(row), data_root)   # 重新核对前提
     if p.sha != row["input_sha"]:
         raise ValueError("生成之后输入已经变了(剧本 / 资产名单 / 参考图 / 参数有改动)—— 这一版对不上现在的数据,请重跑")
+    cost = reset_cost(store, run_id)
+    if cost is not None:
+        if not confirm_reset:
+            raise ValueError(f"批准会删除本集已有的 {cost[0]} 个段落({cost[1].summary()})—— 需要人确认代价")
+        repo.delete_segments(store, row["target_id"])
     result = spec(row["task"]).module.apply(store, row["target_id"], runs.output(row), p.ctx)
     runs.approve(store, run_id)
     return result

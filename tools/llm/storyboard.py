@@ -53,8 +53,6 @@ def context(store: Store, episode_id: int) -> dict:
         problems.append("这部剧还没有场景(先在「资产」里建)")
     if not names["character"]:
         problems.append("这部剧还没有角色(先在「资产」里建)")
-    if store.conn.execute("SELECT COUNT(*) FROM segment WHERE episode_id = ?", (episode_id,)).fetchone()[0]:
-        problems.append("这一集已经有段落 —— 本版只支持给空集拆分镜")
     if problems:
         raise ValueError(";".join(problems))
     return {"script": ep["script"], "characters": names["character"], "scenes": names["scene"],
@@ -163,8 +161,11 @@ def judge_factory(ctx: dict, cap=MINIMAX_H3):
 def apply(store: Store, episode_id: int, args: dict, ctx: dict) -> list[int]:
     """人批准后才调用:按顺序建段落、写时长与提示词、绑定素材。
 
-    写入前**再校验一次前提**:从 LLM 出结果到人批准之间,可能已经有人手工建了段落。"""
+    写入前**再校验一次前提**。本集必须是空的:已有段落的集要重拆,由 `service.approve(confirm_reset=True)`
+    在人确认代价后先删旧段落 —— 这里绝不自己删,也不在旧段落后面追加。"""
     context(store, episode_id)
+    if store.conn.execute("SELECT COUNT(*) FROM segment WHERE episode_id = ?", (episode_id,)).fetchone()[0]:
+        raise ValueError("这一集已经有段落 —— 要重拆请在审阅页确认删除旧段落")
     did = repo.get(store, "episode", episode_id)["drama_id"]
     ids = {t: {r["name"]: r["id"] for r in store.conn.execute(f"SELECT id, name FROM {t} WHERE drama_id = ?", (did,))}
            for t in ("character", "scene", "prop")}
