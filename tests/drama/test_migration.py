@@ -39,3 +39,35 @@ def test_state_since_moves_with_every_transition(store, sample):
     store.conn.execute("UPDATE task SET state_since = '2000-01-01T00:00:00+00:00' WHERE id = ?", (t,))
     set_task_state(store, t, "queued")
     assert repo.get(store, "task", t)["state_since"] > "2000-01-01T00:00:00+00:00"
+
+
+def test_v4_llm_run_is_rebuilt_to_allow_scene_and_prop_targets(tmp_path):
+    """v5 放宽 llm_run.target_type:旧数据原样保留,触发器照样在。"""
+    import sqlite3
+
+    import pytest
+
+    from tools.drama.db import LLM_RUN_DDL
+    from tools.llm import runs
+
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    s.conn.execute("DROP TABLE llm_run")
+    for stmt in LLM_RUN_DDL:                        # v3 / v4 时代的表:target_type 只许 drama / episode / character
+        s.conn.execute(stmt)
+    rid = runs.start(s, task="voice", target_type="character", target_id=1, model="m", input_sha="x", llm_mode="real",
+                     params={})
+    runs.propose(s, rid, {"a": 1}, "j")
+    with pytest.raises(sqlite3.IntegrityError):
+        runs.start(s, task="describe", target_type="scene", target_id=1, model="m", input_sha="x", llm_mode="real",
+                   params={})
+    s.conn.execute("UPDATE meta SET value = '4' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    assert runs.output(runs.get(s, rid)) == {"a": 1}                     # 旧数据还在
+    runs.start(s, task="describe", target_type="prop", target_id=1, model="m", input_sha="x", llm_mode="real",
+               params={})
+    with pytest.raises(sqlite3.IntegrityError, match="不可改"):          # 触发器重建了
+        s.conn.execute("UPDATE llm_run SET output_json = '{}' WHERE id = ?", (rid,))
+    s.close()

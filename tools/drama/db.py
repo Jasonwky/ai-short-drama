@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -190,7 +190,12 @@ BEGIN SELECT RAISE(ABORT, 'LLM 产物一经落盘不可改 —— 要改就重�
 WHEN NEW.state = 'approved' AND OLD.llm_mode = 'fake'
 BEGIN SELECT RAISE(ABORT, '假 LLM 的产物不许通过审批闸门'); END""",
 ]
-SCHEMA += "".join(f"{stmt};\n" for stmt in LLM_RUN_DDL)
+# v5:从图反推描述的目标可以是场景 / 道具。SQLite 改不了 CHECK,只能重建表(见 MIGRATIONS[4]);
+# v3 的 LLM_RUN_DDL 已发布,原样保留给迁移用,新库直接建 v5 版。
+_LLM_TARGETS_V3 = "('drama', 'episode', 'character')"
+_LLM_TARGETS_V5 = "('drama', 'episode', 'character', 'scene', 'prop')"
+LLM_RUN_DDL_V5 = [LLM_RUN_DDL[0].replace(_LLM_TARGETS_V3, _LLM_TARGETS_V5), *LLM_RUN_DDL[1:]]
+SCHEMA += "".join(f"{stmt};\n" for stmt in LLM_RUN_DDL_V5)
 
 # v4:成片导出。ProduceID 与溯源报告绑定,身份字段不可改;导出结束(done / failed)后整行不可改。
 # setting 只收白名单里的键:服务提供者编码是★必答项,由运营方填,记住后下次预填。
@@ -230,6 +235,9 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE host ADD COLUMN models_dir TEXT NOT NULL DEFAULT ''"],
     2: LLM_RUN_DDL,
     3: EXPORT_DDL,
+    # v5:重建 llm_run 放宽 target_type;旧表改名 → 建新表 → 原样拷数据 → 删旧表(旧触发器随之删除)→ 建新触发器
+    4: ["ALTER TABLE llm_run RENAME TO llm_run_v3", LLM_RUN_DDL_V5[0],
+        "INSERT INTO llm_run SELECT * FROM llm_run_v3", "DROP TABLE llm_run_v3", *LLM_RUN_DDL_V5[1:]],
 }
 
 
