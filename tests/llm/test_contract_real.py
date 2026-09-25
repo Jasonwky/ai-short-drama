@@ -59,6 +59,17 @@ def test_script_from_synopsis(client):
     assert rules.dialogue_lines(text)                                      # 格式能被分镜环节解析
 
 
+def test_outline_later_batch_continues_the_previous_episode(client):
+    """长小说分批:后一批带上一集大纲作前情(提示词多了 <previous>),结构照样过判卷、段号覆盖本批全文。"""
+    paras = outline.paragraphs((GOLDEN / "jade_novel.txt").read_text(encoding="utf-8"))
+    half = len(paras) // 2
+    prev = "红布包\n林小雨回老宅整理遗物,找到母亲留下的红布包,里面是一块玉佩。\n- 回到老宅\n- 找到红布包"
+    ctx = {"paragraphs": paras[half:], "n": 2, "start_number": 3, "previous": prev}
+    res = _gate(client, "outline", outline, ctx)
+    eps = res.args["episodes"]
+    assert len(eps) == 2 and eps[0]["start_para"] == 1 and eps[-1]["end_para"] == len(paras) - half
+
+
 def test_outline_from_novel(client):
     paras = outline.paragraphs((GOLDEN / "jade_novel.txt").read_text(encoding="utf-8"))
     res = _gate(client, "outline", outline, {"paragraphs": paras, "n": 3})
