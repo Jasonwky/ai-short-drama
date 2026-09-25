@@ -79,24 +79,46 @@ class ChatClient:
 
     def call_tool(self, *, model: str, messages: list[dict], tool_name: str, description: str, schema: dict,
                   max_tokens: int) -> ToolResult:
-        body = {
-            "model": model, "messages": messages, "max_tokens": max_tokens,
-            "tools": [{"type": "function", "function": {"name": tool_name, "description": description,
-                                                        "strict": True, "parameters": schema}}],
-            "tool_choice": {"type": "function", "function": {"name": tool_name}},
-        }
-        req = urllib.request.Request(self.base_url + "/chat/completions", data=json.dumps(body).encode("utf-8"),
-                                     headers={"Authorization": f"Bearer {self._key}",
-                                              "Content-Type": "application/json"})
         t0 = time.time()
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                data = json.loads(r.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            raise LLMUnavailable(f"LLM 返回 HTTP {e.code}:{e.read().decode('utf-8', 'replace')[:300]}") from e
-        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
-            raise LLMUnavailable(f"连不上 LLM 服务 {self.base_url}:{e}") from e
+        for n, spelling in enumerate(SPELLINGS, 1):
+            body = request_body(model=model, messages=messages, tool_name=tool_name, description=description,
+                                schema=schema, max_tokens=max_tokens, spelling=spelling)
+            req = urllib.request.Request(self.base_url + "/chat/completions", data=json.dumps(body).encode("utf-8"),
+                                         headers={"Authorization": f"Bearer {self._key}",
+                                                  "Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                    data = json.loads(r.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as e:
+                msg = e.read().decode("utf-8", "replace")
+                if e.code == 400 and "tool_choice" in msg and n < len(SPELLINGS):
+                    continue            # 只有「tool_choice 拼法不对」才换拼法重发;同一个请求,换个写法
+                raise LLMUnavailable(f"LLM 返回 HTTP {e.code}:{msg[:300]}") from e
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+                raise LLMUnavailable(f"连不上 LLM 服务 {self.base_url}:{e}") from e
         return parse_response(data, model, tool_name, time.time() - t0)
+
+
+# `tool_choice` 的三种拼法,按顺序试。2026-09-24 实测 SynScale 同一个模型会路由到不同上游,各自只认一种:
+# 「Missing required parameter: 'tool_choice.name'」(要顶层 name)、「missing `tool_choice.function`」(要 function.name)、
+# 「Unknown parameter: 'tool_choice.function'」(不认 function)。P4 时 Chat 拼法对所有模型都能用,之后服务端变了
+# (spike-results/2026-09-24-视觉LLM反推描述实测.md)。三种表达的是同一个请求,只换拼法,不是降级。
+SPELLINGS = ("both", "flat", "chat")
+
+
+def request_body(*, model: str, messages: list[dict], tool_name: str, description: str, schema: dict,
+                 max_tokens: int, spelling: str = "both") -> dict:
+    """强制调用一个 strict 工具的请求体。纯函数,可单测。"""
+    choice = {"both": {"type": "function", "name": tool_name, "function": {"name": tool_name}},
+              "flat": {"type": "function", "name": tool_name},
+              "chat": {"type": "function", "function": {"name": tool_name}}}[spelling]
+    return {
+        "model": model, "messages": messages, "max_tokens": max_tokens,
+        "tools": [{"type": "function", "function": {"name": tool_name, "description": description,
+                                                    "strict": True, "parameters": schema}}],
+        "tool_choice": choice,
+    }
 
 
 def parse_response(data: dict, model: str, tool_name: str, seconds: float) -> ToolResult:
