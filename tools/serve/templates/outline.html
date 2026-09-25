@@ -3,17 +3,16 @@
 {% block content %}
 <h1>大纲</h1>
 <section class="card" data-outline>
-  {% if not eps %}
-    <h2>小说改编:原文 → 分集大纲</h2>
-    <p class="hint">LLM 按你要的集数拆大纲,并给出每集在原文里的起止原句;代码逐字核对原句、检查顺序与集数,不合格自动退回重做。
-      <b>你批准后</b>才会建出各集。小说原文会发送给 LLM 服务。</p>
-    <form method="post" action="/llm/start/outline/{{ drama.id }}" data-outline-form>
-      <label>小说原文(最多 6 万字;更长请分批)</label>
-      <textarea class="tall" name="novel" required></textarea>
-      <label>拆成几集</label><input type="number" name="n_episodes" value="3" min="1" max="30">
-      <button class="btn primary" type="submit" data-llm-outline>LLM 生成大纲</button>
-    </form>
-  {% else %}
+  <h2>小说改编:原文 → 分集大纲{% if eps %}(接在第 {{ eps[-1].number }} 集之后){% endif %}</h2>
+  <p class="hint">代码先把原文按段编号,LLM 只回每集的起止段号;代码核对首尾相接、覆盖全文、集数,不合格自动退回重做。
+    <b>你批准后</b>才会建出各集。超过 6 万字自动按段落分批,逐批生成。小说原文会发送给 LLM 服务。</p>
+  <form method="post" action="/drama/{{ drama.id }}/outline/batches" data-outline-form>
+    <label>小说原文{% if eps %}(接着已有各集往下的章节){% endif %}</label>
+    <textarea class="tall" name="novel" required></textarea>
+    <label>一共拆成几集(分批时按字数分到各批)</label><input type="number" name="n_episodes" value="3" min="1">
+    <button class="btn primary" type="submit" data-llm-outline>下一步:看分批</button>
+  </form>
+  {% if eps %}
     <h2>各集大纲</h2>
     {% for e in eps %}
       <div class="card" data-episode="{{ e.id }}">

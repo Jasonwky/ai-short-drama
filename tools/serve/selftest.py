@@ -6,6 +6,7 @@
   段落 2 点「用段落 1 视频的尾帧」→ 首帧出现 → 视频面板「补全本集缺的视频」→ 确认页 → 段落 2 视频出现;
   成片面板填服务提供者编码点「导出成片」→ 等自检通过、成片播放器出现(本机真 ffmpeg);
   立项面板「导出工程」→ 工程包链接出现 →「导入为新剧」→ 新剧的资产面板打开;
+  大纲面板贴原文点「下一步:看分批」→ 分批页出现;资产面板改角色声音描述 → 先出代价确认页(已有视频会作废);
   资产面板给没图的道具「上传」参考图 → 图出现;对它点「从图反推描述」→ 假 LLM 看不见图,被校验数字拦下(失败带原因);
   资产面板点「LLM 定声音」→ 审阅页出现待审产物,且假 LLM 的「批准」按钮是灰的;
 - 在**全新临时目录**里建演示工程、用**假后端**跑 —— 假产物碰不到真工程,页面顶部标着「假后端」;
@@ -80,7 +81,7 @@ def seed_demo(store: Store, data_root: Path) -> dict:
     repo.bind_props(store, seg2, [jade])
     add_host(store, label="假云机", ssh_host="fake.local", ssh_port=1, ssh_user="root", key_ref="C:/fake/key",
              local_port=8188, vram_gb=24.0, models_dir="/fake/models")
-    return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2, "photo": photo}
+    return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2, "photo": photo, "lin": lin}
 
 
 def _free_port() -> int:
@@ -153,7 +154,7 @@ def run(out_dir: Path) -> dict:
                 report["panels"].append({"panel": p.key, "title": p.title, "url": url, "ok": not problems,
                                          "problems": problems, "screenshot": str(shot)})
 
-            seg, seg2, photo = ids["segment"], ids["segment2"], ids["photo"]
+            seg, seg2, photo, lin = ids["segment"], ids["segment2"], ids["photo"], ids["lin"]
             bundle_zip = lambda: next((work / "outputs" / "bundles").glob("*.zip"))   # noqa: E731 —— 上一条链路才产生
             for n, (key, label, fill, buttons, wait_sel, timeout) in enumerate((
                     ("frames", "生成首帧", {}, [f"#seg-{seg} [data-generate-frame]"], f"#seg-{seg} .current-media img", 40),
@@ -169,6 +170,11 @@ def run(out_dir: Path) -> dict:
                      "[data-asset-col=character] [data-asset]", 20),
                     ("assets", "LLM 定声音", {}, ["[data-llm-voice]"],
                      '[data-llm-state="proposed"] ~ section [data-approve][disabled]', 40),
+                    ("outline", "下一步:看分批", {"[data-outline-form] textarea": "第一段原文。\n第二段原文。"},
+                     ["[data-llm-outline]"], "[data-outline-batches] [data-batch-start]", 20),
+                    ("assets", "改声音描述 → 先报代价",
+                     {f'[data-asset="character-{lin}"] textarea[name=voice_desc]': "低沉女声,语速偏慢"},
+                     [f'form[action="/asset/character/{lin}"] button'], "[data-cost]", 20),
                     ("assets", "上传参考图", {f'[data-asset="prop-{photo}"] [data-upload-file]': lambda: work / "upload_demo.png"},
                      [f'[data-asset="prop-{photo}"] [data-upload-button]'], f'[data-asset="prop-{photo}"] .current-media img', 20),
                     ("assets", "从图反推描述", {}, [f'[data-asset="prop-{photo}"] [data-llm-describe]'],

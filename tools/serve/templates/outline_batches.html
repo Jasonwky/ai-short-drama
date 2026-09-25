@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>大纲 · 分批 <a class="btn small" href="/drama/{{ drama.id }}/outline">← 返回</a></h1>
+<section class="card" data-outline-batches>
+  <p class="hint">共 {{ rows | length }} 批(每批不超过 6 万字、800 段,按段落边界切;集数按字数分配,可改)。
+    <b>逐批进行</b>:上一批批准后再生成下一批 —— 下一批的集号接在已有各集之后,并以上一集大纲为前情;
+    上一批批准前就生成的下一批,批准时会因输入变了被拒,要重跑。按钮在新标签页打开,这一页留着。
+    {% if last %}已有 {{ last }} 集。{% endif %}</p>
+  <table>
+    <tr><th>批</th><th>段数</th><th>字数</th><th>开头</th><th>结尾</th><th>集数</th><th></th></tr>
+    {% for r in rows %}
+      <tr data-batch="{{ r.i }}">
+        <td>{{ r.i }}</td><td>{{ r.paras }}</td><td>{{ r.chars }}</td>
+        <td>{{ r.head }}…</td><td>…{{ r.tail }}</td>
+        <td colspan="2">
+          <form method="post" action="/llm/start/outline/{{ drama.id }}" target="_blank" class="row">
+            <textarea name="novel" hidden>{{ r.text }}</textarea>
+            <div><input type="number" name="n_episodes" value="{{ r.n }}" min="1" max="30" style="width: 80px"></div>
+            <div><button class="btn primary" type="submit" data-batch-start>生成这一批(约第 {{ r.from_ep }}–{{ r.to_ep }} 集)</button></div>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

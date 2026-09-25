@@ -159,5 +159,5 @@ def test_apply_creates_episodes_with_outline_and_source_paragraphs(store):
     assert eps[1]["source_text"].startswith("第二天一早,隔壁的沈墨来敲门。")
     assert eps[2]["source_text"].endswith("香气从墙这边飘到墙那边。")
     assert eps[0]["source_text"].count("\n") == 2                    # 3 段原文,分段保留
-    with pytest.raises(ValueError, match="已经有集了"):
+    with pytest.raises(ValueError, match="这一批要接在后面,请重跑"):     # 同一批批两次 → 集号已被占
         outline.apply(store, d, good_outline(), ctx)
