@@ -25,8 +25,10 @@ _AFFECTED = {
     "segment_prompt": "SELECT id FROM segment WHERE id = ?",
     # 声音描述逐字进视频提示词(闸门 0-4:音色靠文字描述维持),改了只影响视频,参考帧不受影响
     "voice": "SELECT segment_id FROM segment_character WHERE character_id = ?",
+    # 四视图只进视频的参考图(首帧合成用正面图),换它只影响视频
+    "fourview": "SELECT segment_id FROM segment_character WHERE character_id = ?",
 }
-_VIDEO_ONLY = {"voice"}
+_VIDEO_ONLY = {"voice", "fourview"}
 _FRAME_FIELDS = ("first_frame_path", "last_frame_path")
 
 

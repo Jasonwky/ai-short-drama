@@ -4,6 +4,8 @@
 worker 写回只填空位(已有产物不覆盖),新版本留在 task 表里 —— 换不换由人在这里决定。
 换版本会让下游作废,所以走 plan/confirm 两态(CLAUDE.md):
 - 换角色/场景/道具的参考图 → 绑定了它的段落,参考帧和视频全部作废(`invalidation` 的同名事件);
+  换角色正面图还会清掉它的四视图(四视图是按旧正面图出的);
+- 换角色四视图 → 绑定了它的段落只作废视频(四视图只进视频的参考图);
 - 换段落首帧/尾帧 → 只有本段视频作废(另一张参考帧不受影响,不清);
 - 换段落视频 → 本段字幕作废(时间轴是对着旧视频算的),要对新视频重新对齐。
 `plan_pick` 只算不改;人看了代价确认后 `confirm_pick` 才落盘。
@@ -29,9 +31,10 @@ class Pick:
     field: str
     new_path: str
     impact: Impact
+    note: str = ""
 
     def summary(self) -> str:
-        return self.impact.summary()
+        return self.impact.summary() + self.note
 
 
 def plan_pick(store: Store, task_id: int, *, video_cap: Capability, image_cap: Capability) -> Pick:
@@ -43,8 +46,13 @@ def plan_pick(store: Store, task_id: int, *, video_cap: Capability, image_cap: C
     if repo.get(store, ttype, tid)[field] == task["result_path"]:
         raise ValueError("这一版已经是当前版")
 
-    if ttype in ("character", "scene", "prop"):
+    note = ""
+    if ttype == "character" and field == "fourview_path":
+        imp = invalidation.impact(store, "fourview", tid, video_cap=video_cap, image_cap=image_cap)
+    elif ttype in ("character", "scene", "prop"):
         imp = invalidation.impact(store, ttype, tid, video_cap=video_cap, image_cap=image_cap)
+        if ttype == "character" and repo.get(store, "character", tid)["fourview_path"]:
+            note = ";角色四视图也会清掉(它是按旧正面图出的),要重出"
     elif field in _FRAME_FIELDS:
         seg = repo.get(store, "segment", tid)
         if seg["video_path"]:
@@ -53,12 +61,14 @@ def plan_pick(store: Store, task_id: int, *, video_cap: Capability, image_cap: C
             imp = Impact((), 0, 0, 0.0)
     else:
         imp = Impact((), 0, 0, 0.0)   # 换视频 / 字幕:不作废别的视频(换视频时字幕在 confirm 里清)
-    return Pick(task_id, ttype, tid, field, task["result_path"], imp)
+    return Pick(task_id, ttype, tid, field, task["result_path"], imp, note)
 
 
 def confirm_pick(store: Store, pick: Pick) -> None:
     if pick.target_type in ("character", "scene", "prop"):
         invalidation.apply(store, pick.impact)
+        if pick.target_type == "character" and pick.field == "turnaround_path":
+            repo.update(store, "character", pick.target_id, fourview_path=None)
     elif pick.field in _FRAME_FIELDS and pick.impact.segment_ids:
         with store.write() as c:
             c.execute("UPDATE segment SET video_path = NULL, subtitle_path = NULL WHERE id = ?", (pick.target_id,))

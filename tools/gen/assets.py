@@ -32,6 +32,14 @@ SPEC = {
              "Single isolated object centered on a pure white background, studio lighting, no people, no hands, no scenery."),
 }
 FICTIONAL = "A fictional person who does not resemble any real individual."
+# 四视图:以定稿的正面图为输入。2026-09-26 云机实测(spike-results/2026-09-26-参考锚定与四视图云机实测.md §四):
+# 快档(4 步)2/2 合格,标准档(20 步)1/1 不合格(第 4 格又画了背面)—— 用快档、横版 1664x928。
+# 措辞沿用实测那一版(Qwen 对单张输入图不需要编号标签;这里照实测写 <Picture 1>)。
+FOURVIEW_SIZE = (1664, 928)
+FOURVIEW = ("Turn <Picture 1> into a character turnaround sheet of the same person: four full-body views side by side "
+            "on one plain white background, from left to right: front view, left side view, back view, right side view. "
+            "Same face, same hairstyle, same clothing, same shoes in every view. {desc} "
+            "Standing straight, arms relaxed, even studio lighting, {style}.{who} No text, no labels, no extra people.")
 
 
 def _png(width: int, height: int, gray: int) -> bytes:
@@ -88,6 +96,28 @@ def lock_seed(store: Store, character_id: int, task_id: int) -> int:
 
 def unlock_seed(store: Store, character_id: int) -> None:
     repo.update(store, "character", character_id, seed=None)
+
+
+def fourview_problems(store: Store, character_id: int) -> list[str]:
+    row = repo.get(store, "character", character_id)
+    problems = [] if row["turnaround_path"] else [f"「{row['name']}」还没有正面定妆图 —— 四视图以它为输入"]
+    return problems + asset_problems(store, "character", character_id)
+
+
+def plan_fourview(store: Store, character_id: int, *, seed: int) -> int:
+    """角色四视图(给 H3 当参考图)。不受种子锁定约束:锁定的是正面图的种子,四视图的长相来自输入的正面图。"""
+    problems = fourview_problems(store, character_id)
+    if problems:
+        raise ValueError(";".join(problems))
+    row = repo.get(store, "character", character_id)
+    drama = repo.get(store, "drama", row["drama_id"])
+    who = f" {FICTIONAL}" if drama["style"] == "realistic" else ""
+    prompt = FOURVIEW.format(desc=row["final_prompt"].strip(), style=get_style(drama["style"]).prefix, who=who)
+    params = {"workflow": "qwen_image", "preset": "fast", "size": list(FOURVIEW_SIZE),
+              "image_refs": [row["turnaround_path"]], "writes": "fourview_path", "expect_ext": ".png",
+              "style": drama["style"]}
+    return create_task(store, kind="image", target_type="character", target_id=character_id, model=QWEN_MODEL,
+                       params=params, seed=seed, prompt=prompt, refs=params["image_refs"])
 
 
 def plan_asset_image(store: Store, table: str, row_id: int, *, seed: int) -> int:
