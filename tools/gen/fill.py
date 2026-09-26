@@ -16,12 +16,14 @@ from dataclasses import dataclass
 
 from tools.drama import repo
 from tools.drama.db import Store
+from tools.gen.align import align_problems, plan_align
 from tools.gen.assets import SPEC, asset_problems, locked_seed, plan_asset_image
-from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
+from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511, WHISPER_ALIGN
 from tools.gen.planner import first_frame_problems, plan_first_frame, plan_video, video_problems
 
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
-KINDS = {"frames": ("episode", "首帧"), "videos": ("episode", "视频"), "assets": ("drama", "资产图")}
+KINDS = {"frames": ("episode", "首帧"), "videos": ("episode", "视频"), "subtitles": ("episode", "字幕"),
+         "assets": ("drama", "资产图")}
 _ASSET_LABEL = {"character": "角色", "scene": "场景", "prop": "道具"}
 
 
@@ -79,13 +81,16 @@ def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
     if kind not in KINDS:
         raise ValueError(f"未知的补全类型 {kind},可选:{sorted(KINDS)}")
     items = []
-    if kind in ("frames", "videos"):
+    if kind in ("frames", "videos", "subtitles"):
         repo.get(store, "episode", scope_id)
         for s in store.conn.execute("SELECT * FROM segment WHERE episode_id = ? ORDER BY number", (scope_id,)):
             label = f"段落 {s['number']}"
             if kind == "frames":
                 items.append(_item(store, "segment", s, label, "image", "first_frame_path",
                                    lambda sid=s["id"]: first_frame_problems(store, sid), QWEN_IMAGE_EDIT_2511.sec_per_item))
+            elif kind == "subtitles":
+                items.append(_item(store, "segment", s, label, "align", "subtitle_path",
+                                   lambda sid=s["id"]: align_problems(store, sid), WHISPER_ALIGN.sec_per_item))
             else:
                 est = MINIMAX_H3.est_seconds(MINIMAX_H3.frames_for(s["duration_sec"])) if s["duration_sec"] else 0.0
                 items.append(_item(store, "segment", s, label, "video", "video_path",
@@ -113,6 +118,8 @@ def confirm_fill(store: Store, kind: str, scope_id: int, targets: list[tuple[str
             created.append(plan_first_frame(store, tid, seed=seed))
         elif kind == "videos":
             created.append(plan_video(store, tid, seed=seed))
+        elif kind == "subtitles":
+            created.append(plan_align(store, tid))                  # 对齐是确定性的,不用种子
         else:
             locked = locked_seed(store, ttype, tid)
             created.append(plan_asset_image(store, ttype, tid, seed=seed if locked is None else locked))

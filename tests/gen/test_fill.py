@@ -97,3 +97,20 @@ def test_assets_fill_covers_the_whole_drama(store):
 def test_unknown_kind_is_refused(store, sample):
     with pytest.raises(ValueError, match="未知的补全类型"):
         plan_fill(store, "music", sample["episode"])
+
+
+def test_subtitles_fill_covers_segments_with_video_and_dialogue(store, sample):
+    done = _seg(store, sample, 2, video_path="videos/s2.mp4", subtitle_path="subs/s2.srt")
+    silent = _seg(store, sample, 3, video_path="videos/s3.mp4")
+    repo.update(store, "segment", silent, description="【镜头1】林小雨低头看着玉佩。")
+    novideo = _seg(store, sample, 4)
+    plan = plan_fill(store, "subtitles", sample["episode"])
+    st = _status(plan)
+    assert st["段落 1"] == ("todo", "") and st["段落 2"] == ("has", "")
+    assert st["段落 3"][0] == st["段落 4"][0] == "blocked"
+    assert "没有台词" in st["段落 3"][1] and "还没有视频" in st["段落 4"][1]
+    assert "条字幕" in plan.summary()
+    [tid] = confirm_fill(store, "subtitles", sample["episode"], [("segment", sample["seg"])], 100)
+    assert repo.get(store, "task", tid)["kind"] == "align"
+    assert plan_fill(store, "subtitles", sample["episode"]).todo == []      # 在途了,不重复交
+    assert done and novideo

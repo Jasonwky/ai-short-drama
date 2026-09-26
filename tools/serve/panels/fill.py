@@ -21,7 +21,8 @@ def _back(store, kind: str, scope_id: int) -> tuple[str, dict]:
     if kind == "assets":
         return f"/drama/{scope_id}/assets", {"panel_key": "assets", "drama_id": scope_id}
     repo.get(store, "episode", scope_id)
-    return f"/episode/{scope_id}/{kind}", {"panel_key": kind, "episode_id": scope_id}
+    panel = "videos" if kind == "subtitles" else kind          # 字幕在视频面板上补
+    return f"/episode/{scope_id}/{panel}", {"panel_key": panel, "episode_id": scope_id}
 
 
 @router.post("/fill/{kind}/{scope_id}")
@@ -37,8 +38,8 @@ async def fill(request: Request, kind: str, scope_id: int):
     back, ctx = _back(runtime.store, kind, scope_id)
     if form.get("confirm") != "1":
         plan = plan_fill(runtime.store, kind, scope_id)
-        seeds = {(i.target_type, i.target_id): base_seed + n if i.seed is None else i.seed
-                 for n, i in enumerate(plan.todo)}
+        seeds = {} if kind == "subtitles" else {        # 对齐是确定性的,没有种子
+            (i.target_type, i.target_id): base_seed + n if i.seed is None else i.seed for n, i in enumerate(plan.todo)}
         return render(request, "fill_confirm.html", ctx.pop("panel_key"), plan=plan, seeds=seeds, status=STATUS,
                       base_seed=base_seed, action=f"/fill/{kind}/{scope_id}", back=back, **ctx)
     targets = []

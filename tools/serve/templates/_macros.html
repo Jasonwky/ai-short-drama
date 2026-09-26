@@ -6,6 +6,8 @@
       {% if t.result_path %}
         {% if t.result_path.endswith(".mp4") %}
           <video src="/media/{{ t.result_path }}" controls preload="metadata"></video>
+        {% elif t.result_path.endswith(".srt") %}
+          <a href="/media/{{ t.result_path }}" target="_blank">字幕文件(SRT)</a>
         {% else %}
           <a href="/media/{{ t.result_path }}" target="_blank"><img src="/media/{{ t.result_path }}" alt="task {{ t.id }}"></a>
         {% endif %}
@@ -32,7 +34,8 @@
 {% macro fill_form(kind, scope_id, seed, label) %}
 <section class="card">
   <form method="post" action="/fill/{{ kind }}/{{ scope_id }}" class="row" data-fill="{{ kind }}">
-    <div><label>起始种子(第 n 条用「起始 + n」)</label><input type="number" name="base_seed" value="{{ seed }}"></div>
+    {% if kind == "subtitles" %}<input type="hidden" name="base_seed" value="0">{# 对齐是确定性的,没有种子 #}
+    {% else %}<div><label>起始种子(第 n 条用「起始 + n」)</label><input type="number" name="base_seed" value="{{ seed }}"></div>{% endif %}
     <div><button class="btn" type="submit" data-fill-button>{{ label }}</button></div>
   </form>
   <p class="hint">只提交缺的 / 上次失败的;已有、在途、内容不就绪的跳过。提交前先列清单和估算耗时,确认才交。</p>
