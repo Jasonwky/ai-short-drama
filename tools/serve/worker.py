@@ -6,6 +6,7 @@
 - **每轮重读 host**:SSH 端口在界面上改了,下一轮就按新端口重建隧道。
   接管来的隧道(不是本进程起的)杀不掉,如实提示人去结束它,不假装已处理。
 - 没有单独的「恢复」流程:重启后库里的在途任务带着 external_id,照常推进就是接管。
+- 字幕对齐(kind = align)不进 ComfyUI 队列:空闲时轮到它,就在本轮里经 ssh 同步跑完(`aligner`,约 30 秒)。
 
 用法:
     python -m tools.serve.worker --db data/drama.db --host-id 1 --data-root data --once
@@ -21,7 +22,9 @@ from pathlib import Path
 
 from tools.drama.db import Store
 from tools.gen import preflight
+from tools.gen.capability import WHISPER_ALIGN
 from tools.gen.comfy_client import ComfyClient
+from tools.serve import aligner
 from tools.serve.collect import IN_FLIGHT, Collector
 from tools.serve import journal
 from tools.serve.dispatch import dispatch, pick_next
@@ -35,11 +38,18 @@ def _ssh_run(host: Host) -> preflight.Runner:
     return preflight.ssh_runner(host.ssh_host, host.ssh_port, host.ssh_user, host.key_ref)
 
 
+def _ssh_align(host: Host) -> preflight.Runner:
+    """对齐脚本用 ComfyUI 的 venv 跑(带 torch / transformers);模型加载 + 识别实测约 30 秒,给足 5 分钟。"""
+    return preflight.ssh_runner(host.ssh_host, host.ssh_port, host.ssh_user, host.key_ref, timeout=300,
+                                python=WHISPER_ALIGN.python)
+
+
 class Worker:
     def __init__(self, store: Store, host_id: int, *, data_root: Path,
                  client_for: Callable[[Host], object] = lambda h: ComfyClient(h.local_endpoint),
                  tunnel: TunnelManager | None = None,
                  run_for: Callable[[Host], preflight.Runner] = _ssh_run,
+                 align_for: Callable[[Host], preflight.Runner] = _ssh_align,
                  collector: Collector | None = None):
         self.store = store
         self.host_id = host_id
@@ -47,6 +57,7 @@ class Worker:
         self.client_for = client_for
         self.tunnel = tunnel or TunnelManager()
         self.run_for = run_for
+        self.align_for = align_for
         self.collector = collector or Collector(self.data_root)
         self._last_host: Host | None = None
 
@@ -79,7 +90,11 @@ class Worker:
         if busy == 0:
             task = pick_next(self.store, host.id)
             if task is not None:
-                out = dispatch(self.store, client, host, task, data_root=self.data_root, run=self.run_for(host))
+                if task["kind"] == "align":
+                    out = aligner.run(self.store, client, host, task, data_root=self.data_root,
+                                      run=self.align_for(host))
+                else:
+                    out = dispatch(self.store, client, host, task, data_root=self.data_root, run=self.run_for(host))
                 log.append(f"task {task['id']}: pending → {out.state} {out.message}".rstrip())
                 log += [f"task {task['id']} 告警: {w}" for w in out.warnings]
         return log

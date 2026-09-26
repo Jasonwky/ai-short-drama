@@ -137,3 +137,27 @@ QWEN_IMAGE_EDIT_2511 = Capability(
 )
 
 BACKENDS = {"minimax_h3": MINIMAX_H3, "qwen_image_edit_2511": QWEN_IMAGE_EDIT_2511}
+
+
+# ──────────────────────────────────────────────────────────────
+# 字幕对齐后端(云机 GPU;spike-results/2026-09-26-字幕对齐云机实测.md)
+#   whisper-large-v3-turbo(MIT)的 token 级时间戳;借 ComfyUI 的 venv 跑,云机上不装任何东西。
+#   路径是这台云机的布局 —— 换机器只改这里。
+# ──────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class AlignBackend:
+    name: str
+    python: str          # 云机上带 transformers / torch 的解释器
+    model_dir: str       # whisper 权重目录
+    input_dir: str       # ComfyUI 的 input 目录:视频经 ComfyUI 上传接口放到这里
+    sec_per_item: float  # 实测:GPU 每条 8 秒片 5–6 s,加模型加载约 20 s
+
+
+WHISPER_ALIGN = AlignBackend(
+    name="whisper-large-v3-turbo",
+    python="/root/autodl-tmp/ComfyUI/venv/bin/python",
+    model_dir="/root/autodl-tmp/shortdrama-eval/whisper-large-v3-turbo",
+    input_dir="/root/autodl-tmp/ComfyUI/input",
+    sec_per_item=30.0,
+)

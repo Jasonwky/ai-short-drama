@@ -149,3 +149,19 @@ def test_imported_segments_do_not_take_ids_owned_by_old_history(store, project, 
     ep = store.conn.execute("SELECT id FROM episode WHERE drama_id = ?", (new,)).fetchone()[0]
     [seg] = [r[0] for r in store.conn.execute("SELECT id FROM segment WHERE episode_id = ?", (ep,))]
     assert seg > 900
+
+
+def test_alignment_task_video_path_moves_with_the_bundle(store, project, tmp_path):
+    """对齐任务的参数里存着视频路径(规划时定死、执行前核对),导入后要跟着加前缀。"""
+    from tools.gen.align import plan_align
+    t = plan_align(store, project["seg"])
+    _file(project["root"], "outputs/tasks/9/subtitles.srt", b"1\n")
+    set_task_state(store, t, "queued", external_id=f"align-{t}")
+    set_task_state(store, t, "done", result_path="outputs/tasks/9/subtitles.srt", result_sha256="x")
+    dest = Store(":memory:")
+    new = bundle.import_bundle(dest, tmp_path / "dst", project["root"] / bundle.export_bundle(store, project["root"],
+                                                                                              project["drama"]))
+    [seg] = dest.conn.execute("SELECT s.* FROM segment s JOIN episode e ON e.id = s.episode_id WHERE e.drama_id = ?",
+                              (new,)).fetchall()
+    [align] = [r for r in tasks_for(dest, "segment", seg["id"]) if r["kind"] == "align"]
+    assert json.loads(align["params_json"])["video"] == seg["video_path"]

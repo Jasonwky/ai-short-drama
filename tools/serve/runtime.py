@@ -29,7 +29,7 @@ from tools.llm.service import LLMBackend
 from tools.serve import journal
 from tools.serve.hosts import Host, get_host
 from tools.serve.tunnel import TunnelManager
-from tools.serve.worker import POLL_SEC, Worker, _ssh_run
+from tools.serve.worker import POLL_SEC, Worker, _ssh_align, _ssh_run
 
 
 @dataclass
@@ -41,6 +41,7 @@ class Backend:
     fake: bool = False
     before_tick: Callable[[], None] | None = None   # 假 GPU 在这里「跑完」队列
     llm: Callable[[], LLMBackend] | None = None     # 点「LLM 生成」时才调用
+    align_for: Callable[[Host], preflight.Runner] = _ssh_align   # 字幕对齐:云机上跑 whisper 的 ssh
 
 
 def real_llm() -> LLMBackend:
@@ -100,7 +101,8 @@ class Runtime:
             if w is None:
                 b = self.backend
                 w = self._workers[hid] = Worker(self.store, hid, data_root=self.data_root,
-                                                client_for=b.client_for, tunnel=b.tunnel, run_for=b.run_for)
+                                                client_for=b.client_for, tunnel=b.tunnel, run_for=b.run_for,
+                                                align_for=b.align_for)
             lines = journal.append(self.data_root, w.tick(), prefix=f"host={hid} ")
             st = probe(get_host(self.store, hid), self.backend)
             st.last_tick = time.strftime("%H:%M:%S")

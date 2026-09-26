@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import tempfile
@@ -141,6 +142,19 @@ class FakeGpu:
         return done
 
 
+class FakeAligner:
+    """假的云机对齐脚本(行为像 ssh runner):把 `heard` 这段话的字均匀摊在 0.1–0.9 s 上,输出与真脚本同格式的 JSON。
+    默认什么也没听见 —— 判卷会因命中率为 0 判失败;测试 / 自测按段落台词设置 `heard`。"""
+    def __init__(self, heard: str = ""):
+        self.heard = heard
+        self.calls: list[list[str]] = []
+
+    def __call__(self, args, stdin):
+        self.calls.append(list(args))
+        n = len(self.heard)
+        chars = [[c, round(0.1 + 0.8 * i / n, 3), round(0.1 + 0.8 * (i + 1) / n, 3)] for i, c in enumerate(self.heard)]
+        return 0, "Loading weights ...\n" + json.dumps({"chars": chars, "asr_sec": 0.1}, ensure_ascii=False)
+
 
 def fake_backend():
     """(Backend, FakeComfy):界面上标明「假后端」;每轮 tick 前假 GPU 把队列跑完。LoRA 预检一律放行(假后端没有模型文件)。
@@ -150,7 +164,8 @@ def fake_backend():
     from tools.serve.runtime import Backend   # 延迟导入:runtime → worker → … 不依赖本模块,避免环
     comfy = FakeComfy()
     gpu = FakeGpu(comfy)
+    aligner = FakeAligner()
     backend = Backend("假后端(测试专用)", lambda host: comfy, FakeTunnel(), lambda host: (lambda args, stdin: (0, "")),
                       fake=True, before_tick=gpu.run_pending,
-                      llm=lambda: LLMBackend(FakeLLM(), DEFAULT_MODEL, "fake"))
+                      llm=lambda: LLMBackend(FakeLLM(), DEFAULT_MODEL, "fake"), align_for=lambda host: aligner)
     return backend, comfy

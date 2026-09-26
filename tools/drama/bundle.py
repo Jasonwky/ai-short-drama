@@ -29,7 +29,7 @@ FORMAT = 1
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
 PATH_FIELDS = {"character": ("turnaround_path", "voice_ref_path"), "scene": ("image_path",), "prop": ("image_path",),
                "segment": ("first_frame_path", "last_frame_path", "video_path", "subtitle_path")}
-PARAM_PATH_KEYS = ("image_refs", "audio_ref")      # task.params_json 里存路径的键
+PARAM_PATH_KEYS = ("image_refs", "audio_ref", "video")      # task.params_json 里存路径的键(video:字幕对齐的输入)
 
 
 def _sha256(path: Path) -> str:

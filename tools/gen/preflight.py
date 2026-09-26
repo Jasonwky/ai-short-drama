@@ -67,11 +67,12 @@ def check(workflow: dict, models_dir: str, run: Runner) -> Preflight:
     return Preflight(not problems, tuple(problems), ())
 
 
-def ssh_runner(ssh_host: str, ssh_port: int, ssh_user: str, key_ref: str, timeout: int = 120) -> Runner:
-    """在云机上执行 `python3 - <args>`,程序源码从 stdin 送过去。"""
+def ssh_runner(ssh_host: str, ssh_port: int, ssh_user: str, key_ref: str, timeout: int = 120,
+               python: str = "python3") -> Runner:
+    """在云机上执行 `<python> - <args>`,程序源码从 stdin 送过去。"""
     def run(args: list[str], stdin: bytes) -> tuple[int, str]:
         cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-i", key_ref, "-p", str(ssh_port),
-               f"{ssh_user}@{ssh_host}", "PYTHONIOENCODING=utf-8", "python3", "-",
+               f"{ssh_user}@{ssh_host}", "PYTHONIOENCODING=utf-8", python, "-",
                *(shlex.quote(a) for a in args)]
         try:
             p = subprocess.run(cmd, input=stdin, capture_output=True, timeout=timeout)
