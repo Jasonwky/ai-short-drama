@@ -10,6 +10,7 @@
   大纲面板贴原文点「下一步:看分批」→ 分批页出现;资产面板改角色声音描述 → 先出代价确认页(已有视频会作废);
   资产面板给没图的道具「上传」参考图 → 图出现;对它点「从图反推描述」→ 假 LLM 看不见图,被校验数字拦下(失败带原因);
   资产面板点「LLM 定声音」→ 审阅页出现待审产物,且假 LLM 的「批准」按钮是灰的;
+  资产面板给角色点「生成四视图」→ 四视图出现;第 2 集「首尾帧」模式的段落点「生成尾帧」→ 尾帧出现;
 - 在**全新临时目录**里建演示工程、用**假后端**跑 —— 假产物碰不到真工程,页面顶部标着「假后端」;
 - **一律有头**(CLAUDE.md 硬约束,用户 2026-09-24 明确要求):人要看得见它点开了每个面板。
   **不提供 `--headless` 开关** —— 有头跑抓到过无头发现不了的问题(浏览器请求 /favicon.ico 的 404)。
@@ -54,7 +55,8 @@ KEY_SELECTOR = {
 
 
 def seed_demo(store: Store, data_root: Path) -> dict:
-    """一部写实风格的演示剧:一集、两个素材齐全的段落(第 2 段的首帧留给尾帧衔接)、一台假云机。"""
+    """一部写实风格的演示剧:一集、两个素材齐全的段落(第 2 段的首帧留给尾帧衔接)、一台假云机;
+    第 2 集一个「首尾帧」模式的段落(不影响第 1 集的导出链路)。"""
     for rel in ("assets/lin.png", "assets/yard.png", "assets/jade.png"):
         (data_root / rel).parent.mkdir(parents=True, exist_ok=True)
         (data_root / rel).write_bytes(_png(96, 160, 150))
@@ -80,9 +82,19 @@ def seed_demo(store: Store, data_root: Path) -> dict:
         video_prompt="@林小雨 在 @老宅庭院 把 @玉佩 收进怀里,抬头说话")
     repo.bind_characters(store, seg2, [lin])
     repo.bind_props(store, seg2, [jade])
+    ep2 = repo.add_episode(store, d, 2, "script", script="林小雨离开老宅。" * 20)
+    seg3 = repo.add_segment(
+        store, ep2, 1, scene_id=yard, duration_sec=8.0, reference_mode="first_last",
+        description="【镜头1】林小雨捧着玉佩。【镜头2】林小雨转身走向院子深处。",
+        image_prompt="@林小雨 站在 @老宅庭院 里,双手捧着 @玉佩",
+        last_image_prompt="@林小雨 的背影走向 @老宅庭院 深处,手里握着 @玉佩",
+        video_prompt="@林小雨 在 @老宅庭院 捧着 @玉佩,然后转身走远")
+    repo.bind_characters(store, seg3, [lin])
+    repo.bind_props(store, seg3, [jade])
     add_host(store, label="假云机", ssh_host="fake.local", ssh_port=1, ssh_user="root", key_ref="C:/fake/key",
              local_port=8188, vram_gb=24.0, models_dir="/fake/models")
-    return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2, "photo": photo, "lin": lin}
+    return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2, "photo": photo, "lin": lin,
+            "episode2": ep2, "segment3": seg3}
 
 
 def _free_port() -> int:
@@ -156,7 +168,7 @@ def run(out_dir: Path) -> dict:
                 report["panels"].append({"panel": p.key, "title": p.title, "url": url, "ok": not problems,
                                          "problems": problems, "screenshot": str(shot)})
 
-            seg, seg2, photo, lin = ids["segment"], ids["segment2"], ids["photo"], ids["lin"]
+            seg, seg2, seg3, photo, lin = ids["segment"], ids["segment2"], ids["segment3"], ids["photo"], ids["lin"]
             bundle_zip = lambda: next((work / "outputs" / "bundles").glob("*.zip"))   # noqa: E731 —— 上一条链路才产生
             for n, (key, label, fill, buttons, wait_sel, timeout) in enumerate((
                     ("frames", "生成首帧", {}, [f"#seg-{seg} [data-generate-frame]"], f"#seg-{seg} .current-media img", 40),
@@ -182,10 +194,15 @@ def run(out_dir: Path) -> dict:
                     ("assets", "上传参考图", {f'[data-asset="prop-{photo}"] [data-upload-file]': lambda: work / "upload_demo.png"},
                      [f'[data-asset="prop-{photo}"] [data-upload-button]'], f'[data-asset="prop-{photo}"] .current-media img', 20),
                     ("assets", "从图反推描述", {}, [f'[data-asset="prop-{photo}"] [data-llm-describe]'],
-                     '[data-llm-state="failed"] [data-llm-error]', 40)), 1):
+                     '[data-llm-state="failed"] [data-llm-error]', 40),
+                    ("assets", "生成四视图", {}, [f'[data-asset="character-{lin}"] [data-generate-fourview]'],
+                     f'[data-asset="character-{lin}"] [data-fourview] img', 40),
+                    ("frames:episode2", "生成尾帧(首尾帧模式)", {}, [f"#seg-{seg3} [data-generate-last-frame]"],
+                     f"#seg-{seg3} [data-last-frame] img", 40)), 1):
                 errors.clear()
+                key, _, ep_key = key.partition(":")               # 「面板:集」—— 默认第 1 集
                 p = next(x for x in REGISTRY if x.key == key)
-                page.goto(base + url_for(p, ids["drama"], ids["episode"]))
+                page.goto(base + url_for(p, ids["drama"], ids[ep_key or "episode"]))
                 for sel, value in fill.items():
                     if callable(value):
                         page.locator(sel).set_input_files(str(value()))

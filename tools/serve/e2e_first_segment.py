@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-"""真链路验收:一个段落从无到有 —— 规划首帧 → 云机出图 → 规划视频 → 云机出片 → 云机对齐字幕,溯源字段逐项核对。
+"""真链路验收:一个段落从无到有 —— 首帧 → 角色四视图 → 视频(首帧钉在第 0 帧、四视图作参考)→ 对齐字幕,
+溯源字段逐项核对。
 
 这是**验收夹具**,不是生产入口:P3 起同一条链路由控制台的环节面板驱动,
 那时本脚本只留作「绕开界面、单测执行层」的对照。
 
 - 在一个**全新的** data_root 里建库、拷素材,不碰任何已有数据;
-- 真链路要开卡:它会起隧道、做 LoRA 预检、占用 GPU 约 20 分钟(8 秒片 20 步),字幕对齐再约 30 秒;
+- 真链路要开卡:它会起隧道、做 LoRA 预检、占用 GPU 约 20 分钟(8 秒片 20 步),四视图约 30 秒,字幕对齐再约 30 秒;
 - 任一任务失败即退出码 1,并打印失败原因。
 
 用法(AutoDL 端口每次开机会变):
@@ -29,6 +30,7 @@ from pathlib import Path
 from tools.drama import repo
 from tools.drama.db import Store
 from tools.gen.align import plan_align
+from tools.gen.assets import plan_fourview
 from tools.gen.planner import plan_first_frame, plan_video
 from tools.serve.hosts import add_host
 from tools.serve.worker import POLL_SEC, Worker
@@ -40,9 +42,10 @@ PROVENANCE = ("model", "params_json", "seed", "prompt", "refs_json", "created_at
 
 
 def build_drama(store: Store, assets: dict[str, str]) -> int:
-    d = repo.create_drama(store, "玉佩", "9:16")
+    d = repo.create_drama(store, "玉佩", "9:16", "realistic")
     ep = repo.add_episode(store, d, 1, "script", script="林小雨在老宅庭院里回忆母亲。")
-    lin = repo.add_character(store, d, "林小雨", turnaround_path=assets["character"], voice_desc="年轻女声,清亮,语速偏慢")
+    lin = repo.add_character(store, d, "林小雨", turnaround_path=assets["character"], voice_desc="年轻女声,清亮,语速偏慢",
+                             final_prompt="A young woman in her early twenties, the same person and outfit as the input image.")
     yard = repo.add_scene(store, d, "老宅庭院", image_path=assets["scene"])
     jade = repo.add_prop(store, d, "玉佩", image_path=assets["prop"])
     seg = repo.add_segment(
@@ -52,7 +55,7 @@ def build_drama(store: Store, assets: dict[str, str]) -> int:
         video_prompt="@林小雨 在 @老宅庭院 低头看 @玉佩,然后抬眼说话,固定机位,环境声,无配乐")
     repo.bind_characters(store, seg, [lin])
     repo.bind_props(store, seg, [jade])
-    return seg
+    return seg, lin
 
 
 def run_until_final(worker: Worker, store: Store, task_id: int, *, timeout_sec: float,
@@ -91,13 +94,13 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
         assets[kind] = dst.relative_to(data_root).as_posix()
 
     store = Store(data_root / "drama.db")
-    seg = build_drama(store, assets)
+    seg, lin = build_drama(store, assets)
     host_id = add_host(store, **host)
     worker = make_worker(store, host_id, data_root)
 
     report = {"segment": seg, "tasks": []}
-    for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_video(store, seg, seed=seed + 1),
-                 lambda: plan_align(store, seg)):
+    for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_fourview(store, lin, seed=seed + 2),
+                 lambda: plan_video(store, seg, seed=seed + 1), lambda: plan_align(store, seg)):
         tid = plan()
         state = run_until_final(worker, store, tid, timeout_sec=timeout_sec, sleep=sleep)
         if state == "failed":
@@ -106,6 +109,7 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
     s = repo.get(store, "segment", seg)
     report["first_frame_path"], report["video_path"] = s["first_frame_path"], s["video_path"]
     report["subtitle_path"] = s["subtitle_path"]
+    report["fourview_path"] = repo.get(store, "character", lin)["fourview_path"]
     (data_root / "provenance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return report
 
@@ -132,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     report = run(a.data_root, {"character": a.character, "scene": a.scene, "prop": a.prop}, host,
                  seed=a.seed, timeout_sec=a.timeout_min * 60)
     print(f"首帧:{a.data_root / report['first_frame_path']}")
+    print(f"四视图:{a.data_root / report['fourview_path']}")
     print(f"视频:{a.data_root / report['video_path']}")
     print(f"字幕:{a.data_root / report['subtitle_path']}")
     print(f"溯源:{a.data_root / 'provenance.json'}")

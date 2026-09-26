@@ -44,14 +44,18 @@ def test_full_chain_on_fake_gpu_writes_provenance(tmp_path, images):
     comfy = FakeComfy()
     root = tmp_path / "e2e"
     report = run(root, images, HOST, seed=5, timeout_sec=60, make_worker=_worker_on(comfy), sleep=_gpu(comfy))
-    frame, video, align = report["tasks"]
-    assert (frame["seed"], video["seed"]) == (5, 6)
+    frame, fourview, video, align = report["tasks"]
+    assert (frame["seed"], fourview["seed"], video["seed"]) == (5, 7, 6)
     assert report["first_frame_path"] == frame["result_path"] and report["video_path"] == video["result_path"]
-    assert json.loads(video["refs_json"]) == [frame["result_path"]]     # 视频吃的就是这次出的首帧
+    assert report["fourview_path"] == fourview["result_path"]
+    assert json.loads(fourview["refs_json"]) == ["assets/character.png"]  # 四视图以正面图为输入
+    # 视频吃的就是这次出的首帧(参考图 + 钉在第 0 帧)与四视图
+    assert json.loads(video["refs_json"]) == [frame["result_path"], fourview["result_path"]]
+    assert json.loads(video["params_json"])["anchors"] == [[frame["result_path"], 0]]
     assert json.loads(align["refs_json"]) == [video["result_path"]]     # 字幕对的就是这条视频
     assert report["subtitle_path"] == align["result_path"] and "这块玉佩" in (root / align["result_path"]).read_text(
         encoding="utf-8")
-    assert json.loads((root / "provenance.json").read_text(encoding="utf-8"))["tasks"][1]["external_id"] == "p2"
+    assert json.loads((root / "provenance.json").read_text(encoding="utf-8"))["tasks"][2]["external_id"] == "p3"
 
 
 def test_refuses_a_non_empty_data_root(tmp_path, images):
