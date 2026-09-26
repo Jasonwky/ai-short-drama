@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from tools.serve.fakes import FakeComfy, FakeTunnel
+from tools.serve.fakes import FakeAligner, FakeComfy, FakeTunnel, sample_mp4
 from tools.serve.e2e_first_segment import run
 from tools.serve.worker import Worker
 
@@ -23,17 +23,20 @@ def images(tmp_path):
 
 
 def _worker_on(comfy):
+    aligner = FakeAligner("这块玉佩是我母亲留给我的")
     return lambda store, host_id, root: Worker(store, host_id, data_root=root, client_for=lambda h: comfy,
-                                               tunnel=FakeTunnel(), run_for=lambda h: None)
+                                               tunnel=FakeTunnel(), run_for=lambda h: None,
+                                               align_for=lambda h: aligner)
 
 
 def _gpu(comfy):
     """每次「睡一觉」,云机就把队列里的任务跑完:工作流里有 H3 采样器(noise_seed)的出 mp4,否则出 png。"""
+    mp4 = sample_mp4()                     # 视频要能真解出音轨:字幕对齐在本机算能量曲线
+
     def sleep(_sec):
         for pid in list(comfy.pending):
             is_h3 = any("noise_seed" in n["inputs"] for n in comfy.submitted[pid].values())
-            ext = ".mp4" if is_h3 else ".png"
-            comfy.finish(pid, f"{pid}{ext}", pid.encode())
+            comfy.finish(pid, f"{pid}.mp4", mp4) if is_h3 else comfy.finish(pid, f"{pid}.png", pid.encode())
     return sleep
 
 
@@ -41,10 +44,13 @@ def test_full_chain_on_fake_gpu_writes_provenance(tmp_path, images):
     comfy = FakeComfy()
     root = tmp_path / "e2e"
     report = run(root, images, HOST, seed=5, timeout_sec=60, make_worker=_worker_on(comfy), sleep=_gpu(comfy))
-    frame, video = report["tasks"]
+    frame, video, align = report["tasks"]
     assert (frame["seed"], video["seed"]) == (5, 6)
     assert report["first_frame_path"] == frame["result_path"] and report["video_path"] == video["result_path"]
     assert json.loads(video["refs_json"]) == [frame["result_path"]]     # 视频吃的就是这次出的首帧
+    assert json.loads(align["refs_json"]) == [video["result_path"]]     # 字幕对的就是这条视频
+    assert report["subtitle_path"] == align["result_path"] and "这块玉佩" in (root / align["result_path"]).read_text(
+        encoding="utf-8")
     assert json.loads((root / "provenance.json").read_text(encoding="utf-8"))["tasks"][1]["external_id"] == "p2"
 
 

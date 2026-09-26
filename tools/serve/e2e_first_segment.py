@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""P2 真链路验收:一个段落从无到有 —— 规划首帧 → 云机出图 → 规划视频 → 云机出片,溯源字段逐项核对。
+"""真链路验收:一个段落从无到有 —— 规划首帧 → 云机出图 → 规划视频 → 云机出片 → 云机对齐字幕,溯源字段逐项核对。
 
 这是**验收夹具**,不是生产入口:P3 起同一条链路由控制台的环节面板驱动,
 那时本脚本只留作「绕开界面、单测执行层」的对照。
 
 - 在一个**全新的** data_root 里建库、拷素材,不碰任何已有数据;
-- 真链路要开卡:它会起隧道、做 LoRA 预检、占用 GPU 约 20 分钟(8 秒片 20 步);
+- 真链路要开卡:它会起隧道、做 LoRA 预检、占用 GPU 约 20 分钟(8 秒片 20 步),字幕对齐再约 30 秒;
 - 任一任务失败即退出码 1,并打印失败原因。
 
 用法(AutoDL 端口每次开机会变):
@@ -28,6 +28,7 @@ from pathlib import Path
 
 from tools.drama import repo
 from tools.drama.db import Store
+from tools.gen.align import plan_align
 from tools.gen.planner import plan_first_frame, plan_video
 from tools.serve.hosts import add_host
 from tools.serve.worker import POLL_SEC, Worker
@@ -95,14 +96,16 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
     worker = make_worker(store, host_id, data_root)
 
     report = {"segment": seg, "tasks": []}
-    for plan, task_seed in ((plan_first_frame, seed), (plan_video, seed + 1)):
-        tid = plan(store, seg, seed=task_seed)
+    for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_video(store, seg, seed=seed + 1),
+                 lambda: plan_align(store, seg)):
+        tid = plan()
         state = run_until_final(worker, store, tid, timeout_sec=timeout_sec, sleep=sleep)
         if state == "failed":
             raise RuntimeError(f"task {tid} 失败:{repo.get(store, 'task', tid)['error']}")
         report["tasks"].append(provenance(store, tid))
     s = repo.get(store, "segment", seg)
     report["first_frame_path"], report["video_path"] = s["first_frame_path"], s["video_path"]
+    report["subtitle_path"] = s["subtitle_path"]
     (data_root / "provenance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return report
 
@@ -130,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
                  seed=a.seed, timeout_sec=a.timeout_min * 60)
     print(f"首帧:{a.data_root / report['first_frame_path']}")
     print(f"视频:{a.data_root / report['video_path']}")
+    print(f"字幕:{a.data_root / report['subtitle_path']}")
     print(f"溯源:{a.data_root / 'provenance.json'}")
     return 0
 

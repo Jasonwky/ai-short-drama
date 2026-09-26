@@ -4,7 +4,7 @@
     1 单测                 python -m pytest -q
     2 真 LLM 契约           python -m pytest -m real_llm -q(黄金样本打真 LLM;没有 key 就 SKIP)
     3 Playwright 有头自测   遍历注册表每个面板 + 点按钮链路,逐个截图存档
-    4 功能整链(真云机)     一个段落出首帧 + 视频,溯源齐全(字幕 / 标识 / 拼接在 P5,本层暂只覆盖到视频)
+    4 功能整链(真云机)     一个段落出首帧 + 视频 + 字幕,溯源齐全(标识 / 拼接走本机 ffmpeg,由单测与自测覆盖)
 
 判决四态 PASS / FAIL / PARTIAL / SKIP —— **SKIP 永不计为 PASS**(M-6)。任一层没跑,总判决就不是 PASS。
 **入口拒绝无头模式**:Playwright 测试一律有头(CLAUDE.md 硬约束);无头的验收是「人看不见的验收」。
@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
                    "--models-dir", a.models_dir, "--character", a.character, "--scene", a.scene, "--prop", a.prop],
                   out / "4_e2e.log", env=env)
         layers.append({"layer": "功能整链(真云机)", "state": "PASS" if rc == 0 else "FAIL",
-                       "log": str(out / "4_e2e.log"), "note": "字幕 / 标识 / 拼接在 P5,本层暂只覆盖到视频"})
+                       "log": str(out / "4_e2e.log"), "note": "覆盖首帧、视频、字幕对齐;标识 / 拼接走本机 ffmpeg,由单测与自测覆盖"})
 
     result = {"verdict": verdict(layers), "layers": layers}
     (out / "report.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
