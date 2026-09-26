@@ -53,3 +53,19 @@ def test_unfinished_task_cannot_be_picked(store, sample):
                     params={"writes": "first_frame_path"}, seed=1, prompt="p", refs=[])
     with pytest.raises(ValueError, match="只有完成的任务"):
         plan_pick(store, t, **CAPS)
+
+
+def test_new_video_drops_the_old_videos_subtitles(store, sample):
+    """字幕的时间轴是对着那条视频算的,换了视频就对不上了。"""
+    repo.update(store, "segment", sample["seg"], subtitle_path="outputs/tasks/5/subtitles.srt")
+    t = _done(store, "segment", sample["seg"], "video_path", "outputs/tasks/9/new.mp4")
+    confirm_pick(store, plan_pick(store, t, **CAPS))
+    seg = repo.get(store, "segment", sample["seg"])
+    assert seg["video_path"] == "outputs/tasks/9/new.mp4" and seg["subtitle_path"] is None
+
+
+def test_new_subtitles_keep_the_video(store, sample):
+    t = _done(store, "segment", sample["seg"], "subtitle_path", "outputs/tasks/9/subtitles.srt")
+    confirm_pick(store, plan_pick(store, t, **CAPS))
+    seg = repo.get(store, "segment", sample["seg"])
+    assert seg["subtitle_path"] == "outputs/tasks/9/subtitles.srt" and seg["video_path"] == "videos/s1.mp4"
