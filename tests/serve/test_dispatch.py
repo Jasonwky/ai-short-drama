@@ -3,6 +3,7 @@ import pytest
 
 from tests.serve.fakes import FakeComfy
 from tools.drama import repo
+from tools.drama.tasks import create_task
 from tools.gen.planner import plan_first_frame, plan_video
 from tools.serve.dispatch import dispatch, pick_next
 from tools.serve.hosts import get_host
@@ -112,3 +113,31 @@ def test_same_named_references_do_not_collide(store, sample, host_id, data_root)
     wf = comfy.submitted[out.message]
     names = [wf[n]["inputs"]["image"] for n in ("18", "19", "20")]
     assert len(set(names)) == 3 and all(n.startswith("ai-short-drama/") for n in names)
+
+
+def test_anchor_images_are_uploaded_once_and_wired(store, sample, host_id, data_root):
+    """锚点图与参考图是同一张(首帧)时只传一次;只作锚点的图(尾帧)也要传上去。"""
+    (data_root / "frames/last.png").write_bytes(b"last")
+    tid = create_task(store, kind="video", target_type="segment", target_id=sample["seg"], model="m", seed=1,
+                      prompt="<Picture 1> 是首帧", refs=["frames/s1.png", "frames/last.png"],
+                      params={"workflow": "minimax_h3", "frames": 192, "size": [768, 1344],
+                              "image_refs": ["frames/s1.png"], "anchors": [["frames/s1.png", 0], ["frames/last.png", -1]],
+                              "audio_ref": None, "writes": "video_path", "expect_ext": ".mp4"})
+    comfy = FakeComfy()
+    out = dispatch(store, comfy, get_host(store, host_id), _task(store, tid), data_root=data_root, run=_no_ssh)
+    assert out.state == "queued"
+    assert sorted(comfy.uploaded) == sorted((data_root / p).as_posix() for p in ("frames/s1.png", "frames/last.png"))
+    wf = comfy.submitted[out.message]
+    guides = [n for n in wf.values() if n["class_type"] == "MiniMaxH3AddGuide"]
+    assert [wf[g["inputs"]["image"][0]]["inputs"]["image"].endswith(name) for g, name in
+            zip(guides, ("s1.png", "last.png"))] == [True, True]
+
+
+def test_missing_anchor_image_fails_loudly(store, sample, host_id, data_root):
+    tid = create_task(store, kind="video", target_type="segment", target_id=sample["seg"], model="m", seed=1,
+                      prompt="<Picture 1> x", refs=["frames/s1.png"],
+                      params={"workflow": "minimax_h3", "frames": 192, "size": [768, 1344],
+                              "image_refs": ["frames/s1.png"], "anchors": [["frames/gone.png", -1]],
+                              "audio_ref": None, "writes": "video_path", "expect_ext": ".mp4"})
+    out = dispatch(store, FakeComfy(), get_host(store, host_id), _task(store, tid), data_root=data_root, run=_no_ssh)
+    assert out.state == "failed" and "gone.png" in out.message

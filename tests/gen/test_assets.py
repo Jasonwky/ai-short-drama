@@ -53,5 +53,5 @@ def test_asset_task_builds_a_qwen_workflow_at_target_size(store, sample):
     repo.update(store, "prop", sample["jade"], final_prompt="A green jade pendant.")
     store.conn.execute("UPDATE drama SET style = 'anime' WHERE id = ?", (sample["drama"],))
     row, _ = _task(store, plan_asset_image(store, "prop", sample["jade"], seed=9))
-    wf = build_workflow(row, ["canvas.png"])
+    wf = build_workflow(row, {"assets/_canvas/gray_1024.png": "canvas.png"})
     assert wf["30"]["inputs"]["width"] == 1024 and wf["27"]["inputs"]["seed"] == 9

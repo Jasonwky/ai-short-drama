@@ -28,6 +28,7 @@ H3_MODEL = "minimax_h3_ref2va_pruned_fp8_scaled.safetensors"
 
 QWEN_PRESETS = {"fast": (4, 1.0), "baseline": (20, 4.0)}   # (步数, CFG);fast 是闸门 0 定的默认档
 H3_STEPS = 20
+H3_IMAGE_SLOTS = 3                                          # 模板预留的参考图槽(节点 8/9/10)
 
 FRAME_SIZE = {"9:16": (928, 1664), "16:9": (1664, 928)}    # Qwen 原生档
 VIDEO_SIZE = {"9:16": (768, 1344), "16:9": (1344, 768)}    # H3 竖屏已在云机跑通
@@ -80,10 +81,15 @@ def build_qwen(prompt: str, image_names: list[str], seed: int, *, preset: str = 
 
 
 def build_h3(prompt: str, image_names: list[str], audio_name: str | None, frames: int, seed: int,
-             *, size: tuple[int, int]) -> dict:
-    """MiniMax H3 ref2va,20 步。frames 须已由 Capability 换算并校验过。"""
-    if not 1 <= len(image_names) <= 3:
-        raise ValueError(f"工作流预留 1–3 个图槽,给了 {len(image_names)} 张")
+             *, size: tuple[int, int], anchors: list[tuple[str, int]] = ()) -> dict:
+    """MiniMax H3 ref2va,20 步。frames 须已由 Capability 换算并校验过。
+
+    anchors:[(图名, 帧号)],把图**钉**在那一帧(-1 = 最后一帧)。参考图只是「软」参考 ——
+    2026-09-26 云机实测:参考图 ≥ 2 张时,只当参考图喂的首帧第一帧差 74.2(比两张不同图的 35.9 还大),
+    串一个 `MiniMaxH3AddGuide` 钉住后第一帧差 11.9、尾帧差 6.5。锚定走条件里的 `minimax_keyframes`,
+    ref2va 权重就能用,不需要 I2V 权重(`spike-results/2026-09-26-参考锚定与四视图云机实测.md`)。"""
+    if not 1 <= len(image_names) <= H3_IMAGE_SLOTS:
+        raise ValueError(f"工作流预留 1–{H3_IMAGE_SLOTS} 个图槽,给了 {len(image_names)} 张")
     _raise_if(check_tags(prompt, len(image_names), 1 if audio_name else 0, dialect="h3"))
     wf = _load(H3_TEMPLATE)
 
@@ -111,4 +117,15 @@ def build_h3(prompt: str, image_names: list[str], audio_name: str | None, frames
     r2v["length"] = frames
     r2v["width"], r2v["height"] = size
     wf["19"]["inputs"]["noise_seed"] = seed
+
+    positive = ["12", 0]
+    for k, (name, frame_idx) in enumerate(anchors):
+        load, guide = str(40 + 2 * k), str(41 + 2 * k)
+        wf[load] = {"class_type": "LoadImage", "inputs": {"image": name}, "_meta": {"title": f"锚点图 {k + 1}"}}
+        wf[guide] = {"class_type": "MiniMaxH3AddGuide",
+                     "inputs": {"positive": positive, "vae": ["6", 0], "latent": ["12", 1], "image": [load, 0],
+                                "frame_idx": frame_idx},
+                     "_meta": {"title": f"锚定到第 {frame_idx} 帧(-1 = 最后一帧)"}}
+        positive = [guide, 0]
+    wf["13"]["inputs"]["conditioning"] = positive
     return wf

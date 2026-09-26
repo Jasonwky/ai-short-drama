@@ -62,14 +62,22 @@ def pick_next(store: Store, host_id: int) -> sqlite3.Row | None:
     return pending[0]
 
 
-def build_workflow(task: sqlite3.Row, image_names: list[str]) -> dict:
+def _uploads(p: dict) -> list[str]:
+    """要传到云机的图:参考图 + 锚点图,去重、保持顺序(首帧常常既是参考图又是锚点)。"""
+    return list(dict.fromkeys([*p["image_refs"], *(path for path, _ in p.get("anchors", []))]))
+
+
+def build_workflow(task: sqlite3.Row, names: dict[str, str]) -> dict:
+    """names:库里的相对路径 → 上传后 ComfyUI 认的文件名。"""
     p = json.loads(task["params_json"])
+    image_names = [names[path] for path in p["image_refs"]]
     if p["workflow"] == "qwen_image":
         return build_qwen(task["prompt"], image_names, task["seed"], preset=p["preset"], size=tuple(p["size"]))
     if p["workflow"] == "minimax_h3":
         if p["audio_ref"] is not None:
             raise ValueError("参考音频尚未接入(闸门 0-4:喂参考音频会复读内容)")
-        return build_h3(task["prompt"], image_names, None, p["frames"], task["seed"], size=tuple(p["size"]))
+        return build_h3(task["prompt"], image_names, None, p["frames"], task["seed"], size=tuple(p["size"]),
+                        anchors=[(names[path], idx) for path, idx in p.get("anchors", [])])
     raise ValueError(f"未知工作流 {p['workflow']!r}")
 
 
@@ -81,12 +89,13 @@ def dispatch(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: 
         set_task_state(store, task_id, "failed", error=msg)
         return Outcome("failed", msg)
 
-    paths = [Path(data_root) / p for p in json.loads(task["params_json"])["image_refs"]]
-    missing = [p.as_posix() for p in paths if not p.is_file()]
+    rels = _uploads(json.loads(task["params_json"]))
+    missing = [(Path(data_root) / r).as_posix() for r in rels if not (Path(data_root) / r).is_file()]
     if missing:
         return fail(f"参考图不存在:{', '.join(missing)}")
     try:
-        names = [client.upload_image(p, subfolder=f"ai-short-drama/{sha256_file(p)[:16]}") for p in paths]
+        names = {r: client.upload_image(Path(data_root) / r, subfolder=f"ai-short-drama/{sha256_file(Path(data_root) / r)[:16]}")
+                 for r in rels}
         wf = build_workflow(task, names)
     except ComfyUnreachable as e:
         return Outcome("pending", f"连不上云机,下轮再试:{e}")

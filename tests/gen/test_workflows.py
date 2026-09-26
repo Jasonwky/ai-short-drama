@@ -79,3 +79,22 @@ def test_h3_rejects_audio_tag_without_audio():
     # 云机上那个真实 bug 的形态
     with pytest.raises(ValueError, match="Audio 1"):
         build_h3("<Picture 1> and <Audio 1> exactly as it is", ["f.png"], None, 192, 1, size=(768, 1344))
+
+
+def test_h3_anchors_chain_add_guides_into_the_conditioning():
+    """锚点 = LoadImage + MiniMaxH3AddGuide,条件依次串过去,最后接到引导器;latent 仍是 ref2va 的联合 latent
+    (2026-09-26 云机实测:ref2va + 串 AddGuide 能把首帧钉在第 0 帧、尾帧钉在最后一帧)。"""
+    wf = build_h3("<Picture 1> 是首帧。<Picture 2> 是林小雨的四视图", ["f.png", "fv.png"], None, 192, 9,
+                  size=(768, 1344), anchors=[("f.png", 0), ("last.png", -1)])
+    assert _dangling(wf) == []
+    guides = [n for n in wf.values() if n["class_type"] == "MiniMaxH3AddGuide"]
+    assert [g["inputs"]["frame_idx"] for g in guides] == [0, -1]
+    assert guides[0]["inputs"]["positive"] == ["12", 0] and guides[1]["inputs"]["positive"] == ["41", 0]
+    assert all(g["inputs"]["latent"] == ["12", 1] and g["inputs"]["vae"] == ["6", 0] for g in guides)
+    assert wf["13"]["inputs"]["conditioning"] == ["43", 0]
+    assert [wf[g["inputs"]["image"][0]]["inputs"]["image"] for g in guides] == ["f.png", "last.png"]
+
+
+def test_h3_without_anchors_is_unchanged():
+    wf = build_h3("<Picture 1> x", ["f.png"], None, 192, 9, size=(768, 1344))
+    assert "MiniMaxH3AddGuide" not in _classes(wf) and wf["13"]["inputs"]["conditioning"] == ["12", 0]
