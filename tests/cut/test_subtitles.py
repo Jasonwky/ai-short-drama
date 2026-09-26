@@ -1,0 +1,90 @@
+# -*- coding: utf-8 -*-
+"""字幕纯函数。能量曲线是真 H3 片的 0.1 s 窗 RMS(云机实测那几条片,本机从音轨算出);
+逐字时间:单句片按 `spike-results/2026-09-26-字幕对齐云机实测.md` §2.2 原样,
+两句片的句首 / 句尾按同文档附 2 的实测值,中间各字时刻是插值(只影响「第二个命中字」落在哪,不影响判定)。"""
+from tools.cut import subtitles as st
+from tools.cut.subtitles import Cue
+
+# 动漫单句片 h3_00002_:前 5 秒底噪,5.1 s 开口,7.9 s 收声
+ANIME_ENV = [1, 1, 1, 1, 1, 1069, 1089, 850, 706, 574, 768, 728, 639, 553, 520, 1239, 1177, 988, 810, 678, 1636, 1362,
+             1037, 831, 778, 1856, 961, 674, 604, 600, 1433, 1052, 742, 595, 644, 1309, 959, 733, 612, 552, 1027, 787,
+             541, 438, 1033, 1159, 892, 719, 615, 574, 555, 4471, 11817, 3547, 13116, 13979, 12108, 2535, 11235, 10568,
+             2326, 357, 356, 340, 635, 5753, 10072, 15422, 17166, 15973, 7025, 10859, 17810, 11846, 10394, 12729, 11537,
+             4929, 2594, 156]
+ANIME_CHARS = [("这", 0.0, 0.0), ("块", 0.0, 5.5), ("玉", 5.5, 5.9), ("佩", 5.5, 5.9), ("是", 5.9, 6.7), ("我", 5.9, 6.7),
+               ("母", 6.7, 7.0), ("亲", 7.0, 7.2), ("留", 7.2, 7.4), ("给", 7.4, 7.5), ("我", 7.5, 7.8), ("的", 7.5, 7.8)]
+
+# 两句片 two_lines_fourview_00001_:1.5–3.86 s 第 1 句,4.89–8.0 s 第 2 句
+TWO_ENV = [2, 4, 4, 4, 28, 30, 92, 115, 77, 25, 7, 5, 4, 4, 828, 10689, 3311, 12323, 13996, 7364, 4408, 12698, 6216, 632,
+           5, 1365, 5861, 14202, 14189, 10958, 3498, 9704, 13796, 9338, 9960, 10047, 5793, 1749, 1008, 6, 5, 3, 3, 4, 5,
+           5, 6, 5, 833, 6859, 9859, 3315, 9816, 13319, 14728, 6034, 4892, 8082, 4438, 6434, 11362, 8640, 4480, 443, 23,
+           39, 23, 254, 5830, 4631, 6170, 6073, 8853, 6344, 10312, 7275, 2433, 1975, 1319, 9]
+TWO_LINES = ["这块玉佩，是我母亲留给我的。", "可她从来没告诉过我，它是从哪里来的。"]
+TWO_CHARS = ([("这", 0.0, 0.0), ("块", 0.0, 1.9), ("玉", 1.9, 2.3), ("佩", 1.9, 2.3), ("是", 2.3, 2.6), ("我", 2.6, 2.8),
+              ("母", 2.8, 3.0), ("亲", 3.0, 3.1), ("留", 3.1, 3.3), ("给", 3.3, 3.4), ("我", 3.4, 3.6), ("的", 3.6, 3.8)]
+             + [("可", 3.8, 5.0), ("她", 5.0, 5.2), ("从", 5.2, 5.4), ("来", 5.4, 5.6), ("没", 5.6, 5.8), ("告", 5.8, 6.0),
+                ("诉", 6.0, 6.1), ("过", 6.1, 6.2), ("我", 6.2, 6.8), ("她", 6.8, 7.0), ("是", 7.0, 7.1), ("从", 7.1, 7.3),
+                ("哪", 7.3, 7.4), ("里", 7.4, 7.6), ("来", 7.6, 7.7), ("的", 7.7, 7.84)])
+
+
+def test_single_line_start_snaps_to_voice_onset():
+    """whisper 把「这块」标成 0.0–5.5 s(拉进了前 5 秒的静音);句首吸附到能量起点 5.1 s,句尾用 whisper 的 7.8 s。"""
+    cues, problems = st.build(["这块玉佩，是我母亲留给我的。"], ANIME_CHARS, ANIME_ENV, 8.0)
+    assert problems == []
+    assert cues == [Cue("这块玉佩，是我母亲留给我的。", 5.1, 8.0)]     # 句尾多留 0.3 s,但不超片长
+
+
+def test_two_lines_in_one_clip():
+    """一片两句:第 2 句首字被 whisper 标成 3.8 s(接着第 1 句句尾),实际 4.89 s 才开口 —— 吸附到 4.9 s。
+    识别错字「它是 → 她是」不影响:15/16 字命中。"""
+    cues, problems = st.build(TWO_LINES, TWO_CHARS, TWO_ENV, 8.0)
+    assert problems == []
+    assert cues == [Cue(TWO_LINES[0], 1.5, 4.1), Cue(TWO_LINES[1], 4.9, 8.0)]
+
+
+def test_align_counts_hits_and_does_not_reuse_chars():
+    a = st.align(TWO_LINES, TWO_CHARS)
+    assert [(x["hit"], x["total"]) for x in a] == [(12, 12), (15, 16)]
+    assert a[1]["first"] == 12                  # 第 2 句从第 1 句用剩的字里找,不会回头匹配第 1 句的「我」「是」
+
+
+def test_low_hit_rate_is_a_problem_not_a_guess():
+    cues, problems = st.build(["今天天气真不错。"], ANIME_CHARS, ANIME_ENV, 8.0)
+    assert cues == []
+    assert "只对上" in problems[0] and "需人工校" in problems[0]
+
+
+def test_end_beyond_clip_is_a_problem():
+    late = [(c, s, e + 1.0) for c, s, e in ANIME_CHARS]
+    cues, problems = st.build(["这块玉佩，是我母亲留给我的。"], late, ANIME_ENV, 8.0)
+    assert cues == [] and "超出片长" in problems[0]
+
+
+def test_onset_needs_a_rising_edge():
+    """上一句的尾音还没落下去时,不能把 lo 本身当成下一句的开口。"""
+    env = [0, 0, 9, 9, 9, 9, 0, 0, 9, 9]
+    assert st.onset(env, 0.4, 0.9) == 0.8
+    assert st.onset(env, 0.0, 0.9) == 0.2
+    assert st.onset([0] * 10, 0.0, 0.9) is None
+
+
+def test_silent_envelope_falls_back_to_whisper_start():
+    cues, problems = st.build(["这块玉佩，是我母亲留给我的。"], ANIME_CHARS, [0.0] * 80, 8.0)
+    assert problems == []
+    assert cues[0].start == 0.0                 # 没有能量信息就只能信 whisper(界面上照样可以人工校)
+
+
+def test_padding_keeps_min_show_and_never_overlaps():
+    cues = st._pad([Cue("甲", 1.0, 1.2), Cue("乙", 1.6, 3.0), Cue("丙", 5.0, 7.9)], 8.0)
+    assert cues == [Cue("甲", 1.0, 1.6), Cue("乙", 1.6, 3.3), Cue("丙", 5.0, 8.0)]
+
+
+def test_srt_round_trip_and_episode_offsets():
+    a = [Cue("第一句", 1.5, 4.1), Cue("第二句", 4.9, 8.0)]
+    b = [Cue("第三句", 0.25, 2.0)]
+    text = st.srt(a)
+    assert text.startswith("1\n00:00:01,500 --> 00:00:04,100\n第一句\n\n2\n00:00:04,900 --> 00:00:08,000\n")
+    assert st.parse_srt(text) == a
+    ep = st.parse_srt(st.episode_srt([(a, 0.0), (b, 8.0)]))
+    assert ep[2] == Cue("第三句", 8.25, 10.0)
+    assert st.episode_srt([(a, 0.0), (b, 8.0)]).count("\n3\n") == 1   # 编号连续
