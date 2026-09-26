@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -52,6 +52,7 @@ CREATE TABLE character (
   final_prompt TEXT NOT NULL DEFAULT '',
   seed INTEGER,
   turnaround_path TEXT,
+  fourview_path TEXT,
   voice_ref_path TEXT,
   library_id INTEGER,
   UNIQUE (drama_id, name)
@@ -96,6 +97,7 @@ CREATE TABLE segment (
   atmosphere TEXT NOT NULL DEFAULT '',
   layout TEXT NOT NULL DEFAULT '',
   image_prompt TEXT NOT NULL DEFAULT '',
+  last_image_prompt TEXT NOT NULL DEFAULT '',
   video_prompt TEXT NOT NULL DEFAULT '',
   bgm_prompt TEXT NOT NULL DEFAULT '',
   sfx_prompt TEXT NOT NULL DEFAULT '',
@@ -238,6 +240,9 @@ MIGRATIONS: dict[int, list[str]] = {
     # v5:重建 llm_run 放宽 target_type;旧表改名 → 建新表 → 原样拷数据 → 删旧表(旧触发器随之删除)→ 建新触发器
     4: ["ALTER TABLE llm_run RENAME TO llm_run_v3", LLM_RUN_DDL_V5[0],
         "INSERT INTO llm_run SELECT * FROM llm_run_v3", "DROP TABLE llm_run_v3", *LLM_RUN_DDL_V5[1:]],
+    # v6:角色四视图(正面图出的横版四宫格,给 H3 当参考图);段落尾帧提示词(尾帧 / 首尾帧参考模式)
+    5: ["ALTER TABLE character ADD COLUMN fourview_path TEXT",
+        "ALTER TABLE segment ADD COLUMN last_image_prompt TEXT NOT NULL DEFAULT ''"],
 }
 
 

@@ -27,7 +27,7 @@ from tools.drama.repo import next_segment_id
 
 FORMAT = 1
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
-PATH_FIELDS = {"character": ("turnaround_path", "voice_ref_path"), "scene": ("image_path",), "prop": ("image_path",),
+PATH_FIELDS = {"character": ("turnaround_path", "fourview_path", "voice_ref_path"), "scene": ("image_path",), "prop": ("image_path",),
                "segment": ("first_frame_path", "last_frame_path", "video_path", "subtitle_path")}
 PARAM_PATH_KEYS = ("image_refs", "audio_ref", "video")      # task.params_json 里存路径的键(video:字幕对齐的输入)
 

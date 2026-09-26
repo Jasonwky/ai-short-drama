@@ -17,6 +17,8 @@ def _make_v1(path):
     s.conn.execute("DROP TABLE llm_run")          # v3 新增(触发器随表一起删)
     s.conn.execute("DROP TABLE export")           # v4 新增
     s.conn.execute("DROP TABLE setting")
+    s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")        # v6 新增
+    s.conn.execute("ALTER TABLE segment DROP COLUMN last_image_prompt")
     s.conn.execute("UPDATE meta SET value = '1' WHERE key = 'schema_version'")
     s.close()
     return d
@@ -61,6 +63,8 @@ def test_v4_llm_run_is_rebuilt_to_allow_scene_and_prop_targets(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):
         runs.start(s, task="describe", target_type="scene", target_id=1, model="m", input_sha="x", llm_mode="real",
                    params={})
+    s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")        # v6 新增
+    s.conn.execute("ALTER TABLE segment DROP COLUMN last_image_prompt")
     s.conn.execute("UPDATE meta SET value = '4' WHERE key = 'schema_version'")
     s.close()
 
@@ -70,4 +74,25 @@ def test_v4_llm_run_is_rebuilt_to_allow_scene_and_prop_targets(tmp_path):
                params={})
     with pytest.raises(sqlite3.IntegrityError, match="不可改"):          # 触发器重建了
         s.conn.execute("UPDATE llm_run SET output_json = '{}' WHERE id = ?", (rid,))
+    s.close()
+
+
+def test_v5_database_gains_fourview_and_last_frame_prompt(tmp_path):
+    """v6:角色四视图(H3 参考图)、段落尾帧提示词(首尾帧模式)。旧数据原样保留,新列有默认值。"""
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "玉佩", "9:16")
+    lin = repo.add_character(s, d, "林小雨", turnaround_path="assets/lin.png")
+    s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")
+    s.conn.execute("ALTER TABLE segment DROP COLUMN last_image_prompt")
+    s.conn.execute("UPDATE meta SET value = '5' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    row = repo.get(s, "character", lin)
+    assert row["turnaround_path"] == "assets/lin.png" and row["fourview_path"] is None
+    repo.update(s, "character", lin, fourview_path="outputs/tasks/3/fv.png")
+    ep = repo.add_episode(s, d, 1, "script")
+    seg = repo.add_segment(s, ep, 1, last_image_prompt="空无一人的庭院")
+    assert repo.get(s, "segment", seg)["last_image_prompt"] == "空无一人的庭院"
     s.close()

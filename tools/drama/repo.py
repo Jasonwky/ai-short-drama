@@ -16,12 +16,12 @@ from tools.drama.db import Store, now
 _COLUMNS: dict[str, set[str]] = {
     "episode": {"source_text", "outline", "script"},
     "character": {"appearance", "styling", "voice_desc", "final_prompt", "seed",
-                  "turnaround_path", "voice_ref_path"},
+                  "turnaround_path", "fourview_path", "voice_ref_path"},
     "scene": {"episode_id", "location", "time", "lighting", "final_prompt", "image_path"},
     "prop": {"description", "final_prompt", "image_path"},
     # scene_id 不在这里:改场景要走 set_scene(),它会核对归属
     "segment": {"duration_sec", "shot_type", "angle", "movement", "description", "result",
-                "atmosphere", "layout", "image_prompt", "video_prompt", "bgm_prompt", "sfx_prompt",
+                "atmosphere", "layout", "image_prompt", "last_image_prompt", "video_prompt", "bgm_prompt", "sfx_prompt",
                 "reference_mode", "first_frame_path", "last_frame_path", "video_path", "subtitle_path"},
 }
 _READABLE = {"drama", "episode", "character", "scene", "prop", "segment", "task", "host"}
