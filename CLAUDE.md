@@ -63,7 +63,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   工程包 `tools/drama/bundle.py`:导入永远新建一部剧(id 重映射、路径加 `imports/<编号>/` 前缀、逐文件校验 sha256)
 - `tools/cut/`:成片与合规。只调本机 ffmpeg(找不到就 400 报原因,ffmpeg 失败抛 `CutError`,不吞)。
   导出两态:`export.begin` 当场核对(★服务提供者编码、每段有视频、溯源成立)→ `run` 后台出带 / 不带显式标识两版 +
-  溯源报告 + **7 项读回自检,不过 = 导出失败**。元数据按 GB 45438-2025 **附录 E**(不是附录 F 的示例,它拼错了键名)。
+  溯源报告 + **8 项读回自检(含字幕),不过 = 导出失败**。元数据按 GB 45438-2025 **附录 E**(不是附录 F 的示例,它拼错了键名)。
   尾帧衔接记成 `tasks.record_local` 的创建即完成 task,溯源链靠它
 - `tools/gate0/` 是闸门 0 的**实验脚本**,不是产品代码;正式逻辑以 `tools/drama/` 为准
 
