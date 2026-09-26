@@ -47,7 +47,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   **领域层不硬编码模型参数**(换模型只改声明)
 - `tools/gen/planner.py` 只做**规划**(内容就绪即写出参数定死的 task);`tools/serve/` 负责**提交与推进**:
   worker 每轮「保隧道 → 按 external_id 推进在途 → 机器空闲才派下一条」。**接管不是单独流程** ——
-  重启后在途任务照常推进,绝不重交。库里的素材/产物路径都相对 `data_root`
+  重启后在途任务照常推进,绝不重交。库里的素材/产物路径都相对 `data_root`。
+  字幕对齐是 `kind = 'align'` 的 task:worker 空闲时经 ssh 在云机 GPU 上同步跑完(`serve/aligner.py` + 云机脚本 `serve/align_remote.py`),
+  起止时间与判卷在本机(`cut/subtitles.py`,纯函数);判卷不过不出字幕
 - 控制台:`tools/serve/app.py` + `tools/serve/panels/`。**面板登记在 `panels/__init__.py` 的 `REGISTRY`**,
   Playwright 自测遍历这张表;新面板 = 登记 + 在 `selftest.KEY_SELECTOR` 给判据(`test_selftest` 会拦住漏给的)。
   面板只**规划**任务,提交与推进由 `runtime` 里的后台 worker 负责。假后端(`tools/serve/fakes.py`)只进测试与自测
