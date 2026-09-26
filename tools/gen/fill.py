@@ -17,13 +17,14 @@ from dataclasses import dataclass
 from tools.drama import repo
 from tools.drama.db import Store
 from tools.gen.align import align_problems, plan_align
-from tools.gen.assets import SPEC, asset_problems, locked_seed, plan_asset_image
+from tools.gen.assets import SPEC, asset_problems, fourview_problems, locked_seed, plan_asset_image, plan_fourview
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511, WHISPER_ALIGN
-from tools.gen.planner import first_frame_problems, plan_first_frame, plan_video, video_problems
+from tools.gen.planner import (first_frame_problems, last_frame_problems, plan_first_frame, plan_last_frame, plan_video,
+                               video_problems)
 
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
-KINDS = {"frames": ("episode", "首帧"), "videos": ("episode", "视频"), "subtitles": ("episode", "字幕"),
-         "assets": ("drama", "资产图")}
+KINDS = {"frames": ("episode", "首帧"), "lastframes": ("episode", "尾帧"), "videos": ("episode", "视频"),
+         "subtitles": ("episode", "字幕"), "assets": ("drama", "资产图"), "fourviews": ("drama", "四视图")}
 _ASSET_LABEL = {"character": "角色", "scene": "场景", "prop": "道具"}
 
 
@@ -59,35 +60,41 @@ class FillPlan:
         return (f"{head};跳过:已有 {count['has']}、在途 {count['in_flight']}、不能做 {count['blocked']}")
 
 
-def _in_flight(store: Store, target_type: str, target_id: int, kind: str) -> bool:
+def _in_flight(store: Store, target_type: str, target_id: int, field: str) -> bool:
+    """这个目标的这个字段有没有在途任务。按写回字段分:首帧 / 尾帧、正面图 / 四视图都是同一目标的 image 任务。"""
     return store.conn.execute(
-        f"SELECT 1 FROM task WHERE target_type = ? AND target_id = ? AND kind = ? AND state IN "
-        f"({','.join('?' * len(IN_FLIGHT))}) LIMIT 1", (target_type, target_id, kind, *IN_FLIGHT)).fetchone() is not None
+        f"SELECT 1 FROM task WHERE target_type = ? AND target_id = ? AND json_extract(params_json, '$.writes') = ?"
+        f" AND state IN ({','.join('?' * len(IN_FLIGHT))}) LIMIT 1",
+        (target_type, target_id, field, *IN_FLIGHT)).fetchone() is not None
 
 
-def _item(store: Store, target_type: str, row, label: str, kind: str, field: str, problems, est: float) -> Item:
+def _item(store: Store, target_type: str, row, label: str, kind: str, field: str, problems, est: float,
+          seed_lock: bool = True) -> Item:
     if row[field]:
         return Item(target_type, row["id"], label, "has")
-    if _in_flight(store, target_type, row["id"], kind):
+    if _in_flight(store, target_type, row["id"], field):
         return Item(target_type, row["id"], label, "in_flight")
     probs = problems()
     if probs:
         return Item(target_type, row["id"], label, "blocked", ";".join(probs))
     return Item(target_type, row["id"], label, "todo", est_seconds=est,
-                seed=locked_seed(store, target_type, row["id"]) if target_type in SPEC else None)
+                seed=locked_seed(store, target_type, row["id"]) if seed_lock and target_type in SPEC else None)
 
 
 def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
     if kind not in KINDS:
         raise ValueError(f"未知的补全类型 {kind},可选:{sorted(KINDS)}")
     items = []
-    if kind in ("frames", "videos", "subtitles"):
+    if kind in ("frames", "lastframes", "videos", "subtitles"):
         repo.get(store, "episode", scope_id)
         for s in store.conn.execute("SELECT * FROM segment WHERE episode_id = ? ORDER BY number", (scope_id,)):
             label = f"段落 {s['number']}"
             if kind == "frames":
                 items.append(_item(store, "segment", s, label, "image", "first_frame_path",
                                    lambda sid=s["id"]: first_frame_problems(store, sid), QWEN_IMAGE_EDIT_2511.sec_per_item))
+            elif kind == "lastframes":
+                items.append(_item(store, "segment", s, label, "image", "last_frame_path",
+                                   lambda sid=s["id"]: last_frame_problems(store, sid), QWEN_IMAGE_EDIT_2511.sec_per_item))
             elif kind == "subtitles":
                 items.append(_item(store, "segment", s, label, "align", "subtitle_path",
                                    lambda sid=s["id"]: align_problems(store, sid), WHISPER_ALIGN.sec_per_item))
@@ -95,6 +102,12 @@ def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
                 est = MINIMAX_H3.est_seconds(MINIMAX_H3.frames_for(s["duration_sec"])) if s["duration_sec"] else 0.0
                 items.append(_item(store, "segment", s, label, "video", "video_path",
                                    lambda sid=s["id"]: video_problems(store, sid), est))
+    elif kind == "fourviews":
+        repo.get(store, "drama", scope_id)
+        for r in store.conn.execute("SELECT * FROM character WHERE drama_id = ? ORDER BY id", (scope_id,)):
+            items.append(_item(store, "character", r, f"角色「{r['name']}」", "image", "fourview_path",
+                               lambda rid=r["id"]: fourview_problems(store, rid), QWEN_IMAGE_EDIT_2511.sec_per_item,
+                               seed_lock=False))      # 锁定的是正面图的种子,不管四视图
     else:
         repo.get(store, "drama", scope_id)
         for table in ("character", "scene", "prop"):
@@ -116,6 +129,10 @@ def confirm_fill(store: Store, kind: str, scope_id: int, targets: list[tuple[str
         seed = base_seed + n
         if kind == "frames":
             created.append(plan_first_frame(store, tid, seed=seed))
+        elif kind == "lastframes":
+            created.append(plan_last_frame(store, tid, seed=seed))
+        elif kind == "fourviews":
+            created.append(plan_fourview(store, tid, seed=seed))
         elif kind == "videos":
             created.append(plan_video(store, tid, seed=seed))
         elif kind == "subtitles":

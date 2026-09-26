@@ -18,10 +18,10 @@ STATUS = {"has": "已有", "in_flight": "在途", "blocked": "不能做", "todo"
 
 
 def _back(store, kind: str, scope_id: int) -> tuple[str, dict]:
-    if kind == "assets":
+    if KINDS[kind][0] == "drama":                              # 资产图、四视图都在资产面板上补
         return f"/drama/{scope_id}/assets", {"panel_key": "assets", "drama_id": scope_id}
     repo.get(store, "episode", scope_id)
-    panel = "videos" if kind == "subtitles" else kind          # 字幕在视频面板上补
+    panel = {"subtitles": "videos", "lastframes": "frames"}.get(kind, kind)   # 字幕在视频面板、尾帧在参考帧面板上补
     return f"/episode/{scope_id}/{panel}", {"panel_key": panel, "episode_id": scope_id}
 
 

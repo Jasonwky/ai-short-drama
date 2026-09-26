@@ -28,8 +28,8 @@ def test_frames_are_sorted_into_four_kinds(store, sample):
     blocked = _seg(store, sample, 3)
     repo.set_scene(store, blocked, None)
     busy = _seg(store, sample, 4)
-    create_task(store, kind="image", target_type="segment", target_id=busy, model="m", params={}, seed=1,
-                prompt="p", refs=[])
+    create_task(store, kind="image", target_type="segment", target_id=busy, model="m",
+                params={"writes": "first_frame_path"}, seed=1, prompt="p", refs=[])
 
     plan = plan_fill(store, "frames", sample["episode"])
     st = _status(plan)
@@ -114,3 +114,11 @@ def test_subtitles_fill_covers_segments_with_video_and_dialogue(store, sample):
     assert repo.get(store, "task", tid)["kind"] == "align"
     assert plan_fill(store, "subtitles", sample["episode"]).todo == []      # 在途了,不重复交
     assert done and novideo
+
+
+def test_in_flight_is_per_field_first_frame_does_not_block_the_last_frame(store, sample):
+    """首帧和尾帧都是这个段落的 image 任务:在途要按写回的字段分开算,否则一个在跑、另一个就永远补不上。"""
+    repo.update(store, "segment", sample["seg"], reference_mode="first_last", first_frame_path=None,
+                last_image_prompt="@林小雨 站在 @老宅庭院 里,手里拿着 @玉佩")
+    confirm_fill(store, "frames", sample["episode"], [("segment", sample["seg"])], base_seed=1)
+    assert _status(plan_fill(store, "lastframes", sample["episode"]))["段落 1"] == ("todo", "")
