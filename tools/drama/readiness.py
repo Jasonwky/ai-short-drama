@@ -52,14 +52,16 @@ def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, i
     missing = []
     if not seg["video_prompt"].strip():
         missing.append("视频提示词")
-    if needs_images and not seg["image_prompt"].strip():
+    if mode in ("first", "first_last") and not seg["image_prompt"].strip():
         missing.append("首帧图提示词")
+    if mode in ("last", "first_last") and not seg["last_image_prompt"].strip():
+        missing.append("尾帧图提示词")
     checks.append(Check("prompt_ready", not missing,
                         ("缺少" + "、".join(missing)) if missing else "提示词齐备"))
 
     if needs_images:
         lack = [] if scene is not None else ["未绑定场景"]
-        lack += [f"角色「{c['name']}」缺四视图" for c in chars if not c["turnaround_path"]]
+        lack += [f"角色「{c['name']}」缺正面定妆图" for c in chars if not c["turnaround_path"]]
         if scene is not None and not scene["image_path"]:
             lack.append(f"场景「{scene['name']}」缺空镜图")
         lack += [f"道具「{p['name']}」缺白底图" for p in props if not p["image_path"]]
@@ -94,6 +96,10 @@ def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, i
             msg = ";".join(f"{KIND_LABEL[r.kind]}「{r.name}」因槽位不足未作为参考图,仅以文字描述参与"
                            for r in dropped)
             checks.append(Check("slots", True, msg, warn=True))
+        no_view = [c["name"] for c in chars if not c["fourview_path"]]
+        if no_view:
+            checks.append(Check("fourview", True, "".join(f"角色「{n}」" for n in no_view)
+                                + "没有四视图,视频里只靠首帧与文字认人", warn=True))
 
     checks.append(Check("host_ready", host_ok, host_msg))
     checks.append(Check("video_model_ready", model_ok, model_msg))

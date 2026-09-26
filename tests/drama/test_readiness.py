@@ -23,7 +23,7 @@ def test_complete_segment_is_ready(store, sample):
 def test_missing_turnaround_blocks(store, sample):
     repo.update(store, "character", sample["lin"], turnaround_path=None)
     c = _by_key(_check(store, sample["seg"]))["assets_bound"]
-    assert not c.ok and c.msg == "角色「林小雨」缺四视图"
+    assert not c.ok and c.msg == "角色「林小雨」缺正面定妆图"
 
 
 def test_unknown_mention_blocks(store, sample):
@@ -72,3 +72,16 @@ def test_text_only_segment_needs_no_images(store, sample):
     repo.update(store, "character", sample["lin"], turnaround_path=None)
     checks = _by_key(_check(store, sample["seg"]))
     assert "assets_bound" not in checks and checks["prompt_ready"].ok and checks["refs_ready"].ok
+
+
+def test_character_without_fourview_is_a_visible_warning(store, sample):
+    c = _by_key(_check(store, sample["seg"]))["fourview"]
+    assert c.ok and c.warn and c.msg == "角色「林小雨」没有四视图,视频里只靠首帧与文字认人"
+    repo.update(store, "character", sample["lin"], fourview_path="fv/lin.png")
+    assert "fourview" not in _by_key(_check(store, sample["seg"]))
+
+
+def test_last_frame_mode_needs_its_own_prompt(store, sample):
+    repo.update(store, "segment", sample["seg"], reference_mode="first_last", last_frame_path="frames/e.png")
+    c = _by_key(_check(store, sample["seg"]))["prompt_ready"]
+    assert not c.ok and "尾帧图提示词" in c.msg
