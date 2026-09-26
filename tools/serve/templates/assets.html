@@ -3,6 +3,7 @@
 {% block content %}
 <h1>资产</h1>
 {{ fill_form("assets", drama.id, seed, "补全本剧缺的资产图") }}
+{{ fill_form("fourviews", drama.id, seed, "补全本剧缺的角色四视图") }}
 <section class="card">
   <form method="post" action="/drama/{{ drama.id }}/assets" class="row" data-add-asset>
     <div><label>类型</label><select name="kind"><option value="character">角色</option><option value="scene">场景</option><option value="prop">道具</option></select></div>
@@ -66,6 +67,19 @@
           </div>
           {{ llm_run_list(it.llm_runs, llm_state) }}
           {{ history(it.tasks, it.current, state_label, "/drama/" ~ drama.id ~ "/assets") }}
+          {% if col.table == "character" %}
+            <h3>四视图(给视频当参考图)</h3>
+            <div class="current-media" data-fourview>
+              {% if it.row.fourview_path %}<img src="/media/{{ it.row.fourview_path }}" alt="{{ it.row.name }} 四视图">
+              {% else %}<p class="empty">还没有四视图</p>{% endif %}
+            </div>
+            <form method="post" action="/asset/character/{{ it.row.id }}/fourview" class="row">
+              <div><label>种子</label><input type="number" name="seed" value="{{ seed + 100 + loop.index }}"></div>
+              <div><button class="btn" type="submit" data-generate-fourview {% if not it.current %}disabled title="先有正面定妆图"{% endif %}>生成四视图</button></div>
+            </form>
+            <p class="hint">以正面图为输入,Qwen 快档出横版四宫格(正 / 左 / 背 / 右);实测快档合格、标准档反而会画重。</p>
+            {{ history(it.fourview_tasks, it.row.fourview_path, state_label, "/drama/" ~ drama.id ~ "/assets") }}
+          {% endif %}
         </div>
       {% else %}
         <p class="empty">还没有{{ col.label }}</p>

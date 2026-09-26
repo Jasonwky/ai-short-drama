@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """资产:角色 / 场景 / 道具三栏。编辑描述、生成参考图(灰底整幅替换)、上传参考图、从图反推描述、历史版本可挑。
 
+角色另有**四视图**:以定稿的正面图为输入出一张横版四宫格,给视频当参考图(首帧合成仍用正面图)。
+
 - **音色锁定**:角色的声音描述逐字进视频提示词,改它会让绑定段落的视频作废 → 先报代价再确认(参考帧不受影响);
 - **种子锁定**:锁定某一版参考图的种子后,重出参考图只用它(服务端强制,补全也一样),解锁才能换。
 
@@ -8,6 +10,7 @@
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
@@ -15,7 +18,7 @@ from fastapi.responses import RedirectResponse
 
 from tools.drama import invalidation, repo, uploads
 from tools.drama.tasks import tasks_for
-from tools.gen.assets import SPEC, ensure_canvas, lock_seed, plan_asset_image, unlock_seed
+from tools.gen.assets import SPEC, ensure_canvas, lock_seed, plan_asset_image, plan_fourview, unlock_seed
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.llm import runs
 from tools.serve.panels.common import confirm_page, needs_confirm, new_seed, render, rt
@@ -41,8 +44,10 @@ def page(request: Request, drama_id: int):
     for table in ("character", "scene", "prop"):
         items = []
         for row in store.conn.execute(f"SELECT * FROM {table} WHERE drama_id = ? ORDER BY id", (drama_id,)):
-            items.append({"row": row, "current": row[SPEC[table][0]], "tasks": tasks_for(store, table, row["id"]),
-                          "llm_runs": runs.history(store, table, row["id"])})
+            tasks = tasks_for(store, table, row["id"])
+            fourview = [t for t in tasks if json.loads(t["params_json"]).get("writes") == "fourview_path"]
+            items.append({"row": row, "current": row[SPEC[table][0]], "tasks": [t for t in tasks if t not in fourview],
+                          "fourview_tasks": fourview, "llm_runs": runs.history(store, table, row["id"])})
         cols.append({"table": table, "label": KIND_LABEL[table], "entries": items, "fields": FIELDS[table]})
     return render(request, "assets.html", "assets", drama_id=drama_id, cols=cols, seed=new_seed())
 
@@ -97,6 +102,13 @@ def generate(request: Request, table: str, row_id: int, seed: int = Form(...)):
     ensure_canvas(runtime.data_root)
     plan_asset_image(runtime.store, table, row_id, seed=seed)
     return RedirectResponse(f"/drama/{repo.get(runtime.store, table, row_id)['drama_id']}/assets", status_code=303)
+
+
+@router.post("/asset/character/{row_id}/fourview")
+def fourview(request: Request, row_id: int, seed: int = Form(...)):
+    store = rt(request).store
+    plan_fourview(store, row_id, seed=seed)
+    return RedirectResponse(f"/drama/{repo.get(store, 'character', row_id)['drama_id']}/assets", status_code=303)
 
 
 @router.post("/asset/{table}/{row_id}/upload")

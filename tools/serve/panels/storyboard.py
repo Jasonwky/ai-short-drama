@@ -16,9 +16,9 @@ from tools.serve.panels.common import confirm_page, needs_confirm, readiness, re
 
 router = APIRouter()
 CAPS = {"video_cap": MINIMAX_H3, "image_cap": QWEN_IMAGE_EDIT_2511}
-MODES = [("first", "首帧参考"), ("text_only", "纯文字(无参考帧)"),
-         ("last", "尾帧参考(视频生成未实现)"), ("first_last", "首尾帧(视频生成未实现)")]
-TEXT_FIELDS = ("description", "image_prompt", "video_prompt", "reference_mode")
+MODES = [("first", "首帧(钉住第一帧)"), ("first_last", "首尾帧(两头都钉住)"), ("last", "尾帧(钉住最后一帧)"),
+         ("text_only", "纯文字(视频生成未实现)")]
+TEXT_FIELDS = ("description", "image_prompt", "last_image_prompt", "video_prompt", "reference_mode")
 
 
 def _seconds(text: str) -> float | None:

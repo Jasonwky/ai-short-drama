@@ -12,6 +12,8 @@
       <div class="live" data-live-result></div>
       <label>首帧图提示词(用 @名字 引用本段绑定的素材)</label>
       <textarea name="image_prompt">{{ seg.image_prompt }}</textarea>
+      <label>尾帧图提示词(「首尾帧」「尾帧」模式用;同样用 @名字)</label>
+      <textarea name="last_image_prompt">{{ seg.last_image_prompt }}</textarea>
       <label>视频提示词</label>
       <textarea name="video_prompt">{{ seg.video_prompt }}</textarea>
       <label>参考模式</label>
