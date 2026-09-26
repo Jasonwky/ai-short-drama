@@ -1,0 +1,49 @@
+{
+  "segment": 1,
+  "tasks": [
+    {
+      "id": 1,
+      "kind": "image",
+      "target_type": "segment",
+      "target_id": 1,
+      "model": "qwen-image-edit-2511-Q4_K_M.gguf",
+      "params_json": "{\"dropped\": [], \"expect_ext\": \".png\", \"image_refs\": [\"assets/character.png\", \"assets/scene.png\", \"assets/prop.png\"], \"preset\": \"fast\", \"size\": [928, 1664], \"workflow\": \"qwen_image\", \"writes\": \"first_frame_path\"}",
+      "seed": 20260923,
+      "prompt": "Picture 1(林小雨) 站在黄昏的 Picture 2(老宅庭院) 里,双手捧着 Picture 3(玉佩),中景,竖构图",
+      "refs_json": "[\"assets/character.png\", \"assets/scene.png\", \"assets/prop.png\"]",
+      "created_at": "2026-09-26T05:44:48+00:00",
+      "host_id": 1,
+      "external_id": "876e0908-a493-4489-988d-13f063281f09",
+      "state": "done",
+      "result_path": "outputs/tasks/1/gate0_00004_.png",
+      "result_sha256": "2fc6528ab663c9617b1e4fb1ee4aa864b09dcf590724dcd807a899f0face90d6",
+      "error": null,
+      "started_at": "2026-09-26T05:45:13+00:00",
+      "finished_at": "2026-09-26T05:45:44+00:00",
+      "state_since": "2026-09-26T05:45:44+00:00"
+    },
+    {
+      "id": 2,
+      "kind": "video",
+      "target_type": "segment",
+      "target_id": 1,
+      "model": "minimax_h3_ref2va_pruned_fp8_scaled.safetensors",
+      "params_json": "{\"audio_ref\": null, \"expect_ext\": \".mp4\", \"frames\": 192, \"image_refs\": [\"outputs/tasks/1/gate0_00004_.png\"], \"size\": [768, 1344], \"workflow\": \"minimax_h3\", \"writes\": \"video_path\"}",
+      "seed": 20260924,
+      "prompt": "<Picture 1> 是本段的首帧。林小雨 在 老宅庭院 低头看 玉佩,然后抬眼说话,固定机位,环境声,无配乐 林小雨用普通话说:「这块玉佩，是我母亲留给我的。」 林小雨的声音:年轻女声,清亮,语速偏慢。",
+      "refs_json": "[\"outputs/tasks/1/gate0_00004_.png\"]",
+      "created_at": "2026-09-26T05:45:44+00:00",
+      "host_id": 1,
+      "external_id": "f31151dd-312d-4a61-91e7-376f2f354e6f",
+      "state": "done",
+      "result_path": "outputs/tasks/2/h3_00004_.mp4",
+      "result_sha256": "f947d9f0314e60bb78be321d9bf11258f2bcd834a3b77783c14ce7e7af5c6313",
+      "error": null,
+      "started_at": "2026-09-26T05:45:55+00:00",
+      "finished_at": "2026-09-26T06:01:12+00:00",
+      "state_since": "2026-09-26T06:01:12+00:00"
+    }
+  ],
+  "first_frame_path": "outputs/tasks/1/gate0_00004_.png",
+  "video_path": "outputs/tasks/2/h3_00004_.mp4"
+}
