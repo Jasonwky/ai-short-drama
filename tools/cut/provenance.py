@@ -46,17 +46,20 @@ def _node(store: Store, root: Path, path: str) -> dict:
 
 def build(store: Store, data_root: Path, episode_id: int, *, produce_id: str, producer: str,
           videos: list[dict]) -> dict:
-    """videos:导出时快照的 [{segment_id, number, video_path}],按顺序。"""
+    """videos:导出时快照的 [{segment_id, number, video_path, subtitle_path?}],按顺序。
+    字幕的生成记录(对齐任务)以视频为输入,所以字幕这条链也一路追到素材。"""
     ep = repo.get(store, "episode", episode_id)
     drama = repo.get(store, "drama", ep["drama_id"])
     segs = []
     for v in videos:
         seg = repo.get(store, "segment", v["segment_id"])
+        sub = v.get("subtitle_path")
         segs.append({"number": v["number"], "duration_sec": seg["duration_sec"], "description": seg["description"],
-                     "video": _node(store, Path(data_root), v["video_path"])})
+                     "video": _node(store, Path(data_root), v["video_path"]),
+                     "subtitles": _node(store, Path(data_root), sub) if sub else None})
     return {"produce_id": produce_id, "content_producer": producer, "drama": drama["title"],
             "aspect_ratio": drama["aspect_ratio"], "episode": ep["number"], "license": LICENSE_NOTE,
-            "models": sorted(_models([s["video"] for s in segs])), "segments": segs}
+            "models": sorted(_models([n for s in segs for n in (s["video"], s["subtitles"]) if n])), "segments": segs}
 
 
 def _models(nodes: list[dict]) -> set[str]:
@@ -77,7 +80,8 @@ def _walk(node: dict):
 def problems(report: dict) -> list[str]:
     out = []
     for s in report["segments"]:
-        for n in _walk(s["video"]):
+        roots = [s["video"]] + ([s["subtitles"]] if s.get("subtitles") else [])
+        for n in (n for r in roots for n in _walk(r)):
             if n["sha256"] is None:
                 out.append(f"段落 {s['number']}:文件不在本机 {n['path']}")
             elif n["task"] and n["task"]["result_sha256"] and n["sha256"] != n["task"]["result_sha256"]:
@@ -85,7 +89,9 @@ def problems(report: dict) -> list[str]:
                            "(文件被替换过)—— 溯源不成立")
         if s["video"]["task"] is None:
             out.append(f"段落 {s['number']}:视频 {s['video']['path']} 在 task 表里没有生成记录")
-    return out
+        if s.get("subtitles") and s["subtitles"]["task"] is None:
+            out.append(f"段落 {s['number']}:字幕 {s['subtitles']['path']} 在 task 表里没有生成记录")
+    return list(dict.fromkeys(out))      # 字幕链里又走一遍视频,同一条问题只报一次
 
 
 def to_markdown(report: dict) -> str:
@@ -110,5 +116,8 @@ def to_markdown(report: dict) -> str:
     for s in report["segments"]:
         lines += [f"## 段落 {s['number']}({s['duration_sec']} 秒)", "", s["description"], ""]
         emit(s["video"], 0)
+        if s.get("subtitles"):
+            lines.append("字幕:")
+            emit(s["subtitles"], 0)
         lines.append("")
     return "\n".join(lines)

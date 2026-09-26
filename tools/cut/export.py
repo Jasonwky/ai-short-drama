@@ -5,6 +5,8 @@
 - `labeled.mp4`:带显式标识「AI 生成」(左上角、**全程**;标准下限是起始画面 ≥ 2 s);
 - `plain.mp4`:无显式标识版(办法允许应用户申请提供),隐式标识照样写。
 两者共用同一个 ProduceID(同一个作品),各自的 ReservedCode1 是各自视频流的 SHA-256。
+两版都烧录字幕(各段对齐出的 SRT 按段落起点平移、拼成整集 `subtitles.srt`,随成片交付);
+有台词的段落没有字幕 = 前提不满足,不开工。
 
 两态:`begin` 当场核对前提(★必答的服务提供者编码、每段有视频、尺寸一致、有音轨、溯源成立),
 不满足就报原因不开工;`run` 在后台跑(一集 1–3 分钟),结束时整行锁定(触发器)。
@@ -15,8 +17,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.cut import aigc, media, provenance
-from tools.drama import repo
+from tools.cut import aigc, media, provenance, subtitles
+from tools.drama import repo, rules
 from tools.drama.db import Store, now
 from tools.serve.dispatch import sha256_file
 
@@ -54,6 +56,11 @@ def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
             problems.append(f"段落 {s['number']} 还没有视频")
         elif not (Path(data_root) / s["video_path"]).is_file():
             problems.append(f"段落 {s['number']} 的视频文件不在本机:{s['video_path']}")
+        if s["subtitle_path"]:
+            if not (Path(data_root) / s["subtitle_path"]).is_file():
+                problems.append(f"段落 {s['number']} 的字幕文件不在本机:{s['subtitle_path']}")
+        elif rules.dialogue_lines(s["description"]):
+            problems.append(f"段落 {s['number']} 有台词但还没有字幕(在「视频」面板点「对齐字幕」)")
     try:
         media.require_ffmpeg()
     except ValueError as e:
@@ -76,7 +83,9 @@ def begin(store: Store, data_root: Path, episode_id: int, producer: str) -> int:
         problems.append(f"各段视频尺寸不一致:{ {n: (p.width, p.height) for n, p in probes.items()} }")
     problems += [f"段落 {n} 的视频没有音轨" for n, p in probes.items() if not p.has_audio]
     videos = [{"segment_id": s["id"], "number": s["number"], "video_path": s["video_path"],
-               "sha256": sha256_file(root / s["video_path"])} for s in segs]
+               "sha256": sha256_file(root / s["video_path"]), "subtitle_path": s["subtitle_path"],
+               "subtitle_sha256": sha256_file(root / s["subtitle_path"]) if s["subtitle_path"] else None}
+              for s in segs]
     problems += provenance.problems(provenance.build(store, root, episode_id, produce_id="", producer=producer,
                                                      videos=videos))
     if problems:
@@ -119,13 +128,23 @@ def run(store: Store, data_root: Path, export_id: int) -> None:
     changed = [v["number"] for v, c in zip(videos, clips) if sha256_file(c) != v["sha256"]]
     if changed:
         raise media.CutError(f"段落 {changed} 的视频在点导出之后被换掉了 —— 请重新导出")
+    changed = [v["number"] for v in videos
+               if v.get("subtitle_path") and sha256_file(root / v["subtitle_path"]) != v["subtitle_sha256"]]
+    if changed:
+        raise media.CutError(f"段落 {changed} 的字幕在点导出之后被换掉了 —— 请重新导出")
     out = Path("outputs/exports") / row["produce_id"]
     first = media.probe(clips[0])
     label = media.Label.for_size(first.width, first.height)
     rel = {"labeled": (out / "labeled.mp4").as_posix(), "plain": (out / "plain.mp4").as_posix()}
+    srt = episode_subtitles(root, videos)
+    srt_path = None
+    if srt:
+        srt_path = root / out / "subtitles.srt"
+        srt_path.parent.mkdir(parents=True, exist_ok=True)
+        srt_path.write_text(srt, encoding="utf-8")
     for key, lab in (("plain", None), ("labeled", label)):
         raw = root / out / f"{key}.raw.mp4"
-        media.encode_episode(clips, raw, lab)
+        media.encode_episode(clips, raw, lab, subtitles=srt_path)
         tag = aigc.build(row["content_producer"], row["produce_id"], media.stream_sha256(raw))
         media.write_tags(raw, root / rel[key], {aigc.TAG: tag, "comment": COMMENT})
         raw.unlink()
@@ -139,6 +158,43 @@ def run(store: Store, data_root: Path, export_id: int) -> None:
     _finish(store, export_id, "failed" if bad else "done", labeled_path=rel["labeled"], plain_path=rel["plain"],
             report_path=report_rel, checks_json=json.dumps(checks, ensure_ascii=False),
             error=f"自检不通过:{'、'.join(bad)}(不可发布)" if bad else None)
+
+
+def _parts(root: Path, videos: list[dict]) -> list[tuple[list[subtitles.Cue], float, Path]]:
+    """每段 (字幕, 本段在成片里的起点秒, 本段视频)。起点 = 前面各段视频时长之和(拼接就是按这个接的)。"""
+    parts, offset = [], 0.0
+    for v in videos:
+        clip = root / v["video_path"]
+        sub = v.get("subtitle_path")
+        cues = subtitles.parse_srt((root / sub).read_text(encoding="utf-8")) if sub else []
+        parts.append((cues, offset, clip))
+        offset += media.probe(clip).duration
+    return parts
+
+
+def episode_subtitles(root: Path, videos: list[dict]) -> str:
+    """整集 SRT;本集没有一句字幕时返回空串(不烧录)。"""
+    parts = _parts(root, videos)
+    return subtitles.episode_srt([(c, o) for c, o, _ in parts]) if any(c for c, _, _ in parts) else ""
+
+
+def _subtitle_check(root: Path, videos: list[dict], plain: Path, report_rel: str) -> tuple[bool, str]:
+    """整集 SRT 与按各段重拼的逐字相同;第一句字幕的中点,成片底部比原片多出字(真烧进去了)。"""
+    parts = _parts(root, videos)
+    want = subtitles.episode_srt([(c, o) for c, o, _ in parts]) if any(c for c, _, _ in parts) else ""
+    if not want:
+        return True, "本集没有台词,不烧字幕"
+    saved = root / Path(report_rel).parent / "subtitles.srt"
+    if not saved.is_file() or saved.read_text(encoding="utf-8") != want:
+        return False, "整集字幕文件缺失,或与各段字幕按段落起点重拼的结果不同"
+    cues, offset, clip = next(p for p in parts if p[0])
+    mid = (cues[0].start + cues[0].end) / 2
+    p = media.probe(plain)
+    box = media.diff_bbox(media.gray_frame(plain, offset + mid, p.width, p.height),
+                          media.gray_frame(clip, mid, p.width, p.height), p.width)
+    if box is None or box[1] < p.height * 0.6:
+        return False, f"{offset + mid:.2f}s 处成片底部看不到字幕(差异框 {box})"
+    return True, f"{sum(len(c) for c, _, _ in parts)} 句;{offset + mid:.2f}s 处底部有字(差异框 {box})"
 
 
 def _label_check(labeled: Path, plain: Path, label: media.Label) -> tuple[bool, str]:
@@ -180,6 +236,8 @@ def check(store: Store, root: Path, row, labeled_rel: str, plain_rel: str, repor
     ok, detail = _label_check(root / labeled_rel, root / plain_rel, label)
     add("显式标识(5.4)", ok, detail)
     videos = json.loads(row["inputs_json"])
+    ok, detail = _subtitle_check(root, videos, root / plain_rel, report_rel)
+    add("字幕", ok, detail)
     want = sum(media.probe(root / v["video_path"]).duration for v in videos)
     got = media.probe(root / labeled_rel).duration
     tol = 0.1 * len(videos) + 0.1

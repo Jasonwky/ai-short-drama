@@ -67,3 +67,16 @@ def test_host_label_says_where_it_ran(store, two_segments):
     assert v1["task"]["host"] == "4090"
     assert v2["inputs"][0]["task"]["host"] == "本机"
     assert v2["task"]["host"] == "未登记的机器(导入的工程)"
+
+
+def test_subtitles_chain_back_to_the_video_they_were_aligned_to(store, two_segments):
+    s, root = two_segments, two_segments["root"]
+    videos = [{"segment_id": s["seg"], "number": 1, "video_path": "outputs/tasks/v1/clip.mp4",
+               "subtitle_path": "outputs/tasks/a1/subtitles.srt"}]
+    report = provenance.build(store, root, s["episode"], produce_id="x", producer="p", videos=videos)
+    sub = report["segments"][0]["subtitles"]
+    assert sub["task"]["kind"] == "align" and sub["inputs"][0]["path"] == "outputs/tasks/v1/clip.mp4"
+    assert "m-align" in report["models"] and "字幕" in provenance.to_markdown(report)
+    (root / "outputs/tasks/a1/subtitles.srt").write_text("改过", encoding="utf-8")
+    report = provenance.build(store, root, s["episode"], produce_id="x", producer="p", videos=videos)
+    assert any("subtitles.srt" in p and "被替换过" in p for p in provenance.problems(report))

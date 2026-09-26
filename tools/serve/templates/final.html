@@ -3,18 +3,20 @@
 <h1>成片 · 第 {{ ep.number }} 集</h1>
 <p class="hint">按段落顺序拼接,导出两个文件:带显式标识「{{ label_text }}」版(左上角、全程,字高按画面最短边 7.5%)与无显式标识版;
   两者都写 GB 45438-2025 附录 E 的隐式元数据,并清空原有元数据(ComfyUI 会把整个工作流写进 mp4)。导出后读回自检,不过就不可发布。
-  <b>本版不带字幕</b>(强制对齐在 P5b 接入)。</p>
+  两版都<b>烧录字幕</b>(底部居中):各段在「视频」面板对齐出的字幕按段落起点拼成整集,整集 SRT 随成片交付;有台词的段落要先有字幕。</p>
 
 <section class="card">
   <h2>段落</h2>
   <table>
-    <tr><th>#</th><th>时长</th><th>视频</th></tr>
+    <tr><th>#</th><th>时长</th><th>视频</th><th>字幕</th></tr>
     {% for s in segs %}
       <tr data-final-segment="{{ s.id }}"><td>{{ s.number }}</td><td>{{ s.duration_sec or "—" }} 秒</td>
         <td>{% if s.video_path %}<video src="/media/{{ s.video_path }}" controls preload="metadata" style="max-height: 160px"></video>
-            {% else %}<span class="status-bad">还没有视频</span>{% endif %}</td></tr>
+            {% else %}<span class="status-bad">还没有视频</span>{% endif %}</td>
+        <td>{% if s.subtitle_path %}<a href="/media/{{ s.subtitle_path }}" target="_blank" data-final-subtitle>SRT</a>
+            {% else %}—{% endif %}</td></tr>
     {% else %}
-      <tr><td colspan="3" class="empty">这一集还没有段落</td></tr>
+      <tr><td colspan="4" class="empty">这一集还没有段落</td></tr>
     {% endfor %}
   </table>
 </section>
@@ -22,7 +24,7 @@
 <section class="card">
   <h2>导出</h2>
   <ul class="checklist" data-export-readiness>
-    {% for p in problems %}<li class="bad">{{ p }}</li>{% else %}<li class="ok">每段都有视频,本机 ffmpeg 与字体就绪</li>{% endfor %}
+    {% for p in problems %}<li class="bad">{{ p }}</li>{% else %}<li class="ok">每段都有视频、有台词的段落都有字幕,本机 ffmpeg 与字体就绪</li>{% endfor %}
   </ul>
   <form method="post" action="/episode/{{ ep.id }}/export" data-export-form>
     <label>生成合成服务提供者编码(★必答,如统一社会信用代码;只能用英文字母、数字和符号,不含空格)</label>

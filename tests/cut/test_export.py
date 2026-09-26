@@ -18,7 +18,7 @@ def test_export_writes_both_versions_report_and_passes_readback(store, two_segme
     row = export.get(store, eid)
     checks = json.loads(row["checks_json"])
     assert row["state"] == "done" and row["error"] is None, checks
-    assert all(c["ok"] for c in checks) and len(checks) == 7
+    assert all(c["ok"] for c in checks) and len(checks) == 8
     assert export.saved_producer(store) == PRODUCER                       # 记住,下次预填
 
     tags = media.format_tags(root / row["labeled_path"])
@@ -107,3 +107,37 @@ def test_stale_running_export_is_failed_on_restart(store, two_segments):
     assert export.fail_stale(store) == 1
     row = export.get(store, eid)
     assert row["state"] == "failed" and "控制台重启" in row["error"]
+
+
+def test_subtitles_are_burned_into_both_versions(store, two_segments, tmp_path):
+    """段落 1 的字幕 0.2–0.9 s:两版成片在 0.5 s 处底部都有字,1.5 s(段落 2,没台词)处没有;整集 SRT 随成片交付。"""
+    s, root = two_segments, two_segments["root"]
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    export.run(store, root, eid)
+    row = export.get(store, eid)
+    clips = [root / "outputs/tasks/v1/clip.mp4", root / "outputs/tasks/v2/clip.mp4"]
+    media.encode_episode(clips, tmp_path / "nosub.mp4", None)
+    frame = lambda f, t: media.gray_frame(f, t, 384, 672)   # noqa: E731
+    box = media.diff_bbox(frame(root / row["plain_path"], 0.5), frame(tmp_path / "nosub.mp4", 0.5), 384)
+    assert box is not None and box[1] > 672 * 0.8
+    lab = media.diff_bbox(frame(root / row["labeled_path"], 0.5), frame(root / row["plain_path"], 0.5), 384)
+    assert lab[3] < 168                      # 两版的差别只有左上角的标识:字幕两版都有
+    assert media.diff_bbox(frame(root / row["plain_path"], 1.5), frame(tmp_path / "nosub.mp4", 1.5), 384) is None
+    srt = (root / row["plain_path"]).with_name("subtitles.srt").read_text(encoding="utf-8")
+    assert "00:00:00,200 --> 00:00:00,900" in srt
+    assert {c["name"]: c["ok"] for c in json.loads(row["checks_json"])}["字幕"] is True
+
+
+def test_dialogue_without_subtitles_blocks_export(store, two_segments):
+    s, root = two_segments, two_segments["root"]
+    repo.update(store, "segment", s["seg"], subtitle_path=None)
+    with pytest.raises(ValueError, match="段落 1 有台词但还没有字幕"):
+        export.begin(store, root, s["episode"], PRODUCER)
+
+
+def test_subtitles_swapped_after_begin_fails_the_run(store, two_segments):
+    s, root = two_segments, two_segments["root"]
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    (root / "outputs/tasks/a1/subtitles.srt").write_text("1\n00:00:00,000 --> 00:00:00,500\n别的\n\n", encoding="utf-8")
+    with pytest.raises(media.CutError, match="字幕"):
+        export.run(store, root, eid)
