@@ -78,3 +78,26 @@ def test_missing_ffmpeg_is_a_readable_refusal(monkeypatch):
 def test_ffmpeg_failure_is_not_swallowed(tmp_path):
     with pytest.raises(media.CutError, match="ffprobe 失败"):
         media.probe(tmp_path / "nope.mp4")
+
+
+def test_rms_envelope_windows_the_audio(tmp_path, mp4_bytes):
+    """样片是 1 秒 440 Hz 正弦:10 个 0.1 s 窗,每窗能量都差不多。"""
+    (tmp_path / "a.mp4").write_bytes(mp4_bytes)
+    env = media.rms_envelope(tmp_path / "a.mp4")
+    assert len(env) == 10
+    assert min(env[1:-1]) > 0.8 * max(env) > 0
+
+
+def test_subtitles_are_burned_at_the_bottom(tmp_path, mp4_bytes):
+    (tmp_path / "a.mp4").write_bytes(mp4_bytes)
+    (tmp_path / "ep.srt").write_text("1\n00:00:01,100 --> 00:00:01,900\n这块玉佩，是我母亲留给我的。\n\n", encoding="utf-8")
+    media.encode_episode([tmp_path / "a.mp4"] * 2, tmp_path / "plain.mp4", None)
+    media.encode_episode([tmp_path / "a.mp4"] * 2, tmp_path / "sub.mp4", None, subtitles=tmp_path / "ep.srt")
+    media.encode_episode([tmp_path / "a.mp4"] * 2, tmp_path / "both.mp4", media.Label.for_size(384, 672),
+                         subtitles=tmp_path / "ep.srt")
+    frame = lambda f, t: media.gray_frame(tmp_path / f, t, 384, 672)   # noqa: E731
+    assert media.diff_bbox(frame("sub.mp4", 0.5), frame("plain.mp4", 0.5), 384) is None   # 第 1 段(字幕没开始)
+    x0, y0, x1, y1 = media.diff_bbox(frame("sub.mp4", 1.5), frame("plain.mp4", 1.5), 384)
+    assert y0 > 672 * 0.8                                                  # 在底部
+    lab = media.diff_bbox(frame("both.mp4", 1.5), frame("sub.mp4", 1.5), 384)
+    assert lab[3] < 168                                                    # 标识照样在左上角,字幕不挡它

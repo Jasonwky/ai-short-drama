@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import array
 import json
 import math
 import shutil
@@ -20,6 +21,8 @@ FONT = Path("C:/Windows/Fonts/NotoSansSC-VF.ttf")    # SIL OFL,可渲染进视�
 LABEL_TEXT = "AI 生成"                                 # 同时含「AI」与「生成」(5.4 b)
 FONT_RATIO = 0.075
 MARGIN_RATIO = 0.04
+# 字幕(libass,SRT 的画布高 288):11 号 ≈ 画面高的 3.8%,竖屏 768x1344 上约 51px,一行放得下 15 个字
+SUB_STYLE = "FontName=Noto Sans SC,FontSize=11,Outline=1,MarginV=24"
 
 
 class CutError(RuntimeError):
@@ -90,22 +93,43 @@ def extract_last_frame(video: Path, out_png: Path) -> None:
         raise CutError(f"ffmpeg 没有写出 {out_png}")
 
 
-def encode_episode(clips: list[Path], out: Path, label: Label | None) -> None:
-    """按顺序拼接(重编码),可选烧录显式标识(左上角、全程)。**清空全部原有元数据**:
+def _filter_path(p: Path) -> str:
+    """滤镜参数里的路径:正斜杠、冒号转义,外面再套单引号。路径里有单引号就没法安全转义,直接拒绝。"""
+    s = Path(p).as_posix()
+    if "'" in s:
+        raise ValueError(f"路径里有单引号,ffmpeg 滤镜参数没法安全转义:{s}")
+    return s.replace(":", "\\:")
+
+
+def encode_episode(clips: list[Path], out: Path, label: Label | None, subtitles: Path | None = None) -> None:
+    """按顺序拼接(重编码),可选烧录字幕(整集 SRT,底部居中)与显式标识(左上角、全程)。**清空全部原有元数据**:
     ComfyUI 的 mp4 里嵌着完整工作流(提示词、种子、参考图名),不能带进成片。"""
     n = len(clips)
     ins = [a for c in clips for a in ("-i", str(c))]
     graph = "".join(f"[{i}:v:0][{i}:a:0]" for i in range(n)) + f"concat=n={n}:v=1:a=1[v][a]"
     vout = "[v]"
+    if subtitles is not None:
+        graph += (f";[v]subtitles=filename='{_filter_path(subtitles)}':fontsdir='{_filter_path(FONT.parent)}'"
+                  f":force_style='{SUB_STYLE}'[vs]")
+        vout = "[vs]"
     if label is not None:
         font = FONT.as_posix().replace(":", "\\:")
-        graph += (f";[v]drawtext=fontfile='{font}':text='{LABEL_TEXT}':fontsize={label.fontsize}:fontcolor=white"
+        graph += (f";{vout}drawtext=fontfile='{font}':text='{LABEL_TEXT}':fontsize={label.fontsize}:fontcolor=white"
                   f":borderw={label.border}:bordercolor=black:x={label.margin}:y={label.margin}[vl]")
         vout = "[vl]"
     out.parent.mkdir(parents=True, exist_ok=True)
     _run(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", graph, "-map", vout, "-map", "[a]",
           "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
           "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-map_metadata", "-1", str(out)])
+
+
+def rms_envelope(video: Path, step: float = 0.1) -> list[float]:
+    """音轨的能量曲线:单声道 16 kHz,每 step 秒一窗的 RMS(16 位样本的原值)。字幕句首吸附用。"""
+    p = _run(["ffmpeg", "-v", "error", "-i", str(video), "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
+             binary=True)
+    samples = array.array("h", p.stdout)
+    w = round(16000 * step)
+    return [round(math.sqrt(sum(x * x for x in samples[i:i + w]) / w), 1) for i in range(0, len(samples) - w + 1, w)]
 
 
 def stream_sha256(path: Path) -> str:
