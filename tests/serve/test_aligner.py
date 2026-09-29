@@ -97,3 +97,32 @@ def test_worker_runs_align_tasks_through_the_align_runner(store, sample, host_id
     tid = plan_align(store, sample["seg"])
     w.tick()
     assert repo.get(store, "task", tid)["state"] == "done" and len(runner.calls) == 1
+
+
+def test_comfyui_busy_with_anyone_waits_without_freeing(store, sample, world):
+    """共用的 ComfyUI 有任务在跑 / 排队:不打断、不释放,留在待办下一轮再试。"""
+    tid = plan_align(store, sample["seg"])
+    world["comfy"].pending.append("someone-else")
+    world["comfy"].vram_gb = 1.0
+    runner = FakeAligner(LINE)
+    out = _run(store, world, tid, runner)
+    assert out.state == "pending" and "队列" in out.message
+    assert runner.calls == [] and world["comfy"].freed == 0
+
+
+def test_low_vram_frees_comfyui_models_before_aligning(store, sample, world):
+    """2026-09-29 真链路:H3 视频跑完 ComfyUI 还占着 19.6 GiB,whisper 显存不够。空闲时先让它卸载模型。"""
+    tid = plan_align(store, sample["seg"])
+    world["comfy"].vram_gb = 3.8
+    out = _run(store, world, tid, FakeAligner(LINE))
+    assert out.state == "done" and world["comfy"].freed == 1
+
+
+def test_vram_still_short_after_freeing_fails_loudly(store, sample, world, monkeypatch):
+    monkeypatch.setattr(aligner, "FREE_WAIT_SEC", 0)
+    tid = plan_align(store, sample["seg"])
+    world["comfy"].vram_gb = 3.8
+    world["comfy"].free_releases = False                  # 占显存的不是 ComfyUI
+    runner = FakeAligner(LINE)
+    out = _run(store, world, tid, runner)
+    assert out.state == "failed" and "释放后显存仍只有 3.8 GiB" in out.message and runner.calls == []

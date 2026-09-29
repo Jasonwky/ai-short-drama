@@ -27,6 +27,9 @@ class FakeComfy:
         self.records: dict[str, dict] = {}
         self.files: dict[str, bytes] = {}
         self._n = 0
+        self.vram_gb = 20.0          # 剩余显存
+        self.freed = 0               # 被要求释放模型的次数
+        self.free_releases = True    # False:占显存的不是 ComfyUI,释放了也没用
 
     # ── ComfyClient 的接口 ──────────────────────────
     def _up(self):
@@ -52,6 +55,16 @@ class FakeComfy:
     def queue_ids(self):
         self._up()
         return list(self.running), list(self.pending)
+
+    def vram_free_gb(self):
+        self._up()
+        return self.vram_gb
+
+    def free_models(self):
+        self._up()
+        self.freed += 1
+        if self.free_releases:
+            self.vram_gb = 20.0
 
     def history(self, prompt_id):
         self._up()

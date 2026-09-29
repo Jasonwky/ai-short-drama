@@ -83,6 +83,15 @@ class ComfyClient:
     def system_stats(self) -> dict:
         return self._request("/system_stats")
 
+    def vram_free_gb(self) -> float:
+        """第一块卡的剩余显存(GiB),取自 /system_stats。"""
+        return self.system_stats()["devices"][0]["vram_free"] / 2 ** 30
+
+    def free_models(self) -> None:
+        """让 ComfyUI 卸载已加载的模型、释放显存(POST /free)。只是设标记:空闲的工作循环会被唤醒、随即卸载 ——
+        异步的,调用方要自己看显存有没有真腾出来。这台 ComfyUI 是共用的,只在队列空闲时调。"""
+        self._request("/free", {"unload_models": True, "free_memory": True})
+
     def queue_counts(self) -> tuple[int, int]:
         """(running, pending)。**这是判活的第二层** —— ssh 进程活着不代表转发通,
         能拿到队列数才算真的通。"""

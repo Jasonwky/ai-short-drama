@@ -152,6 +152,7 @@ class AlignBackend:
     model_dir: str       # whisper 权重目录
     input_dir: str       # ComfyUI 的 input 目录:视频经 ComfyUI 上传接口放到这里
     sec_per_item: float  # 实测:GPU 每条 8 秒片 5–6 s,加模型加载约 20 s
+    vram_gb: float       # 跑一次要的显存:实测 whisper 进程占 3.81 GiB(2026-09-29),留余量
 
 
 WHISPER_ALIGN = AlignBackend(
@@ -160,4 +161,5 @@ WHISPER_ALIGN = AlignBackend(
     model_dir="/root/autodl-tmp/shortdrama-eval/whisper-large-v3-turbo",
     input_dir="/root/autodl-tmp/ComfyUI/input",
     sec_per_item=30.0,
+    vram_gb=6.0,
 )

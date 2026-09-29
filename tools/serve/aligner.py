@@ -4,6 +4,9 @@
 与 `dispatch` 同一个签名、同一套结局,worker 按 task.kind 选一个调:
 - 连不上云机(上传失败 / ssh 连不上,退出码 255)→ **留在 `pending`**,下一轮再试;
 - 其余失败(视频不在、规划后视频被换了、云机脚本报错、判卷不过)→ `failed` 写明原因;
+- **显存**:whisper 与 ComfyUI 同卡。2026-09-29 真链路:H3 视频跑完 ComfyUI 还占着 19.6 GiB,whisper 显存不够。
+  所以对齐前:ComfyUI 队列里有任何任务(这台是多个项目共用的)→ 留在 `pending` 不打断;
+  空闲而显存不够 → 让 ComfyUI 卸载模型(用户 2026-09-29 同意),等显存真腾出来;等不到 → `failed`(占显存的不是 ComfyUI);
 - 成功 → 一次走完 `queued → done`(对齐 30 秒内同步跑完,不进 ComfyUI 队列,没有可接管的在途状态)。
   中途进程被杀,任务还在 `pending`,下一轮重跑 —— 对齐是确定性的、便宜的,重跑无害。
 
@@ -15,6 +18,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from pathlib import Path
 
 from tools.cut import media, subtitles
@@ -29,6 +33,7 @@ from tools.serve.hosts import Host
 
 SCRIPT = Path(__file__).with_name("align_remote.py")
 SSH_UNREACHABLE = 255
+FREE_WAIT_SEC = 60          # 让 ComfyUI 卸载模型后,最多等这么久看显存腾没腾出来
 
 
 def parse_output(out: str) -> list[tuple[str, float, float]]:
@@ -61,6 +66,21 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
         return Outcome("pending", f"连不上云机,下轮再试:{e}")
     except ComfyError as e:
         return fail(f"视频传不上云机:{e}")
+    try:
+        running, pending = client.queue_ids()
+        if running or pending:
+            return Outcome("pending", f"ComfyUI 队列里还有 {len(running) + len(pending)} 个任务(共用机),等队列空了再对齐")
+        vram = client.vram_free_gb()
+        if vram < WHISPER_ALIGN.vram_gb:
+            client.free_models()
+            deadline = time.monotonic() + FREE_WAIT_SEC
+            while (vram := client.vram_free_gb()) < WHISPER_ALIGN.vram_gb and time.monotonic() < deadline:
+                time.sleep(2)
+            if vram < WHISPER_ALIGN.vram_gb:
+                return fail(f"让 ComfyUI 卸载模型后,释放后显存仍只有 {vram:.1f} GiB(对齐要 {WHISPER_ALIGN.vram_gb:g} GiB)"
+                            " —— 显存被 ComfyUI 之外的进程占着,请上云机查 nvidia-smi")
+    except ComfyUnreachable as e:
+        return Outcome("pending", f"连不上云机,下轮再试:{e}")
     code, out = run([WHISPER_ALIGN.model_dir, f"{WHISPER_ALIGN.input_dir}/{name}"], SCRIPT.read_bytes())
     if code == SSH_UNREACHABLE:
         return Outcome("pending", f"ssh 连不上云机,下轮再试:{out.strip()[-300:]}")
