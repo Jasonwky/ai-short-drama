@@ -35,17 +35,19 @@ def _clean(s: str) -> str:
 
 def align(lines: list[str], chars: list[tuple[str, float, float]]) -> list[dict]:
     """每句台词按顺序在识别文字里找命中字(用过的字不再给后面的句子)。
-    返回 [{line, hit, total, first, second, last}],first/second/last 是命中字在 chars 里的下标(没命中为 None)。"""
+    返回 [{line, hit, total, first, second, last, lead}],first/second/last 是命中字在 chars 里的下标(没命中为 None),
+    lead 是台词开头没对上的字数(首字听错时,它前面那 lead 个识别字仍算这句台词)。"""
     heard = "".join(c for c, _, _ in chars)
     used = 0
     out = []
     for line in lines:
         want = _clean(line)
         sm = difflib.SequenceMatcher(None, want, heard[used:], autojunk=False)
-        hit = sorted(used + b + k for _, b, n in sm.get_matching_blocks() for k in range(n))
+        blocks = [blk for blk in sm.get_matching_blocks() if blk.size]
+        hit = sorted(used + b + k for _, b, n in blocks for k in range(n))
         out.append({"line": line, "hit": len(hit), "total": len(want),
                     "first": hit[0] if hit else None, "second": hit[1] if len(hit) > 1 else (hit[0] if hit else None),
-                    "last": hit[-1] if hit else None})
+                    "last": hit[-1] if hit else None, "lead": blocks[0].a if blocks else 0})
         if hit:
             used = hit[-1] + 1
     return out
@@ -78,7 +80,11 @@ def build(lines: list[str], chars: list[tuple[str, float, float]], envelope: lis
             continue
         end = chars[a["last"]][2]
         guess = chars[a["second"]][2]                      # 第二个命中字的结束时刻:句首一定在它之前
-        start = onset(envelope, prev_end, guess)
+        # 句首也一定在「这句台词之前那个识别字」之后:模型会多念出不属于台词的话(2026-09-29 真链路:
+        # 人物先把提示词里的「林小雨用普通话说」念了出来),从上一句句尾找起会把它吸成这句的开口
+        pre = a["first"] - a["lead"] - 1
+        lo = max(prev_end, chars[pre][2]) if pre >= 0 else prev_end
+        start = onset(envelope, lo, guess)
         if start is None:                                   # 找不到发声起点:退回 whisper 的首字时刻
             start = max(prev_end, chars[a["first"]][1])
         if not prev_end <= start < end:
