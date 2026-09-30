@@ -4,13 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}AI 短剧控制台{% endblock %}</title>
-  <link rel="icon" href="data:,">
+  <!-- 内联 SVG favicon:有头浏览器一定会请求 /favicon.ico,给 data URI 就不会多一条 404 -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0a0a'/%3E%3Ctext x='16' y='23' font-size='19' font-weight='700' text-anchor='middle' fill='%23c8f000' font-family='sans-serif'%3E%E5%89%A7%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/console.css">
   <script src="/static/console.js" defer></script>
 </head>
 <body>
   <header class="top">
-    <a class="brand" href="/">AI 短剧控制台</a>
+    <div class="logo">剧</div>
+    <a class="brand" href="/">AI 短剧控制台<span>剧本 → 分镜 → 成片</span></a>
     {% if drama %}
       <span class="crumb">《{{ drama.title }}》 · {{ drama.aspect_ratio }} · {{ styles.get(drama.style, "未选风格") }}</span>
       {% if episodes %}
@@ -19,25 +21,23 @@
         </select>
       {% endif %}
     {% endif %}
-    <span class="backend {% if backend.fake %}fake{% endif %}">执行面:{{ backend.label }}</span>
+    <span class="backend">执行面:<b {% if backend.fake %}class="fake"{% endif %}>{{ backend.label }}</b></span>
   </header>
   {% if backend.fake %}
     <div class="banner-fake">⚠️ 假后端:本页的图片与视频不是真生成的,只用于测试控制台本身</div>
   {% endif %}
-  <div class="layout">
-    <nav class="steps">
-      {% for n in nav %}
-        {% if n.url %}
-          <a class="step {% if n.active %}active{% endif %}" href="{{ n.url }}" data-nav="{{ n.key }}">{{ loop.index }}. {{ n.title }}</a>
-        {% else %}
-          <span class="step disabled" data-nav="{{ n.key }}" title="先选剧 / 先建一集">{{ loop.index }}. {{ n.title }}</span>
-        {% endif %}
-      {% endfor %}
-    </nav>
-    <main data-panel="{{ panel_key }}">
-      {% block content %}{% endblock %}
-    </main>
-  </div>
+  <nav class="steps">
+    {% for n in nav %}
+      {% if n.url %}
+        <a class="step {% if n.active %}active{% endif %}" href="{{ n.url }}" data-nav="{{ n.key }}"><span class="n">{{ "%02d" | format(loop.index) }}</span><b>{{ n.title }}</b></a>
+      {% else %}
+        <span class="step disabled" data-nav="{{ n.key }}" title="先选剧 / 先建一集"><span class="n">{{ "%02d" | format(loop.index) }}</span><b>{{ n.title }}</b></span>
+      {% endif %}
+    {% endfor %}
+  </nav>
+  <main class="wrap" data-panel="{{ panel_key }}">
+    {% block content %}{% endblock %}
+  </main>
   <footer class="foot">Powered by MiniMax H3</footer>
 </body>
 </html>
