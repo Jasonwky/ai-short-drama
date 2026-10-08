@@ -26,19 +26,21 @@
 - 下载钉死版本并**核对 PyPI 公布的 sha256**,对不上拒绝使用(防供应链被换包)
 - 没下载:编辑入口报 400,写明下载命令
 - **离线优先、数据不外发**:前端会主动拉远程配置(实测出现过「Failed to load remote config」),也可能访问外网资源 ——
-  垫片把它要的都在本机接住;有头自测记录 iframe 里所有**非本机**请求,有一条即判失败
+  垫片把它要的都在本机接住;`/comfy/index.html` 另带 CSP(`connect-src 'self' data: blob: ws://127.0.0.1:<端口>`)兜底;
+  有头自测记录 iframe 里所有**非本机**请求与 CSP 拦截,有一条即判失败
 
 ### 2.2 轻量后端垫片(`/comfy/api/*`)
 
 | 接口 | 处理 |
 |---|---|
-| `users` `features` `system_stats` `extensions` `embeddings` `i18n` | 固定回答(实测的最小集) |
+| `users` `system_stats` `extensions` `embeddings` `i18n` | 固定回答(实测的最小集) |
+| `features`(前端的「远程配置」) | 下发 `comfy_api_base_url` / `comfy_platform_base_url` 指回本机 `/comfy/offline-api/*`(一律回空数组)—— 实测前端否则会请求 `api.comfy.org` |
 | `object_info` | 本机缓存(§2.3) |
-| `settings`(GET / `POST settings/<键>`) | 存本机文件;**下发时强制关掉「恢复上次打开的工作流」**(配合 §四 #9 的编辑令牌) |
+| `settings`(GET / `POST settings/<键>`) | 存本机文件;**下发时强制** `Comfy.Workflow.Persist = false`(不恢复上次打开的工作流,配合 §四 #9 的编辑令牌)、`Comfy.Notification.ShowVersionUpdates = false` |
 | `userdata/<文件名>` | 存本机白名单目录;**文件名防路径穿越** |
-| `ws` | 给一个空连接(免得前端不停重连刷报错) |
+| `ws` | 给一个空连接:先发一条 `status`(队列 0)再挂着(免得前端不停重连刷报错) |
 | `prompt`(画布里点「运行」)、`upload/image`(画布里上传图) | **一律拒绝**,提示「回控制台提交 / 去资产面板上传」 |
-| 其余(`jobs`、`workflow_templates` 等) | 空结果 |
+| 其余(`jobs`、`workflow_templates`、`experiment/models`、`userdata` 列表等) | 空**数组**(回对象会出页面报错) |
 
 ### 2.3 节点清单缓存
 
@@ -164,6 +166,8 @@ LoRA 能否叠在底模上照旧由 dispatch 时的 LoRA 预检把关(要 ssh,�
 - **真云机整链**(验收第 4 层):加一步「用一个非内置预设出一张首帧」,验证叠出来的工作流云机真能跑
 
 ## 九、实现时要先验证的点(实测没覆盖到;任一不成立就停下来改设计,不硬绕)
+
+> **2026-10-08 已全部实测通过**(第 5 点第一次不通过,已按「改向 + CSP」修好),见调研落档 §五。
 
 1. 同源 iframe 里能取到 `contentWindow.app`,并调 `loadApiJson` / `graphToPrompt`(实测是在顶层页面调的)
 2. 能读到**当前标签**的名字 / 标识(编辑令牌 §四 #9 靠它)
