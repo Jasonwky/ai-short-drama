@@ -26,22 +26,35 @@ def _task_for(store: Store, path: str):
                               (path,)).fetchone()
 
 
-def _node(store: Store, root: Path, path: str) -> dict:
+_SHA: dict[tuple[str, int, int], str] = {}
+
+
+def cached_sha256(f: Path) -> str:
+    """按「路径 + 修改时间 + 大小」缓存:倒查整集要算十几段视频(每段几十 MB);文件一变,三者跟着变,缓存自然失效。"""
+    st = f.stat()
+    key = (str(f.resolve()), st.st_mtime_ns, st.st_size)
+    if key not in _SHA:
+        _SHA[key] = sha256_file(f)
+    return _SHA[key]
+
+
+def node(store: Store, root: Path, path: str) -> dict:
+    """一个产物往回追的树(导出的溯源报告与控制台的倒查页共用)。"""
     f = root / path
-    node = {"path": path, "sha256": sha256_file(f) if f.is_file() else None, "task": None, "inputs": []}
+    out = {"path": path, "sha256": cached_sha256(f) if f.is_file() else None, "task": None, "inputs": []}
     t = _task_for(store, path)
     if t is None:
-        return node
+        return out
     if t["host_id"] is not None:
         host = repo.get(store, "host", t["host_id"])["label"]
     else:   # 本地确定性生成没有 external_id;有 external_id 却没有 host 的,是从别处导入的工程
         host = "本机" if t["external_id"] is None else "未登记的机器(导入的工程)"
-    node["task"] = {"id": t["id"], "kind": t["kind"], "model": t["model"], "params": json.loads(t["params_json"]),
-                    "seed": t["seed"], "prompt": t["prompt"], "host": host, "external_id": t["external_id"],
-                    "created_at": t["created_at"], "finished_at": t["finished_at"],
-                    "result_sha256": t["result_sha256"]}
-    node["inputs"] = [_node(store, root, r) for r in json.loads(t["refs_json"])]   # 参考素材都早于产物,链无环
-    return node
+    out["task"] = {"id": t["id"], "kind": t["kind"], "model": t["model"], "params": json.loads(t["params_json"]),
+                   "seed": t["seed"], "prompt": t["prompt"], "host": host, "external_id": t["external_id"],
+                   "created_at": t["created_at"], "finished_at": t["finished_at"],
+                   "result_sha256": t["result_sha256"]}
+    out["inputs"] = [node(store, root, r) for r in json.loads(t["refs_json"])]   # 参考素材都早于产物,链无环
+    return out
 
 
 def build(store: Store, data_root: Path, episode_id: int, *, produce_id: str, producer: str,
@@ -55,8 +68,8 @@ def build(store: Store, data_root: Path, episode_id: int, *, produce_id: str, pr
         seg = repo.get(store, "segment", v["segment_id"])
         sub = v.get("subtitle_path")
         segs.append({"number": v["number"], "duration_sec": seg["duration_sec"], "description": seg["description"],
-                     "video": _node(store, Path(data_root), v["video_path"]),
-                     "subtitles": _node(store, Path(data_root), sub) if sub else None})
+                     "video": node(store, Path(data_root), v["video_path"]),
+                     "subtitles": node(store, Path(data_root), sub) if sub else None})
     return {"produce_id": produce_id, "content_producer": producer, "drama": drama["title"],
             "aspect_ratio": drama["aspect_ratio"], "episode": ep["number"], "license": LICENSE_NOTE,
             "models": sorted(_models([n for s in segs for n in (s["video"], s["subtitles"]) if n])), "segments": segs}
