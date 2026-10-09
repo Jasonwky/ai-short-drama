@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
                    "--models-dir", a.models_dir, "--character", a.character, "--scene", a.scene, "--prop", a.prop],
                   out / "4_e2e.log", env=env)
         layers.append({"layer": "功能整链(真云机)", "state": "PASS" if rc == 0 else "FAIL",
-                       "log": str(out / "4_e2e.log"), "note": "覆盖首帧(用非内置模板预设)、角色四视图、视频(首帧锚定 + 四视图参考)、字幕对齐;标识 / 拼接走本机 ffmpeg,由单测与自测覆盖"})
+                       "log": str(out / "4_e2e.log"), "note": "覆盖首帧(用非内置模板预设)、中间关键帧图、角色四视图、视频(首帧 + 第 4 秒关键帧锚定、四视图参考;关键帧对比差值 < 20)、字幕对齐;标识 / 拼接走本机 ffmpeg,由单测与自测覆盖"})
 
     result = {"verdict": verdict(layers), "layers": layers}
     (out / "report.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")

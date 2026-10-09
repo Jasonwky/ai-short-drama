@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-"""真链路验收:一个段落从无到有 —— 首帧(用一个**非内置的模板预设**)→ 角色四视图 → 视频(首帧钉在第 0 帧、
-四视图作参考)→ 对齐字幕,溯源字段逐项核对。预设那一步验证:叠上改动的工作流云机真能跑,且实际提交的就是叠过的那份。
+"""真链路验收:一个段落从无到有 —— 首帧(用一个**非内置的模板预设**)→ 中间关键帧图 → 角色四视图 → 视频(首帧钉在第 0 帧、
+关键帧钉在第 96 帧、四视图作参考)→ 对齐字幕,溯源字段逐项核对。预设那一步验证:叠上改动的工作流云机真能跑,且实际提交的就是叠过的那份。
+关键帧用调研 B 的设定(spike-results/2026-10-09-中间关键帧锚定实测.md:第 4 秒、转身背对镜头),出片后**用数据判钉没钉住**:
+视频第 96 帧与关键帧图的差 < KEY_THRESHOLD(调研 8.7–9.9,对照 54–65)。
 
 这是**验收夹具**,不是生产入口:P3 起同一条链路由控制台的环节面板驱动,
 那时本脚本只留作「绕开界面、单测执行层」的对照。
@@ -32,7 +34,8 @@ from tools.drama.db import Store
 from tools.gen.align import plan_align
 from tools.gen import presets
 from tools.gen.assets import plan_fourview
-from tools.gen.planner import plan_first_frame, plan_video
+from tools.cut import keycheck
+from tools.gen.planner import plan_first_frame, plan_key_frame, plan_video
 from tools.serve.dispatch import SUBMITTED
 from tools.serve.hosts import add_host, get_host
 from tools.serve.worker import POLL_SEC, Worker
@@ -54,13 +57,15 @@ def build_drama(store: Store, assets: dict[str, str]) -> int:
         store, ep, 1, scene_id=yard, duration_sec=8.0, reference_mode="first",
         description="【镜头1】林小雨低头看着手里的玉佩。【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」",
         image_prompt="@林小雨 站在黄昏的 @老宅庭院 里,双手捧着 @玉佩,中景,竖构图",
-        video_prompt="@林小雨 在 @老宅庭院 低头看 @玉佩,然后抬眼说话,固定机位,环境声,无配乐")
+        video_prompt="@林小雨 在 @老宅庭院 低头看 @玉佩,然后抬眼说话,固定机位,环境声,无配乐",
+        key_time_sec=4.0, key_image_prompt="@林小雨 在黄昏的 @老宅庭院 里转过身,背对镜头,手里握着 @玉佩,中景,竖构图")
     repo.bind_characters(store, seg, [lin])
     repo.bind_props(store, seg, [jade])
     return seg, lin
 
 
 PRESET_SCHEDULER = "normal"      # 首帧模板预设:采样调度器 simple → normal(只改一处,验证叠加机制)
+KEY_THRESHOLD = 20               # 关键帧钉住的判据:72×128 灰度平均绝对差(调研钉中 8.7–9.9,对照 54–65)
 
 
 TUNNEL_WAIT_SEC = 60
@@ -110,7 +115,7 @@ def provenance(store: Store, task_id: int) -> dict:
 
 def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, timeout_sec: float,
         make_worker: Callable[[Store, int, Path], Worker] = lambda s, h, root: Worker(s, h, data_root=root),
-        sleep: Callable[[float], None] = time.sleep) -> dict:
+        sleep: Callable[[float], None] = time.sleep, check_key=keycheck.check) -> dict:
     if data_root.exists() and any(data_root.iterdir()):
         raise FileExistsError(f"{data_root} 不是空目录 —— 验收要在全新目录里跑,不碰已有数据")
     (data_root / "assets").mkdir(parents=True)
@@ -127,7 +132,8 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
     try:
         report = {"segment": seg, "tasks": [], "preset": _use_frame_preset(store, worker, host_id, sleep)}
 
-        for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_fourview(store, lin, seed=seed + 2),
+        for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_key_frame(store, seg, seed=seed),
+                     lambda: plan_fourview(store, lin, seed=seed + 2),
                      lambda: plan_video(store, seg, seed=seed + 1), lambda: plan_align(store, seg)):
             tid = plan()
             state = run_until_final(worker, store, tid, timeout_sec=timeout_sec, sleep=sleep)
@@ -141,6 +147,12 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
         submitted = json.loads((data_root / "outputs/tasks" / str(report["tasks"][0]["id"]) / SUBMITTED).read_text(encoding="utf-8"))
         if submitted["submitted"]["27"]["inputs"]["scheduler"] != PRESET_SCHEDULER:
             raise RuntimeError("首帧实际提交的工作流里没有叠上预设的改动")
+        kc = check_key(store, data_root, seg)
+        if kc is None or kc.diff is None:
+            raise RuntimeError(f"关键帧对比算不出来:{kc.problem if kc else '视频没有钉关键帧'}")
+        report["keycheck"] = {"frame_idx": kc.frame_idx, "diff": kc.diff, "threshold": KEY_THRESHOLD}
+        if kc.diff >= KEY_THRESHOLD:
+            raise RuntimeError(f"关键帧没钉住:第 {kc.frame_idx} 帧与关键帧图差 {kc.diff}(判据 < {KEY_THRESHOLD})")
         (data_root / "provenance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     finally:
         # 隧道是脱离进程起的,不收就一直留着(两次验收后残留);只停本进程起的,接管来的 stop 碰不到

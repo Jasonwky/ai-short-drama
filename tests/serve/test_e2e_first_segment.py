@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from tools.cut.keycheck import KeyCheck
 from tools.serve.fakes import FakeAligner, FakeComfy, FakeTunnel, sample_mp4
 from tools.serve.e2e_first_segment import run
 from tools.serve.worker import Worker
@@ -40,18 +41,27 @@ def _gpu(comfy):
     return sleep
 
 
+def _hit(store, root, seg):
+    """假 GPU 出的图不是真 PNG,对比算不了;真比对在第 4 层真云机上跑。这里只验整链把结果接进报告、按阈值判。"""
+    return KeyCheck("k.png", 96, "f.png", 9.9, "", False)
+
+
 def test_full_chain_on_fake_gpu_writes_provenance(tmp_path, images):
     comfy = FakeComfy()
     root = tmp_path / "e2e"
-    report = run(root, images, HOST, seed=5, timeout_sec=60, make_worker=_worker_on(comfy), sleep=_gpu(comfy))
-    frame, fourview, video, align = report["tasks"]
-    assert (frame["seed"], fourview["seed"], video["seed"]) == (5, 7, 6)
+    report = run(root, images, HOST, seed=5, timeout_sec=60, make_worker=_worker_on(comfy), sleep=_gpu(comfy),
+                 check_key=_hit)
+    frame, key, fourview, video, align = report["tasks"]
+    assert (frame["seed"], key["seed"], fourview["seed"], video["seed"]) == (5, 5, 7, 6)
+    # 中间关键帧:调研 B 的设定(第 4 秒、转身背对镜头),视频多钉一个锚点,报告里有对比结果
+    assert json.loads(key["params_json"])["writes"] == "key_frame_path"
+    assert report["keycheck"] == {"frame_idx": 96, "diff": 9.9, "threshold": 20}
     assert report["first_frame_path"] == frame["result_path"] and report["video_path"] == video["result_path"]
     assert report["fourview_path"] == fourview["result_path"]
     assert json.loads(fourview["refs_json"]) == ["assets/character.png"]  # 四视图以正面图为输入
     # 视频吃的就是这次出的首帧(参考图 + 钉在第 0 帧)与四视图
-    assert json.loads(video["refs_json"]) == [frame["result_path"], fourview["result_path"]]
-    assert json.loads(video["params_json"])["anchors"] == [[frame["result_path"], 0]]
+    assert json.loads(video["refs_json"]) == [frame["result_path"], fourview["result_path"], key["result_path"]]
+    assert json.loads(video["params_json"])["anchors"] == [[frame["result_path"], 0], [key["result_path"], 96]]
     assert json.loads(align["refs_json"]) == [video["result_path"]]     # 字幕对的就是这条视频
     assert report["subtitle_path"] == align["result_path"] and "这块玉佩" in (root / align["result_path"]).read_text(
         encoding="utf-8")
@@ -75,7 +85,7 @@ def test_failed_task_stops_the_chain(tmp_path, images):
     comfy.reject_next_submit = "unet_name not in list"
     with pytest.raises(RuntimeError, match="unet_name not in list"):
         run(tmp_path / "e2e", images, HOST, seed=1, timeout_sec=60, make_worker=_worker_on(comfy),
-            sleep=_gpu(comfy))
+            sleep=_gpu(comfy), check_key=_hit)
 
 
 def test_timeout_tells_not_to_resubmit(tmp_path, images):
@@ -105,7 +115,7 @@ def _worker_with_tunnel(comfy, tunnel):
 def test_preset_step_waits_for_a_fresh_tunnel(tmp_path, images):
     comfy = FakeComfy()
     report = run(tmp_path / "e2e", images, HOST, seed=5, timeout_sec=60,
-                 make_worker=_worker_with_tunnel(comfy, _SlowTunnel(up_after=3)), sleep=_gpu(comfy))
+                 make_worker=_worker_with_tunnel(comfy, _SlowTunnel(up_after=3)), sleep=_gpu(comfy), check_key=_hit)
     assert report["preset"]["lines"] == ["节点 27 KSampler.scheduler:'simple' → 'normal'"]
 
 
@@ -119,7 +129,7 @@ def test_stops_its_own_tunnel_when_done(tmp_path, images):
     """隧道是脱离进程起的,不收就一直留着(2026-09-29、10-09 两次验收后残留,手工关的)。"""
     comfy, tunnel = FakeComfy(), FakeTunnel()
     run(tmp_path / "e2e", images, HOST, seed=5, timeout_sec=60,
-        make_worker=_worker_with_tunnel(comfy, tunnel), sleep=_gpu(comfy))
+        make_worker=_worker_with_tunnel(comfy, tunnel), sleep=_gpu(comfy), check_key=_hit)
     assert tunnel.stopped == [1]
 
 
@@ -128,5 +138,13 @@ def test_stops_its_own_tunnel_when_the_chain_fails(tmp_path, images):
     comfy.reject_next_submit = "unet_name not in list"
     with pytest.raises(RuntimeError):
         run(tmp_path / "e2e", images, HOST, seed=1, timeout_sec=60,
-            make_worker=_worker_with_tunnel(comfy, tunnel), sleep=_gpu(comfy))
+            make_worker=_worker_with_tunnel(comfy, tunnel), sleep=_gpu(comfy), check_key=_hit)
     assert tunnel.stopped == [1]
+
+
+
+def test_keyframe_that_did_not_stick_fails_the_chain(tmp_path, images):
+    comfy = FakeComfy()
+    with pytest.raises(RuntimeError, match="关键帧没钉住:第 96 帧与关键帧图差 54.0"):
+        run(tmp_path / "e2e", images, HOST, seed=5, timeout_sec=60, make_worker=_worker_on(comfy), sleep=_gpu(comfy),
+            check_key=lambda *a: KeyCheck("k.png", 96, "f.png", 54.0, "", False))
