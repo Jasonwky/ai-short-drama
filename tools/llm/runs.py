@@ -47,6 +47,14 @@ def fail(store: Store, run_id: int, error: str, journal_path: str | None = None)
     _move(store, run_id, "failed", error=error, journal_path=journal_path)
 
 
+def fail_stale(store: Store) -> int:
+    """控制台重启时,上次还在跑的 LLM 运行不会再有人接着跑:标失败,别让它永远显示「生成中」(同 export.fail_stale)。"""
+    ids = [r[0] for r in store.conn.execute("SELECT id FROM llm_run WHERE state = 'running'")]
+    for i in ids:
+        fail(store, i, "控制台重启时仍在运行,这次运行中断了 —— 请重新发起")
+    return len(ids)
+
+
 def approve(store: Store, run_id: int) -> None:
     _move(store, run_id, "approved", decided_at=now())
 

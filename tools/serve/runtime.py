@@ -204,6 +204,9 @@ class Runtime:
         n = export.fail_stale(self.store)
         if n:
             journal.append(self.data_root, [f"上次有 {n} 次导出没跑完,已标失败"], prefix="runtime ")
+        n = runs.fail_stale(self.store)
+        if n:
+            journal.append(self.data_root, [f"上次有 {n} 次 LLM 运行没跑完,已标失败"], prefix="runtime ")
 
         def loop():
             while not self._stop.is_set():

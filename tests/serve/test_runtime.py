@@ -56,3 +56,15 @@ def test_background_thread_survives_and_reports_a_bad_round(store, host_id, tmp_
         rt.stop()
     assert "云机返回了看不懂的东西" in rt.last_error
     assert any("worker 本轮异常" in line for line in journal.tail(tmp_path))
+
+
+def test_start_fails_llm_runs_left_running_by_a_restart(store, tmp_path):
+    from tools.llm import runs
+    rid = runs.start(store, task="voice", target_type="character", target_id=1, model="m", input_sha="x",
+                     llm_mode="real")
+    backend, _ = fake_backend()
+    rt = Runtime(store, tmp_path, backend, poll_sec=0.05)
+    rt.start()
+    rt.stop()
+    assert runs.get(store, rid)["state"] == "failed"
+    assert any("上次有 1 次 LLM 运行没跑完,已标失败" in line for line in journal.tail(tmp_path))

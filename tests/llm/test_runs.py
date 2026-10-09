@@ -68,3 +68,13 @@ def test_v2_database_gets_the_llm_run_table(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):                     # 触发器也随迁移建好了
         runs.approve(s, rid)
     s.close()
+
+
+def test_stale_running_run_is_failed_on_restart(store):
+    """控制台被关掉 / 被系统回收时正在跑的 LLM 运行,重启后不会再有人接着跑:标失败,别让它永远「生成中」。"""
+    stuck, done = _start(store), _start(store)
+    runs.propose(store, done, {"a": 1}, "j")
+    assert runs.fail_stale(store) == 1
+    assert runs.get(store, stuck)["state"] == "failed" and "控制台重启" in runs.get(store, stuck)["error"]
+    assert runs.get(store, done)["state"] == "proposed"                  # 已经有结果的不动
+    assert runs.fail_stale(store) == 0
