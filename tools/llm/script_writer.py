@@ -121,11 +121,16 @@ def judge_factory(ctx: dict):
                     problems.append(f"{where}:{ln['kind']} 行的 speaker 必须是 null")
         if n_dialogue == 0:
             problems.append("整集没有一句台词")
-        # 反馈给出具体字数:验收时真 LLM 只拿到「约 45 秒,目标 60 秒」,不知道补多少,3 轮越改越短
+        # 反馈给出具体字数:验收时真 LLM 只拿到「约 45 秒,目标 60 秒」,不知道补多少,3 轮越改越短。
+        # 目标取区间内靠近当前一侧的四分之一处、不取中点:2026-10-09 验收实测模型改过头约一倍
+        # (叫加 120 实际加 231:380 → 611 → 397),按中点给数会在边界两侧来回摆
         n = rules.count_chars(render(args))
         if not lo <= n <= hi:
-            gap = (lo + hi) // 2 - n
-            what = f"还差约 {gap} 字(多写动作描写和台词)" if gap > 0 else f"多了约 {-gap} 字(删减)"
+            quarter = (hi - lo) // 4
+            if n < lo:
+                what = f"再加约 {lo + quarter - n} 字(多写动作描写和台词),不要超过 {hi} 字"
+            else:
+                what = f"删掉约 {n - (hi - quarter)} 字,不要少于 {lo} 字"
             problems.append(f"篇幅不对:要 {lo}–{hi} 字(不含标点),现在 {n} 字,{what}")
         return problems
     return judge

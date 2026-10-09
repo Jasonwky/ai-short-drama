@@ -54,7 +54,18 @@ def test_length_feedback_says_how_many_characters_to_add():
     args = _script_args(40)
     n = rules.count_chars(sw.render(args))
     (msg,) = [p for p in sw.judge_factory({"minutes": 3})(args) if "篇幅" in p]
-    assert "1200–1800 字" in msg and f"现在 {n} 字" in msg and f"还差约 {1500 - n} 字" in msg
+    assert "1200–1800 字" in msg and f"现在 {n} 字" in msg and f"再加约 {1350 - n} 字" in msg and "不要超过 1800" in msg
+
+
+def test_length_feedback_aims_inside_the_range_not_at_the_middle():
+    """2026-10-09 验收:按中点给数,模型改过头约一倍(叫加 120 实际加 231:380 → 611 → 397),3 轮在边界两侧来回摆。
+    目标改成区间内靠近当前一侧的四分之一处:过头一倍也落在区间中部。"""
+    short = _script_args(40)                                         # 623 字;3 分钟要 1200–1800
+    (msg,) = [p for p in sw.judge_factory({"minutes": 3})(short) if "篇幅" in p]
+    assert "再加约 727 字" in msg                                     # 目标 1350,不是 1500
+    long = _script_args(200)                                         # 3077 字;1 分钟要 400–600
+    (msg,) = [p for p in sw.judge_factory({"minutes": 1})(long) if "篇幅" in p]
+    assert "删掉约 2527 字" in msg and "不要少于 400" in msg          # 目标 550
 
 
 def test_prompt_says_how_characters_are_counted():
