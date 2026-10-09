@@ -12,6 +12,7 @@ from tools.cut import subtitles
 from tools.drama import repo
 from tools.drama.tasks import tasks_for
 from tools.gen.capability import MINIMAX_H3
+from tools.gen import presets
 from tools.gen.align import align_problems, plan_align
 from tools.gen.planner import plan_video
 from tools.serve.panels.common import new_seed, readiness, render, rt
@@ -26,7 +27,7 @@ def page(request: Request, episode_id: int):
     ep = repo.get(store, "episode", episode_id)
     segs = []
     for s in store.conn.execute("SELECT * FROM segment WHERE episode_id = ? ORDER BY number", (episode_id,)):
-        est = (MINIMAX_H3.est_seconds(MINIMAX_H3.frames_for(s["duration_sec"])) / 60
+        est = (MINIMAX_H3.est_seconds(MINIMAX_H3.frames_for(s["duration_sec"]), presets.video_steps(store)) / 60
                if s["duration_sec"] else None)
         tasks = tasks_for(store, "segment", s["id"])
         sub = runtime.data_root / s["subtitle_path"] if s["subtitle_path"] else None

@@ -56,7 +56,8 @@ def plan_pick(store: Store, task_id: int, *, video_cap: Capability, image_cap: C
     elif field in _FRAME_FIELDS:
         seg = repo.get(store, "segment", tid)
         if seg["video_path"]:
-            imp = Impact((tid,), 0, 1, video_cap.est_seconds(video_cap.frames_for(seg["duration_sec"])))
+            from tools.gen.presets import video_steps    # 延迟导入,同 invalidation
+            imp = Impact((tid,), 0, 1, video_cap.est_seconds(video_cap.frames_for(seg["duration_sec"]), video_steps(store)))
         else:
             imp = Impact((), 0, 0, 0.0)
     else:

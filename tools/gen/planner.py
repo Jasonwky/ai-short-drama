@@ -21,6 +21,7 @@ from tools.drama import refs, repo, rules, tags
 from tools.drama.db import Store
 from tools.drama.readiness import segment_readiness
 from tools.drama.tasks import create_task
+from tools.gen import presets
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.gen.workflows import FRAME_SIZE, H3_IMAGE_SLOTS, H3_MODEL, QWEN_MODEL, VIDEO_SIZE
 
@@ -95,6 +96,7 @@ def _plan_frame(store: Store, segment_id: int, field: str, seed: int) -> int:
         "image_refs": [r.path for r in kept], "writes": field, "expect_ext": ".png",
         "dropped": [r.name for r in dropped],   # 出槽退化成文字的素材,溯源里要看得到
     }
+    params = presets.stamp(store, "frame", params)      # 绑定当前「首帧 / 尾帧」模板预设(没有 = 内置)
     return create_task(store, kind="image", target_type="segment", target_id=segment_id, model=QWEN_MODEL,
                        params=params, seed=seed, prompt=prompt, refs=params["image_refs"])
 
@@ -169,6 +171,7 @@ def plan_video(store: Store, segment_id: int, *, seed: int) -> int:
         "image_refs": image_refs, "anchors": anchors, "audio_ref": None,
         "writes": "video_path", "expect_ext": ".mp4",
     }
+    params = presets.stamp(store, "video", params)
     return create_task(store, kind="video", target_type="segment", target_id=segment_id, model=H3_MODEL,
                        params=params, seed=seed, prompt=prompt,
                        refs=list(dict.fromkeys([*image_refs, *(p for p, _ in anchors)])))

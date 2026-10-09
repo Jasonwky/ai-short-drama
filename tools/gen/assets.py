@@ -18,6 +18,7 @@ from tools.drama import repo
 from tools.drama.db import Store
 from tools.drama.styles import get_style
 from tools.drama.tasks import create_task
+from tools.gen import presets
 from tools.gen.workflows import FRAME_SIZE, QWEN_MODEL
 
 CANVAS = "assets/_canvas/gray_1024.png"
@@ -116,6 +117,7 @@ def plan_fourview(store: Store, character_id: int, *, seed: int) -> int:
     params = {"workflow": "qwen_image", "preset": "fast", "size": list(FOURVIEW_SIZE),
               "image_refs": [row["turnaround_path"]], "writes": "fourview_path", "expect_ext": ".png",
               "style": drama["style"]}
+    params = presets.stamp(store, "fourview", params)
     return create_task(store, kind="image", target_type="character", target_id=character_id, model=QWEN_MODEL,
                        params=params, seed=seed, prompt=prompt, refs=params["image_refs"])
 
@@ -135,5 +137,6 @@ def plan_asset_image(store: Store, table: str, row_id: int, *, seed: int) -> int
         "image_refs": [CANVAS], "writes": writes, "expect_ext": ".png", "style": drama["style"],
     }
     prompt = asset_prompt(table, drama["style"], row["final_prompt"])
+    params = presets.stamp(store, "asset", params)
     return create_task(store, kind="image", target_type=table, target_id=row_id, model=QWEN_MODEL,
                        params=params, seed=seed, prompt=prompt, refs=params["image_refs"])

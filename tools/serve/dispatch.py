@@ -23,7 +23,7 @@ from pathlib import Path
 
 from tools.drama.db import Store
 from tools.drama.tasks import set_task_state
-from tools.gen import preflight
+from tools.gen import graphs, preflight, presets
 from tools.gen.comfy_client import ComfyError, ComfyUnreachable
 from tools.gen.workflows import build_h3, build_qwen
 from tools.serve.hosts import Host
@@ -67,18 +67,25 @@ def _uploads(p: dict) -> list[str]:
     return list(dict.fromkeys([*p["image_refs"], *(path for path, _ in p.get("anchors", []))]))
 
 
+SUBMITTED = "workflow.json"     # outputs/tasks/<id>/ 下:实际提交给云机的工作流(改参重跑从它打开)
+
+
 def build_workflow(task: sqlite3.Row, names: dict[str, str]) -> dict:
     """names:库里的相对路径 → 上传后 ComfyUI 认的文件名。"""
     p = json.loads(task["params_json"])
+    if p["workflow"] == "custom":           # 改参重跑:画布改后的整份工作流,只把参考图换成上传名
+        return graphs.with_images(p["graph"], names)
     image_names = [names[path] for path in p["image_refs"]]
     if p["workflow"] == "qwen_image":
-        return build_qwen(task["prompt"], image_names, task["seed"], preset=p["preset"], size=tuple(p["size"]))
-    if p["workflow"] == "minimax_h3":
+        wf = build_qwen(task["prompt"], image_names, task["seed"], preset=p["preset"], size=tuple(p["size"]))
+    elif p["workflow"] == "minimax_h3":
         if p["audio_ref"] is not None:
             raise ValueError("参考音频尚未接入(闸门 0-4:喂参考音频会复读内容)")
-        return build_h3(task["prompt"], image_names, None, p["frames"], task["seed"], size=tuple(p["size"]),
-                        anchors=[(names[path], idx) for path, idx in p.get("anchors", [])])
-    raise ValueError(f"未知工作流 {p['workflow']!r}")
+        wf = build_h3(task["prompt"], image_names, None, p["frames"], task["seed"], size=tuple(p["size"]),
+                      anchors=[(names[path], idx) for path, idx in p.get("anchors", [])])
+    else:
+        raise ValueError(f"未知工作流 {p['workflow']!r}")
+    return presets.apply_params(wf, p)      # 规划时绑定的模板预设(没有就原样)
 
 
 def dispatch(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
@@ -113,4 +120,15 @@ def dispatch(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: 
     except ComfyError as e:
         return fail(f"ComfyUI 拒收:{e}")
     set_task_state(store, task_id, "queued", external_id=pid, host_id=host.id)
+    _save_submitted(Path(data_root), task_id, wf, names)
     return Outcome("queued", pid, pf.warnings)
+
+
+def _save_submitted(root: Path, task_id: int, wf: dict, names: dict[str, str]) -> None:
+    """存下实际提交给云机的工作流(上传名 ↔ 素材库路径的对照一并存):「在 ComfyUI 中编辑」打开的就是它。
+    另存一份 sha256,文件被改过就认得出来。"""
+    out = root / "outputs" / "tasks" / str(task_id)
+    out.mkdir(parents=True, exist_ok=True)
+    body = json.dumps({"submitted": wf, "names": names}, ensure_ascii=False, indent=1, sort_keys=True)
+    (out / SUBMITTED).write_text(body, encoding="utf-8")
+    (out / (SUBMITTED + ".sha256")).write_text(sha256_file(out / SUBMITTED), encoding="utf-8")

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from tools.drama import repo
 from tools.drama.db import Store
+from tools.gen import presets
 from tools.gen.align import align_problems, plan_align
 from tools.gen.assets import SPEC, asset_problems, fourview_problems, locked_seed, plan_asset_image, plan_fourview
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511, WHISPER_ALIGN
@@ -99,7 +100,8 @@ def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
                 items.append(_item(store, "segment", s, label, "align", "subtitle_path",
                                    lambda sid=s["id"]: align_problems(store, sid), WHISPER_ALIGN.sec_per_item))
             else:
-                est = MINIMAX_H3.est_seconds(MINIMAX_H3.frames_for(s["duration_sec"])) if s["duration_sec"] else 0.0
+                est = (MINIMAX_H3.est_seconds(MINIMAX_H3.frames_for(s["duration_sec"]), presets.video_steps(store))
+                       if s["duration_sec"] else 0.0)
                 items.append(_item(store, "segment", s, label, "video", "video_path",
                                    lambda sid=s["id"]: video_problems(store, sid), est))
     elif kind == "fourviews":

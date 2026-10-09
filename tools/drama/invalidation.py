@@ -54,13 +54,15 @@ def impact(store: Store, event: str, target_id: int, *, video_cap: Capability,
     ids = sorted({r[0] for r in store.conn.execute(_AFFECTED[event], (target_id,))})
     frames = videos = 0
     est = 0.0
+    from tools.gen.presets import video_steps    # 延迟导入:当前视频预设可能改了步数,重跑代价按它算
+    steps = video_steps(store)
     for sid in ids:
         seg = repo.get(store, "segment", sid)
         if seg["video_path"]:
             if seg["duration_sec"] is None:
                 raise ValueError(f"段落 {sid} 有视频却没有时长 —— 数据不一致,不能估算")
             videos += 1
-            est += video_cap.est_seconds(video_cap.frames_for(seg["duration_sec"]))
+            est += video_cap.est_seconds(video_cap.frames_for(seg["duration_sec"]), steps)
         if event in _VIDEO_ONLY:
             continue
         n = sum(1 for f in _FRAME_FIELDS if seg[f])

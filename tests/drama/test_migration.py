@@ -17,6 +17,8 @@ def _make_v1(path):
     s.conn.execute("DROP TABLE llm_run")          # v3 新增(触发器随表一起删)
     s.conn.execute("DROP TABLE export")           # v4 新增
     s.conn.execute("DROP TABLE setting")
+    s.conn.execute("DROP TABLE workflow_preset_active")                       # v7 新增
+    s.conn.execute("DROP TABLE workflow_preset")
     s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")        # v6 新增
     s.conn.execute("ALTER TABLE segment DROP COLUMN last_image_prompt")
     s.conn.execute("UPDATE meta SET value = '1' WHERE key = 'schema_version'")
@@ -63,6 +65,8 @@ def test_v4_llm_run_is_rebuilt_to_allow_scene_and_prop_targets(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):
         runs.start(s, task="describe", target_type="scene", target_id=1, model="m", input_sha="x", llm_mode="real",
                    params={})
+    s.conn.execute("DROP TABLE workflow_preset_active")                       # v7 新增
+    s.conn.execute("DROP TABLE workflow_preset")
     s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")        # v6 新增
     s.conn.execute("ALTER TABLE segment DROP COLUMN last_image_prompt")
     s.conn.execute("UPDATE meta SET value = '4' WHERE key = 'schema_version'")
@@ -83,6 +87,8 @@ def test_v5_database_gains_fourview_and_last_frame_prompt(tmp_path):
     s = Store(path)
     d = repo.create_drama(s, "玉佩", "9:16")
     lin = repo.add_character(s, d, "林小雨", turnaround_path="assets/lin.png")
+    s.conn.execute("DROP TABLE workflow_preset_active")                       # v7 新增
+    s.conn.execute("DROP TABLE workflow_preset")
     s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")
     s.conn.execute("ALTER TABLE segment DROP COLUMN last_image_prompt")
     s.conn.execute("UPDATE meta SET value = '5' WHERE key = 'schema_version'")
@@ -95,4 +101,28 @@ def test_v5_database_gains_fourview_and_last_frame_prompt(tmp_path):
     ep = repo.add_episode(s, d, 1, "script")
     seg = repo.add_segment(s, ep, 1, last_image_prompt="空无一人的庭院")
     assert repo.get(s, "segment", seg)["last_image_prompt"] == "空无一人的庭院"
+    s.close()
+
+
+def test_v6_database_gains_preset_tables_and_presets_are_immutable(tmp_path):
+    """v7:工作流模板预设。一经保存不可改、不可删(旧任务引用着它)。"""
+    import sqlite3
+
+    import pytest
+
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    s.conn.execute("DROP TABLE workflow_preset_active")
+    s.conn.execute("DROP TABLE workflow_preset")
+    s.conn.execute("UPDATE meta SET value = '6' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    s.conn.execute("INSERT INTO workflow_preset (category, version, diff_json, created_at) VALUES ('frame', 1, '{}', 'now')")
+    with pytest.raises(sqlite3.IntegrityError, match="不可改"):
+        s.conn.execute("UPDATE workflow_preset SET note = 'x'")
+    with pytest.raises(sqlite3.IntegrityError, match="不可删"):
+        s.conn.execute("DELETE FROM workflow_preset")
+    with pytest.raises(sqlite3.IntegrityError):
+        s.conn.execute("INSERT INTO workflow_preset_active (category) VALUES ('music')")
     s.close()

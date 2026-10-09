@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -229,6 +229,31 @@ BEGIN SELECT RAISE(ABORT, '导出已结束,记录不可再改 —— 要重导�
 ]
 SCHEMA += "".join(f"{stmt};\n" for stmt in EXPORT_DDL)
 
+# v7:工作流模板预设(设计 specs/2026-10-08-ComfyUI工作流编辑-design.md §三)。
+# 存的是相对内置模板的改动(三类:改参数 / 加节点 / 删节点);一经保存不可改、不可删 —— 再改就是新版本,
+# 旧任务的参数里带着它当时用的那份改动的副本。每类一个「当前」指针,空 = 用内置模板。
+PRESET_DDL = [
+    """CREATE TABLE workflow_preset (
+  id INTEGER PRIMARY KEY,
+  category TEXT NOT NULL CHECK (category IN ('frame', 'fourview', 'asset', 'video')),
+  version INTEGER NOT NULL,
+  diff_json TEXT NOT NULL,
+  based_on INTEGER REFERENCES workflow_preset(id),
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  UNIQUE (category, version)
+)""",
+    """CREATE TRIGGER workflow_preset_immutable BEFORE UPDATE ON workflow_preset
+BEGIN SELECT RAISE(ABORT, '预设一经保存不可改 —— 再改就存成新版本'); END""",
+    """CREATE TRIGGER workflow_preset_undeletable BEFORE DELETE ON workflow_preset
+BEGIN SELECT RAISE(ABORT, '预设不可删 —— 旧任务还引用着它'); END""",
+    """CREATE TABLE workflow_preset_active (
+  category TEXT PRIMARY KEY CHECK (category IN ('frame', 'fourview', 'asset', 'video')),
+  preset_id INTEGER REFERENCES workflow_preset(id)
+)""",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in PRESET_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -243,6 +268,8 @@ MIGRATIONS: dict[int, list[str]] = {
     # v6:角色四视图(正面图出的横版四宫格,给 H3 当参考图);段落尾帧提示词(尾帧 / 首尾帧参考模式)
     5: ["ALTER TABLE character ADD COLUMN fourview_path TEXT",
         "ALTER TABLE segment ADD COLUMN last_image_prompt TEXT NOT NULL DEFAULT ''"],
+    # v7:工作流模板预设
+    6: PRESET_DDL,
 }
 
 
