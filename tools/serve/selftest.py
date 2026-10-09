@@ -156,6 +156,20 @@ def _set_widget(name: str, value):
     return act
 
 
+def _set_keyframe(segment_id: int):
+    """在编辑段落页设关键帧(0.5 秒 = 第 12 帧:假片只有 24 帧)并保存;段落已有视频时会先出代价确认页。"""
+    def act(page) -> None:
+        page.locator(f'a[href="/segment/{segment_id}/edit"]').first.click()
+        page.fill("[data-key-time]", "0.5")
+        page.fill("[data-key-prompt]", "@林小雨 在 @老宅庭院 转身,背对镜头,握着 @玉佩")
+        page.locator("[data-save-segment]").click()
+        page.wait_for_load_state()
+        if page.locator("[data-confirm]").count():
+            page.locator("[data-confirm]").click()
+            page.wait_for_load_state()
+    return act
+
+
 def run(out_dir: Path) -> dict:
     from playwright.sync_api import sync_playwright
 
@@ -248,7 +262,12 @@ def run(out_dir: Path) -> dict:
                      ['[data-preset-category="frame"] [data-edit-preset]', _canvas_ready, _set_widget("scheduler", "normal"),
                       "[data-submit]", "[data-confirm-save]"], "@[data-edit-ok]", 60),
                     ("workflows", "设为当前(先出确认页)", {}, ['[data-preset-category="frame"] [data-activate]', "[data-confirm]"],
-                     '[data-preset-category="frame"] [data-preset-version="1"] .tag', 20)), 1):
+                     '[data-preset-category="frame"] [data-preset-version="1"] .tag', 20),
+                    # 中间关键帧:排在所有现有链路之后(段落 1 设了关键帧,视频就要等关键帧图,不能挡前面的链路)
+                    ("frames", "编辑段落设关键帧(第 0.5 秒)", {}, [_set_keyframe(seg)], "[data-key-timeline]", 20),
+                    ("frames", "生成关键帧", {}, [f"#seg-{seg} [data-generate-key-frame]"], f"#seg-{seg} [data-key-frame] img", 40),
+                    ("videos", "重新生成视频 → 关键帧 vs 实际画面", {}, [f"#seg-{seg} [data-generate-video]"],
+                     f"#seg-{seg} [data-keycheck] [data-key-diff]", 60)), 1):
                 errors.clear()
                 key, _, ep_key = key.partition(":")               # 「面板:集」—— 默认第 1 集
                 p = next(x for x in REGISTRY if x.key == key)
