@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from tools.drama import refs, repo, rules, tags
 from tools.drama.db import Store
-from tools.drama.readiness import segment_readiness
+from tools.drama.readiness import key_frame_index, segment_readiness
 from tools.drama.tasks import create_task
 from tools.gen import presets
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
@@ -45,10 +45,12 @@ def _slot_refs(seg, assets) -> tuple[list[refs.Ref], list[refs.Ref]]:
     return refs.allocate_slots(weighted, scene_ref, prop_refs, QWEN_IMAGE_EDIT_2511.max_ref_images)
 
 
-# 参考帧字段 → 用它的参考模式、它的提示词字段、界面上的叫法
+# 参考帧字段 → 用它的参考模式、它的提示词字段、界面上的叫法。
+# 关键帧不看参考模式(叠加在任何模式上),看的是段落设没设 key_time_sec
 FRAMES = {
     "first_frame_path": (("first", "first_last"), "image_prompt", "首帧"),
     "last_frame_path": (("last", "first_last"), "last_image_prompt", "尾帧"),
+    "key_frame_path": (None, "key_image_prompt", "关键帧"),
 }
 # 视频:各参考模式喂哪张帧当 <Picture 1>、钉哪几帧(0 = 第一帧,-1 = 最后一帧)
 VIDEO_MODES = {
@@ -61,7 +63,10 @@ VIDEO_MODES = {
 def _frame_problems(store: Store, segment_id: int, field: str) -> list[str]:
     modes, prompt_field, label = FRAMES[field]
     seg = repo.get(store, "segment", segment_id)
-    if seg["reference_mode"] not in modes:
+    if modes is None:
+        if seg["key_time_sec"] is None:
+            return ["没设关键帧(在「编辑段落」里设第几秒)"]
+    elif seg["reference_mode"] not in modes:
         return [f"参考模式 {seg['reference_mode']} 不用{label}"]
     assets = repo.segment_assets(store, segment_id)
     chars, scene, props = assets["characters"], assets["scene"], assets["props"]
@@ -110,6 +115,10 @@ def last_frame_problems(store: Store, segment_id: int) -> list[str]:
     return _frame_problems(store, segment_id, "last_frame_path")
 
 
+def key_frame_problems(store: Store, segment_id: int) -> list[str]:
+    return _frame_problems(store, segment_id, "key_frame_path")
+
+
 def plan_first_frame(store: Store, segment_id: int, *, seed: int) -> int:
     return _plan_frame(store, segment_id, "first_frame_path", seed)
 
@@ -117,6 +126,11 @@ def plan_first_frame(store: Store, segment_id: int, *, seed: int) -> int:
 def plan_last_frame(store: Store, segment_id: int, *, seed: int) -> int:
     """尾帧与首帧同一套合成(同样的素材槽位、同样的快档),只是用尾帧图提示词、写回尾帧。"""
     return _plan_frame(store, segment_id, "last_frame_path", seed)
+
+
+def plan_key_frame(store: Store, segment_id: int, *, seed: int) -> int:
+    """中间关键帧图:与首帧同一套合成,用关键帧图提示词、写回关键帧(spike-results/2026-10-09-中间关键帧锚定实测.md)。"""
+    return _plan_frame(store, segment_id, "key_frame_path", seed)
 
 
 def fourview_refs(store: Store, segment_id: int) -> tuple[list[refs.Ref], list[refs.Ref]]:
@@ -165,6 +179,8 @@ def plan_video(store: Store, segment_id: int, *, seed: int) -> int:
 
     image_refs = [seg[ref_field]] + [r.path for r in views]
     anchors = [[seg[f], idx] for f, idx in pins]
+    if seg["key_time_sec"] is not None:          # 关键帧:在模式的锚点之后再钉一个(readiness 已核过范围与图)
+        anchors.append([seg["key_frame_path"], key_frame_index(seg, MINIMAX_H3)])
     params = {
         "workflow": "minimax_h3", "frames": MINIMAX_H3.frames_for(seg["duration_sec"]),
         "size": list(VIDEO_SIZE[_aspect(store, segment_id)]),
