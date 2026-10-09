@@ -165,3 +165,23 @@ def test_alignment_task_video_path_moves_with_the_bundle(store, project, tmp_pat
                               (new,)).fetchall()
     [align] = [r for r in tasks_for(dest, "segment", seg["id"]) if r["kind"] == "align"]
     assert json.loads(align["params_json"])["video"] == seg["video_path"]
+
+
+def test_custom_workflow_image_paths_move_with_the_bundle(store, project, tmp_path):
+    """改参重跑的任务把整份工作流存在参数里,「加载图像」节点写的是素材库路径 —— 导入后也要加前缀。"""
+    graph = {"18": {"class_type": "LoadImage", "inputs": {"image": "assets/lin.png"}},
+             "27": {"class_type": "KSampler", "inputs": {"seed": 5}}}
+    t = create_task(store, kind="image", target_type="segment", target_id=project["seg"], model="m", seed=5,
+                    params={"workflow": "custom", "graph": graph, "image_refs": ["assets/lin.png"],
+                            "writes": "first_frame_path", "expect_ext": ".png"}, prompt="p", refs=["assets/lin.png"])
+    set_task_state(store, t, "queued", external_id="px")
+    set_task_state(store, t, "done", result_path="outputs/tasks/1/a.png", result_sha256="x")
+    dest = Store(":memory:")
+    new = bundle.import_bundle(dest, tmp_path / "dst", project["root"] / bundle.export_bundle(store, project["root"],
+                                                                                              project["drama"]))
+    [seg] = dest.conn.execute("SELECT s.* FROM segment s JOIN episode e ON e.id = s.episode_id WHERE e.drama_id = ?",
+                              (new,)).fetchall()
+    [custom] = [r for r in tasks_for(dest, "segment", seg["id"]) if '"custom"' in r["params_json"]]
+    p = json.loads(custom["params_json"])
+    prefix = seg["first_frame_path"].split("/outputs/")[0]
+    assert p["graph"]["18"]["inputs"]["image"] == f"{prefix}/assets/lin.png" == p["image_refs"][0]

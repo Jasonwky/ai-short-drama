@@ -194,6 +194,9 @@ def _insert(store: Store, m: dict, prefix: str, root: Path) -> int:
                     params[k] = [mv(p) for p in params[k]]
                 elif params.get(k):
                     params[k] = mv(params[k])
+            for node in params.get("graph", {}).values():     # 改参重跑的整份工作流:「加载图像」节点也写着素材库路径
+                if node.get("class_type") == "LoadImage" and node["inputs"].get("image"):
+                    node["inputs"]["image"] = mv(node["inputs"]["image"])
             insert(c, "task", r, target_id=ids[r["target_type"]][r["target_id"]], host_id=None,
                    result_path=mv(r["result_path"]), refs_json=json.dumps([mv(p) for p in json.loads(r["refs_json"])],
                                                                           ensure_ascii=False),
