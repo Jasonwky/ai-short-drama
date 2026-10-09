@@ -22,6 +22,8 @@ FRAMES_NEEDED: dict[str, tuple[str, ...]] = {
     "first_last": ("first_frame_path", "last_frame_path"),
 }
 FRAME_LABEL = {"first_frame_path": "首帧", "last_frame_path": "尾帧"}
+# 中间关键帧:叠加在任何参考模式上(spike-results/2026-10-09-中间关键帧锚定实测.md)。离两头至少这么远
+KEY_MARGIN_SEC = 0.5
 KIND_LABEL = {"character": "角色", "scene": "场景", "prop": "道具"}
 
 
@@ -35,6 +37,30 @@ class Check:
 
 def is_ready(checks: list[Check]) -> bool:
     return all(c.ok for c in checks)
+
+
+def key_frame_index(seg, cap: Capability) -> int:
+    """关键帧钉在第几帧:秒 × 模型帧率(AddGuide 的 frame_idx 是像素帧号,不按 latent 取整)。"""
+    return round(seg["key_time_sec"] * cap.fps)
+
+
+def key_problems(seg, cap: Capability) -> list[str]:
+    """段落设了关键帧时还差什么。范围按**实际帧数**算(时长会吸附到模型的帧网格上)。"""
+    if seg["duration_sec"] is None:
+        return ["段落没有时长,算不出关键帧在第几帧"]
+    t, dur = seg["key_time_sec"], seg["duration_sec"]
+    problems = []
+    if not KEY_MARGIN_SEC <= t <= dur - KEY_MARGIN_SEC:
+        problems.append(f"关键帧在第 {t:g} 秒,要在 {KEY_MARGIN_SEC:g}–{dur - KEY_MARGIN_SEC:g} 秒之间")
+    else:
+        idx = key_frame_index(seg, cap)
+        if idx <= 0 or idx >= cap.frames_for(dur) - 1:
+            problems.append(f"关键帧落在第 {idx} 帧,与首帧 / 尾帧锚点重合")
+    if not seg["key_image_prompt"].strip():
+        problems.append("缺少关键帧图提示词")
+    if not seg["key_frame_path"]:
+        problems.append("还没有关键帧图(在「参考帧」面板生成)")
+    return problems
 
 
 def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, image_cap: Capability,
@@ -84,6 +110,13 @@ def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, i
             checks.append(Check("refs_ready", False, f"参考模式 {mode},缺少" + "、".join(lack_frames)))
         else:
             checks.append(Check("refs_ready", True, f"参考模式 {mode},参考帧齐备"))
+
+    if seg["key_time_sec"] is not None:
+        bad_key = key_problems(seg, video_cap)
+        checks.append(Check("keyframe", not bad_key, ";".join(bad_key) or
+                            f"关键帧(第 {seg['key_time_sec']:g} 秒 = 第 {key_frame_index(seg, video_cap)} 帧)已就绪"))
+        if mode == "first_last":
+            checks.append(Check("keyframe_untested", True, "首尾帧 + 关键帧三个锚点同时用:此组合未经真机验证", warn=True))
 
     if needs_images:
         spoken = rules.dialogue_by_speaker(seg["description"])

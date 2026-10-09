@@ -85,3 +85,53 @@ def test_last_frame_mode_needs_its_own_prompt(store, sample):
     repo.update(store, "segment", sample["seg"], reference_mode="first_last", last_frame_path="frames/e.png")
     c = _by_key(_check(store, sample["seg"]))["prompt_ready"]
     assert not c.ok and "尾帧图提示词" in c.msg
+
+
+def _key(store, seg, **fields):
+    repo.update(store, "segment", seg, **{"key_time_sec": 4.0, "key_image_prompt": "@林小雨 转身背对镜头",
+                                          "key_frame_path": "frames/k.png", **fields})
+
+
+def test_no_keyframe_means_no_keyframe_check(store, sample):
+    assert "keyframe" not in _by_key(_check(store, sample["seg"]))
+
+
+def test_ready_keyframe_names_its_frame(store, sample):
+    _key(store, sample["seg"])
+    c = _by_key(_check(store, sample["seg"]))["keyframe"]
+    assert c.ok and c.msg == "关键帧(第 4 秒 = 第 96 帧)已就绪"
+
+
+def test_keyframe_index_uses_the_model_fps():
+    from tools.drama.readiness import key_frame_index
+    assert key_frame_index({"key_time_sec": 4.0}, MINIMAX_H3) == 96
+    assert key_frame_index({"key_time_sec": 0.52}, MINIMAX_H3) == 12
+
+
+def test_keyframe_problems_block(store, sample):
+    """8 秒片实际 192 帧:关键帧要在 0.5 秒 ~ 时长 − 0.5 秒,还要有提示词与图。"""
+    seg = sample["seg"]
+    cases = {
+        (0.2, "p", "k.png"): "关键帧在第 0.2 秒,要在 0.5–7.5 秒之间",
+        (7.8, "p", "k.png"): "关键帧在第 7.8 秒,要在 0.5–7.5 秒之间",
+        (4.0, " ", "k.png"): "缺少关键帧图提示词",
+        (4.0, "p", None): "还没有关键帧图",
+    }
+    for (t, prompt, path), msg in cases.items():
+        _key(store, seg, key_time_sec=t, key_image_prompt=prompt, key_frame_path=path)
+        c = _by_key(_check(store, seg))["keyframe"]
+        assert not c.ok and msg in c.msg, (t, c.msg)
+
+
+def test_shortened_segment_pushes_the_keyframe_out(store, sample):
+    _key(store, sample["seg"], key_time_sec=7.0)
+    repo.update(store, "segment", sample["seg"], duration_sec=6.0)
+    c = _by_key(_check(store, sample["seg"]))["keyframe"]
+    assert not c.ok and "要在 0.5–5.5 秒之间" in c.msg
+
+
+def test_first_last_plus_keyframe_is_flagged_untested(store, sample):
+    _key(store, sample["seg"])
+    repo.update(store, "segment", sample["seg"], reference_mode="first_last")
+    c = _by_key(_check(store, sample["seg"]))["keyframe_untested"]
+    assert c.ok and c.warn and "未经真机验证" in c.msg
