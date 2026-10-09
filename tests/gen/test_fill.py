@@ -136,3 +136,17 @@ def test_no_card_registered_lists_the_work_without_a_number(store, sample):
     repo.update(store, "segment", sample["seg"], video_path=None)
     plan = plan_fill(store, "videos", sample["episode"])
     assert plan.est_seconds() is None and plan.summary().startswith("将提交 1 条视频,无法估时:还没登记云机")
+
+
+def test_keyframes_list_only_segments_that_set_one(store, sample):
+    """没设关键帧的段落不算「缺」,不进清单;设了的照四类分。"""
+    want = _seg(store, sample, 2, key_time_sec=4.0, key_image_prompt="@林小雨 在 @老宅庭院 转身,握着 @玉佩")
+    no_prompt = _seg(store, sample, 3, key_time_sec=4.0)
+    _seg(store, sample, 4)
+    plan = plan_fill(store, "keyframes", sample["episode"])
+    st = _status(plan)
+    assert set(st) == {"段落 2", "段落 3"} and st["段落 2"] == ("todo", "")
+    assert st["段落 3"][0] == "blocked" and st["段落 3"][1].startswith("缺少关键帧图提示词")
+    [tid] = confirm_fill(store, "keyframes", sample["episode"], [("segment", want), ("segment", no_prompt)], base_seed=9)
+    row = repo.get(store, "task", tid)
+    assert json.loads(row["params_json"])["writes"] == "key_frame_path" and row["seed"] == 9

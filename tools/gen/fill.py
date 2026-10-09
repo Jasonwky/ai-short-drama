@@ -20,11 +20,12 @@ from tools.gen import estimate, presets
 from tools.gen.align import align_problems, plan_align
 from tools.gen.assets import SPEC, asset_problems, fourview_problems, locked_seed, plan_asset_image, plan_fourview
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511, WHISPER_ALIGN
-from tools.gen.planner import (first_frame_problems, last_frame_problems, plan_first_frame, plan_last_frame, plan_video,
-                               video_problems)
+from tools.gen.planner import (first_frame_problems, key_frame_problems, last_frame_problems, plan_first_frame,
+                               plan_key_frame, plan_last_frame, plan_video, video_problems)
 
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
-KINDS = {"frames": ("episode", "首帧"), "lastframes": ("episode", "尾帧"), "videos": ("episode", "视频"),
+KINDS = {"frames": ("episode", "首帧"), "lastframes": ("episode", "尾帧"), "keyframes": ("episode", "关键帧"),
+         "videos": ("episode", "视频"),
          "subtitles": ("episode", "字幕"), "assets": ("drama", "资产图"), "fourviews": ("drama", "四视图")}
 _ASSET_LABEL = {"character": "角色", "scene": "场景", "prop": "道具"}
 
@@ -90,7 +91,7 @@ def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
     if kind not in KINDS:
         raise ValueError(f"未知的补全类型 {kind},可选:{sorted(KINDS)}")
     items, b = [], estimate.basis(store)
-    if kind in ("frames", "lastframes", "videos", "subtitles"):
+    if kind in ("frames", "lastframes", "keyframes", "videos", "subtitles"):
         repo.get(store, "episode", scope_id)
         for s in store.conn.execute("SELECT * FROM segment WHERE episode_id = ? ORDER BY number", (scope_id,)):
             label = f"段落 {s['number']}"
@@ -100,6 +101,11 @@ def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
             elif kind == "lastframes":
                 items.append(_item(store, "segment", s, label, "image", "last_frame_path",
                                    lambda sid=s["id"]: last_frame_problems(store, sid), b.item(QWEN_IMAGE_EDIT_2511)))
+            elif kind == "keyframes":
+                if s["key_time_sec"] is None:
+                    continue                                   # 没设关键帧的段落不算「缺」
+                items.append(_item(store, "segment", s, label, "image", "key_frame_path",
+                                   lambda sid=s["id"]: key_frame_problems(store, sid), b.item(QWEN_IMAGE_EDIT_2511)))
             elif kind == "subtitles":
                 items.append(_item(store, "segment", s, label, "align", "subtitle_path",
                                    lambda sid=s["id"]: align_problems(store, sid), b.item(WHISPER_ALIGN)))
@@ -137,6 +143,8 @@ def confirm_fill(store: Store, kind: str, scope_id: int, targets: list[tuple[str
             created.append(plan_first_frame(store, tid, seed=seed))
         elif kind == "lastframes":
             created.append(plan_last_frame(store, tid, seed=seed))
+        elif kind == "keyframes":
+            created.append(plan_key_frame(store, tid, seed=seed))
         elif kind == "fourviews":
             created.append(plan_fourview(store, tid, seed=seed))
         elif kind == "videos":
