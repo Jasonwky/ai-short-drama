@@ -163,3 +163,35 @@ WHISPER_ALIGN = AlignBackend(
     sec_per_item=30.0,
     vram_gb=6.0,
 )
+
+
+# ──────────────────────────────────────────────────────────────
+# 模型白名单(工作流编辑的提交把关 #1,设计 specs/2026-10-08-ComfyUI工作流编辑-design.md)
+#   共用云机上装着别的项目的模型(例:flux1-dev,非商用)。画布里能选到它们,但出的片不能商用 ——
+#   所以工作流里出现的每个模型文件都要在这张表里,并写明许可证结论与出处。要用新模型:加一行,许可证一栏必填。
+# ──────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class ModelDecl:
+    name: str       # 云机上的文件名(ComfyUI 认的名字)
+    use: str
+    license: str    # 许可证结论 + 出处
+
+
+_QWEN = "Apache-2.0(原文已核:huggingface.co/Qwen/Qwen-Image 与 github.com/QwenLM/Qwen-Image 的 LICENSE,2026-10-08)"
+_H3 = ("MiniMax H3 Community License(原文已核:spike-results/2026-09-22-设计自查3-H3许可证地域限制与合规标识规格.md)"
+       " —— 输出不得在欧盟、英国、韩国、美国使用")
+_CARD_ONLY = "模型卡声明 apache-2.0,仓库无 LICENSE 文件(2026-10-08 核对;用户定:直接列入白名单)"
+
+ALLOWED_MODELS: tuple[ModelDecl, ...] = (
+    ModelDecl("qwen-image-edit-2511-Q4_K_M.gguf", "Qwen-Image-Edit-2511 主模型(GGUF 量化)", _QWEN),
+    ModelDecl("qwen_2.5_vl_7b_fp8_scaled.safetensors", "Qwen 文本编码器",
+              "Apache-2.0(原文已核:github.com/QwenLM/Qwen2.5-VL 的 LICENSE,2026-10-08)"),
+    ModelDecl("qwen_image_vae.safetensors", "Qwen 图像 VAE", _QWEN),
+    ModelDecl("qwen-image-edit-2511-multiple-angles-lora.safetensors", "多角度 LoRA(fal)", _CARD_ONLY),
+    ModelDecl("Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors", "4 步加速 LoRA(lightx2v)", _CARD_ONLY),
+    ModelDecl("minimax_h3_ref2va_pruned_fp8_scaled.safetensors", "H3 ref2va 主模型", _H3),
+    ModelDecl("qwen3vl_32b_minimax_h3_int8_convrot.safetensors", "H3 文本编码器", _H3),
+    ModelDecl("minimax_h3_video_vae_fp16.safetensors", "H3 视频 VAE", _H3),
+    ModelDecl("minimax_h3_audio_vae_fp32.safetensors", "H3 音频 VAE", _H3),
+)
