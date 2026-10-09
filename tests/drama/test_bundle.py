@@ -185,3 +185,26 @@ def test_custom_workflow_image_paths_move_with_the_bundle(store, project, tmp_pa
     p = json.loads(custom["params_json"])
     prefix = seg["first_frame_path"].split("/outputs/")[0]
     assert p["graph"]["18"]["inputs"]["image"] == f"{prefix}/assets/lin.png" == p["image_refs"][0]
+
+
+def test_video_anchors_and_the_keyframe_move_with_the_bundle(store, project, tmp_path):
+    """视频任务参数里的锚点 [[路径, 帧号], …] 导入后也要加前缀(P7 起就漏了;关键帧对比要从它取图)。"""
+    _file(project["root"], "outputs/tasks/8/k.png", b"k")
+    repo.update(store, "segment", project["seg"], key_time_sec=4.0, key_image_prompt="p",
+                key_frame_path="outputs/tasks/8/k.png")
+    t = create_task(store, kind="video", target_type="segment", target_id=project["seg"], model="m", seed=5,
+                    params={"workflow": "minimax_h3", "writes": "video_path", "image_refs": ["outputs/tasks/2/a.png"],
+                            "anchors": [["outputs/tasks/2/a.png", 0], ["outputs/tasks/8/k.png", 96]]},
+                    prompt="p", refs=["outputs/tasks/2/a.png", "outputs/tasks/8/k.png"])
+    set_task_state(store, t, "queued", external_id="pv")
+    set_task_state(store, t, "done", result_path="videos/s1.mp4", result_sha256="x")
+    dest = Store(":memory:")
+    new = bundle.import_bundle(dest, tmp_path / "dst", project["root"] / bundle.export_bundle(store, project["root"],
+                                                                                              project["drama"]))
+    [seg] = dest.conn.execute("SELECT s.* FROM segment s JOIN episode e ON e.id = s.episode_id WHERE e.drama_id = ?",
+                              (new,)).fetchall()
+    prefix = seg["first_frame_path"].split("/outputs/")[0]
+    assert seg["key_frame_path"] == f"{prefix}/outputs/tasks/8/k.png" and seg["key_time_sec"] == 4.0
+    [video] = [r for r in tasks_for(dest, "segment", seg["id"]) if r["kind"] == "video"]
+    assert json.loads(video["params_json"])["anchors"] == [[f"{prefix}/outputs/tasks/2/a.png", 0],
+                                                            [f"{prefix}/outputs/tasks/8/k.png", 96]]

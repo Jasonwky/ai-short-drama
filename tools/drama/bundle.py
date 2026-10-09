@@ -28,7 +28,7 @@ from tools.drama.repo import next_segment_id
 FORMAT = 1
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
 PATH_FIELDS = {"character": ("turnaround_path", "fourview_path", "voice_ref_path"), "scene": ("image_path",), "prop": ("image_path",),
-               "segment": ("first_frame_path", "last_frame_path", "video_path", "subtitle_path")}
+               "segment": ("first_frame_path", "last_frame_path", "key_frame_path", "video_path", "subtitle_path")}
 PARAM_PATH_KEYS = ("image_refs", "audio_ref", "video")      # task.params_json 里存路径的键(video:字幕对齐的输入)
 
 
@@ -194,6 +194,9 @@ def _insert(store: Store, m: dict, prefix: str, root: Path) -> int:
                     params[k] = [mv(p) for p in params[k]]
                 elif params.get(k):
                     params[k] = mv(params[k])
+            # 视频锚点 [[路径, 帧号], …](首帧 / 尾帧 / 关键帧钉在哪一帧;P7 加锚点时这里漏了)
+            if params.get("anchors"):
+                params["anchors"] = [[mv(p), idx] for p, idx in params["anchors"]]
             for node in params.get("graph", {}).values():     # 改参重跑的整份工作流:「加载图像」节点也写着素材库路径
                 if node.get("class_type") == "LoadImage" and node["inputs"].get("image"):
                     node["inputs"]["image"] = mv(node["inputs"]["image"])
