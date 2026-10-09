@@ -206,6 +206,9 @@ def run(out_dir: Path) -> dict:
             for n, (key, label, fill, buttons, wait_sel, timeout) in enumerate((
                     ("frames", "生成首帧", {}, [f"#seg-{seg} [data-generate-frame]"], f"#seg-{seg} .current-media img", 40),
                     ("videos", "生成视频", {}, [f"#seg-{seg} [data-generate-video]"], f"#seg-{seg} .current-media video", 60),
+                    ("videos", "生成记录里点「溯源」→ 倒查到首帧", {}, [f"#seg-{seg} [data-trace-link]"],
+                     "[data-trace-tree] [data-node-inputs] img", 20),
+                    ("frames", "生成记录里点任务号 → 任务详情", {}, [f"#seg-{seg} [data-task-link]"], "[data-task-params]", 20),
                     ("frames", "用段落 1 视频的尾帧", {}, [f"#seg-{seg2} [data-tail-frame]"],
                      f"#seg-{seg2} .current-media img", 20),
                     ("videos", "补全本集缺的视频 → 确认", {}, ["[data-fill-button]", "[data-confirm]"],
@@ -228,6 +231,8 @@ def run(out_dir: Path) -> dict:
                      [f'[data-asset="prop-{photo}"] [data-upload-button]'], f'[data-asset="prop-{photo}"] .current-media img', 20),
                     ("assets", "从图反推描述", {}, [f'[data-asset="prop-{photo}"] [data-llm-describe]'],
                      '[data-llm-state="failed"] [data-llm-error]', 40),
+                    ("trace", "只看失败 → 失败归类里有刚才那次反推", {}, ["[data-failed-only]", "[data-trace-apply]"],
+                     '[data-trace-timeline] [data-event="llm"][data-action="失败"]', 20),
                     ("assets", "生成四视图", {}, [f'[data-asset="character-{lin}"] [data-generate-fourview]'],
                      f'[data-asset="character-{lin}"] [data-fourview] img', 40),
                     ("frames:episode2", "生成尾帧(首尾帧模式)", {}, [f"#seg-{seg3} [data-generate-last-frame]"],
