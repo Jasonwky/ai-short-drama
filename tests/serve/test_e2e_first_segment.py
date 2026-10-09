@@ -83,3 +83,33 @@ def test_timeout_tells_not_to_resubmit(tmp_path, images):
     with pytest.raises(TimeoutError, match="不要重新提交"):
         run(tmp_path / "e2e", images, HOST, seed=1, timeout_sec=-1, make_worker=_worker_on(comfy),
             sleep=lambda s: None)
+
+
+class _SlowTunnel(FakeTunnel):
+    """真隧道刚拉起时要过一会儿才通(2026-10-09 第 4 层真机:预设那一步第一次检查就判「隧道未通」退出)。"""
+    def __init__(self, up_after):
+        super().__init__()
+        self.calls, self.up_after = 0, up_after
+
+    def ensure(self, host):
+        self.calls += 1
+        return self.calls > self.up_after
+
+
+def _worker_with_tunnel(comfy, tunnel):
+    aligner = FakeAligner("这块玉佩是我母亲留给我的")
+    return lambda store, host_id, root: Worker(store, host_id, data_root=root, client_for=lambda h: comfy,
+                                               tunnel=tunnel, run_for=lambda h: None, align_for=lambda h: aligner)
+
+
+def test_preset_step_waits_for_a_fresh_tunnel(tmp_path, images):
+    comfy = FakeComfy()
+    report = run(tmp_path / "e2e", images, HOST, seed=5, timeout_sec=60,
+                 make_worker=_worker_with_tunnel(comfy, _SlowTunnel(up_after=3)), sleep=_gpu(comfy))
+    assert report["preset"]["lines"] == ["节点 27 KSampler.scheduler:'simple' → 'normal'"]
+
+
+def test_preset_step_gives_up_when_the_tunnel_never_comes_up(tmp_path, images):
+    with pytest.raises(RuntimeError, match="隧道 60s 内没通"):
+        run(tmp_path / "e2e", images, HOST, seed=5, timeout_sec=60,
+            make_worker=_worker_with_tunnel(FakeComfy(), _SlowTunnel(up_after=10 ** 9)), sleep=lambda s: None)

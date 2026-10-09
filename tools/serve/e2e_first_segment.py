@@ -63,11 +63,19 @@ def build_drama(store: Store, assets: dict[str, str]) -> int:
 PRESET_SCHEDULER = "normal"      # 首帧模板预设:采样调度器 simple → normal(只改一处,验证叠加机制)
 
 
-def _use_frame_preset(store: Store, worker: Worker, host_id: int) -> dict:
-    """存一个「首帧 / 尾帧」模板预设并设为当前:用云机的实时节点清单过保存前把关(各种情况逐一试拼)。"""
+TUNNEL_WAIT_SEC = 60
+
+
+def _use_frame_preset(store: Store, worker: Worker, host_id: int, sleep: Callable[[float], None]) -> dict:
+    """存一个「首帧 / 尾帧」模板预设并设为当前:用云机的实时节点清单过保存前把关(各种情况逐一试拼)。
+    隧道是刚拉起的,`ensure` 只说「此刻通没通」—— 等它通(2026-10-09 真机:第一次检查就判未通退出过)。"""
     host = get_host(store, host_id)
-    if not worker.tunnel.ensure(host):
-        raise RuntimeError("隧道未通,拿不到节点清单")
+    for _ in range(TUNNEL_WAIT_SEC // 2):
+        if worker.tunnel.ensure(host):
+            break
+        sleep(2)
+    else:
+        raise RuntimeError(f"隧道 {TUNNEL_WAIT_SEC}s 内没通,拿不到节点清单 —— 查云机是否开机、SSH 端口对不对")
     object_info = worker.client_for(host).object_info()
     edited, _ = presets.example("frame")
     edited["27"]["inputs"]["scheduler"] = PRESET_SCHEDULER
@@ -116,7 +124,7 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
     seg, lin = build_drama(store, assets)
     host_id = add_host(store, **host)
     worker = make_worker(store, host_id, data_root)
-    report = {"segment": seg, "tasks": [], "preset": _use_frame_preset(store, worker, host_id)}
+    report = {"segment": seg, "tasks": [], "preset": _use_frame_preset(store, worker, host_id, sleep)}
 
     for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_fourview(store, lin, seed=seed + 2),
                  lambda: plan_video(store, seg, seed=seed + 1), lambda: plan_align(store, seg)):
