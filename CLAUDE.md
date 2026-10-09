@@ -47,7 +47,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   **领域层不硬编码模型参数**(换模型只改声明)。实测耗时**按卡分开存**(`GPU_TIMINGS`,最终用哪张卡没定):
   云机登记自己的卡,估时经 `gen/estimate.basis` 按已登记里最慢的一张算,没登记 = 「无法估时」不猜。
   视频的参考帧是**钉住**的(`build_h3(anchors=)`,ref2va 后串 `MiniMaxH3AddGuide`),不是只当参考图喂 —— 实测参考图一多首帧就守不住;
-  参考模式(首帧 / 首尾帧 / 尾帧)在 `planner.VIDEO_MODES` 里定
+  参考模式(首帧 / 首尾帧 / 尾帧)在 `planner.VIDEO_MODES` 里定;中间关键帧是叠加在任何参考模式上的可选项(`segment.key_time_sec`),视频多钉一个锚点,
+  视频面板用 `cut/keycheck` 拿**视频任务参数里的锚点**与那一帧比对(量法沿用 spike-results/2026-10-09-中间关键帧锚定实测.md)
 - `tools/gen/planner.py` 只做**规划**(内容就绪即写出参数定死的 task);`tools/serve/` 负责**提交与推进**:
   worker 每轮「保隧道 → 按 external_id 推进在途 → 机器空闲才派下一条」。**接管不是单独流程** ——
   重启后在途任务照常推进,绝不重交。库里的素材/产物路径都相对 `data_root`。
