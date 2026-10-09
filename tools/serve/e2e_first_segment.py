@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""真链路验收:一个段落从无到有 —— 首帧 → 角色四视图 → 视频(首帧钉在第 0 帧、四视图作参考)→ 对齐字幕,
-溯源字段逐项核对。
+"""真链路验收:一个段落从无到有 —— 首帧(用一个**非内置的模板预设**)→ 角色四视图 → 视频(首帧钉在第 0 帧、
+四视图作参考)→ 对齐字幕,溯源字段逐项核对。预设那一步验证:叠上改动的工作流云机真能跑,且实际提交的就是叠过的那份。
 
 这是**验收夹具**,不是生产入口:P3 起同一条链路由控制台的环节面板驱动,
 那时本脚本只留作「绕开界面、单测执行层」的对照。
@@ -30,9 +30,11 @@ from pathlib import Path
 from tools.drama import repo
 from tools.drama.db import Store
 from tools.gen.align import plan_align
+from tools.gen import presets
 from tools.gen.assets import plan_fourview
 from tools.gen.planner import plan_first_frame, plan_video
-from tools.serve.hosts import add_host
+from tools.serve.dispatch import SUBMITTED
+from tools.serve.hosts import add_host, get_host
 from tools.serve.worker import POLL_SEC, Worker
 
 # 溯源必须齐的字段。started_at 不在内:4 步出图可能在两次轮询之间就跑完,没被看到 running,
@@ -56,6 +58,23 @@ def build_drama(store: Store, assets: dict[str, str]) -> int:
     repo.bind_characters(store, seg, [lin])
     repo.bind_props(store, seg, [jade])
     return seg, lin
+
+
+PRESET_SCHEDULER = "normal"      # 首帧模板预设:采样调度器 simple → normal(只改一处,验证叠加机制)
+
+
+def _use_frame_preset(store: Store, worker: Worker, host_id: int) -> dict:
+    """存一个「首帧 / 尾帧」模板预设并设为当前:用云机的实时节点清单过保存前把关(各种情况逐一试拼)。"""
+    host = get_host(store, host_id)
+    if not worker.tunnel.ensure(host):
+        raise RuntimeError("隧道未通,拿不到节点清单")
+    object_info = worker.client_for(host).object_info()
+    edited, _ = presets.example("frame")
+    edited["27"]["inputs"]["scheduler"] = PRESET_SCHEDULER
+    plan = presets.plan_save(store, "frame", edited, object_info)
+    pid = presets.confirm_save(store, plan, "验收:调度器 normal")
+    presets.activate(store, "frame", pid)
+    return {"id": pid, "lines": list(plan.lines)}
 
 
 def run_until_final(worker: Worker, store: Store, task_id: int, *, timeout_sec: float,
@@ -97,8 +116,8 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
     seg, lin = build_drama(store, assets)
     host_id = add_host(store, **host)
     worker = make_worker(store, host_id, data_root)
+    report = {"segment": seg, "tasks": [], "preset": _use_frame_preset(store, worker, host_id)}
 
-    report = {"segment": seg, "tasks": []}
     for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_fourview(store, lin, seed=seed + 2),
                  lambda: plan_video(store, seg, seed=seed + 1), lambda: plan_align(store, seg)):
         tid = plan()
@@ -110,6 +129,9 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
     report["first_frame_path"], report["video_path"] = s["first_frame_path"], s["video_path"]
     report["subtitle_path"] = s["subtitle_path"]
     report["fourview_path"] = repo.get(store, "character", lin)["fourview_path"]
+    submitted = json.loads((data_root / "outputs/tasks" / str(report["tasks"][0]["id"]) / SUBMITTED).read_text(encoding="utf-8"))
+    if submitted["submitted"]["27"]["inputs"]["scheduler"] != PRESET_SCHEDULER:
+        raise RuntimeError("首帧实际提交的工作流里没有叠上预设的改动")
     (data_root / "provenance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return report
 

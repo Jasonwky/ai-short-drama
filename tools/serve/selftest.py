@@ -11,6 +11,9 @@
   资产面板给没图的道具「上传」参考图 → 图出现;对它点「从图反推描述」→ 假 LLM 看不见图,被校验数字拦下(失败带原因);
   资产面板点「LLM 定声音」→ 审阅页出现待审产物,且假 LLM 的「批准」按钮是灰的;
   资产面板给角色点「生成四视图」→ 四视图出现;第 2 集「首尾帧」模式的段落点「生成尾帧」→ 尾帧出现;
+  主机面板「刷新节点清单」→ 缓存信息出现;参考帧历史「在 ComfyUI 中编辑」→ 嵌入的画布里改种子 →「提交为新版本」;
+  工作流面板改首帧模板(调度器)→ 确认页列出改动 → 保存 →「设为当前」先出确认页 → 当前变成 v1;
+- iframe 里的 ComfyUI 前端**不许访问外网**:页面上出现任何非本机请求即判失败(实测前端会去 api.comfy.org,垫片已改向);
 - 在**全新临时目录**里建演示工程、用**假后端**跑 —— 假产物碰不到真工程,页面顶部标着「假后端」;
 - **一律有头**(CLAUDE.md 硬约束,用户 2026-09-24 明确要求):人要看得见它点开了每个面板。
   **不提供 `--headless` 开关** —— 有头跑抓到过无头发现不了的问题(浏览器请求 /favicon.ico 的 404)。
@@ -39,6 +42,13 @@ from tools.serve.fakes import fake_backend
 from tools.serve.hosts import add_host
 from tools.serve.panels import REGISTRY, url_for
 from tools.serve.runtime import Runtime
+
+# 已知的上游报错:只放行这几条**原文**,别的 console 报错照样判失败。每条写明出处与核实方式。
+KNOWN_UPSTREAM_ERRORS = {
+    # ComfyUI 前端 1.51.9 启动时自己打的(rootGraph 的 getter 在初始化前被读)。2026-10-08 用有头浏览器打开云机上的
+    # 真 ComfyUI 核实过,同样会打 —— 不是本机垫片造成的;前端是 GPL 第三方包,我们不改它
+    "ComfyApp graph accessed before initialization",
+}
 
 # 每个面板「真渲染出来了」的判据:这个元素必须可见
 KEY_SELECTOR = {
@@ -127,6 +137,24 @@ def _wait_for(page, selector: str, timeout_s: float) -> bool:
     return False
 
 
+def _canvas_ready(page) -> None:
+    """等编辑页把工作流载入嵌入的 ComfyUI 画布(comfy_edit.js 载入完会打上 data-loaded)。"""
+    page.wait_for_selector("[data-comfy-edit][data-loaded]", timeout=60000)
+
+
+def _set_widget(name: str, value):
+    """模拟人在画布里改一个控件:找到第一个名叫 name 的控件,改成 value。"""
+    def act(page) -> None:
+        ok = page.evaluate("""([name, value]) => {
+            const app = document.querySelector('[data-comfy-frame]').contentWindow.app;
+            for (const n of app.graph._nodes) for (const w of (n.widgets || []))
+                if (w.name === name) { w.value = value; return true; }
+            return false; }""", [name, value])
+        if not ok:
+            raise RuntimeError(f"画布里找不到控件 {name}")
+    return act
+
+
 def run(out_dir: Path) -> dict:
     from playwright.sync_api import sync_playwright
 
@@ -146,8 +174,11 @@ def run(out_dir: Path) -> dict:
             page = browser.new_page(viewport={"width": 1440, "height": 900})
             errors: list[str] = []
             page.on("pageerror", lambda e: errors.append(f"JS 异常:{e}"))
-            page.on("console", lambda m: errors.append(f"console.{m.type}:{m.text}") if m.type == "error" else None)
+            page.on("console", lambda m: errors.append(f"console.{m.type}:{m.text}")
+                    if m.type == "error" and m.text not in KNOWN_UPSTREAM_ERRORS else None)
             page.on("response", lambda r: errors.append(f"HTTP {r.status} {r.url}") if r.status >= 500 else None)
+            page.on("request", lambda r: errors.append(f"外网请求:{r.url}")
+                    if not r.url.startswith((base, "data:", "blob:", base.replace("http", "ws"))) else None)
 
             for i, p in enumerate(REGISTRY, 1):
                 errors.clear()
@@ -199,7 +230,16 @@ def run(out_dir: Path) -> dict:
                     ("assets", "生成四视图", {}, [f'[data-asset="character-{lin}"] [data-generate-fourview]'],
                      f'[data-asset="character-{lin}"] [data-fourview] img', 40),
                     ("frames:episode2", "生成尾帧(首尾帧模式)", {}, [f"#seg-{seg3} [data-generate-last-frame]"],
-                     f"#seg-{seg3} [data-last-frame] img", 40)), 1):
+                     f"#seg-{seg3} [data-last-frame] img", 40),
+                    ("hosts", "刷新节点清单", {}, ["[data-refresh-nodes]"], "[data-node-cache] code", 20),
+                    ("frames", "在 ComfyUI 中编辑 → 画布里改种子 → 提交为新版本", {},
+                     [f"#seg-{seg} [data-comfy-edit-link]", _canvas_ready, _set_widget("seed", 4242), "[data-submit]"],
+                     "@[data-edit-ok]", 60),
+                    ("workflows", "改首帧模板 → 确认改动 → 保存", {},
+                     ['[data-preset-category="frame"] [data-edit-preset]', _canvas_ready, _set_widget("scheduler", "normal"),
+                      "[data-submit]", "[data-confirm-save]"], "@[data-edit-ok]", 60),
+                    ("workflows", "设为当前(先出确认页)", {}, ['[data-preset-category="frame"] [data-activate]', "[data-confirm]"],
+                     '[data-preset-category="frame"] [data-preset-version="1"] .tag', 20)), 1):
                 errors.clear()
                 key, _, ep_key = key.partition(":")               # 「面板:集」—— 默认第 1 集
                 p = next(x for x in REGISTRY if x.key == key)
@@ -209,9 +249,20 @@ def run(out_dir: Path) -> dict:
                         page.locator(sel).set_input_files(str(value()))
                     else:
                         page.locator(sel).fill(value)
-                for button in buttons:
-                    page.locator(button).first.click()
-                appeared = _wait_for(page, wait_sel, timeout)
+                try:
+                    for button in buttons:
+                        if callable(button):
+                            button(page)
+                        else:
+                            page.locator(button).first.click()
+                    if wait_sel.startswith("@"):              # 编辑页:不能刷新(画布和提交结果会丢),原地等
+                        page.wait_for_selector(wait_sel[1:], timeout=timeout * 1000)
+                        appeared = True
+                    else:
+                        appeared = _wait_for(page, wait_sel, timeout)
+                except Exception as e:                        # 这条链路失败:记下原因、照常截图,接着跑下一条
+                    errors.append(f"链路中断:{type(e).__name__}: {str(e).splitlines()[0]}")
+                    appeared = False
                 shot = out_dir / f"flow_{n}_{key}.png"
                 page.screenshot(path=str(shot), full_page=True)
                 problems = list(errors) + ([] if appeared else [f"{timeout}s 内没等到 {wait_sel}"])

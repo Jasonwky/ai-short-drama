@@ -56,6 +56,11 @@ def test_full_chain_on_fake_gpu_writes_provenance(tmp_path, images):
     assert report["subtitle_path"] == align["result_path"] and "这块玉佩" in (root / align["result_path"]).read_text(
         encoding="utf-8")
     assert json.loads((root / "provenance.json").read_text(encoding="utf-8"))["tasks"][2]["external_id"] == "p3"
+    # 首帧用的是非内置模板预设:参数里绑定了它,实际提交的工作流叠上了改动
+    assert report["preset"]["lines"] == ["节点 27 KSampler.scheduler:'simple' → 'normal'"]
+    assert json.loads(frame["params_json"])["preset_id"] == report["preset"]["id"]
+    assert comfy.submitted["p1"]["27"]["inputs"]["scheduler"] == "normal"
+    assert "preset_id" not in json.loads(video["params_json"])                     # 视频没设预设:内置
 
 
 def test_refuses_a_non_empty_data_root(tmp_path, images):
