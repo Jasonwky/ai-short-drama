@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """「留痕」面板、倒查页、任务详情页(测试客户端;有头浏览器的那一遍在自测里)。"""
+import html
 import json
 
 from tests.cut.conftest import done_task, mp4_bytes, two_segments  # noqa: F401
@@ -83,7 +84,7 @@ def test_task_page_shows_the_whole_task(client, runtime, store, two_segments):
     journal.append(s["root"], [f"task {tid}: queued → done"], prefix="host=1 ")
     page = client.get(f"/task/{tid}").text
     assert "video prompt" in page and "outputs/tasks/f1/frame.png" in page and f'<a href="/task/{tid}">task {tid}</a>: queued → done' in page
-    assert json.dumps("video_path") in page                                 # 参数
+    assert json.dumps("video_path") in html.unescape(page)                  # 参数(浏览器里看到的)
     assert client.get("/task/99999").status_code == 404
 
 
@@ -94,3 +95,12 @@ def test_history_entries_link_to_task_and_trace(client, store, sample):
     set_task_state(store, t, "done", result_path="frames/new.png", result_sha256="x")
     page = client.get(f"/episode/{sample['episode']}/frames").text
     assert f'href="/task/{t}"' in page and 'href="/trace/product?path=frames/new.png"' in page
+
+
+def test_params_show_chinese_as_is_and_timeline_cells_do_not_wrap(client, store, sample):
+    """真数据上看出来的(2026-10-09):tojson 把中文转成 Unicode 转义;时间线「动作」「类型」列被挤成一字一行。"""
+    t = create_task(store, kind="align", target_type="segment", target_id=sample["seg"], model="m",
+                    params={"lines": ["这块玉佩,是我母亲留给我的。"]}, seed=0, prompt="p", refs=[])
+    assert "这块玉佩,是我母亲留给我的。" in client.get(f"/task/{t}").text.split("data-task-params")[1]
+    page = client.get("/trace").text
+    assert page.count('class="nowrap"') >= 3

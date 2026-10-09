@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -33,6 +34,7 @@ def _utc(local: str) -> str:
 
 
 TEMPLATES.env.filters["bj"] = bj
+TEMPLATES.env.filters["pretty"] = lambda v: json.dumps(v, ensure_ascii=False, indent=1, sort_keys=True)
 TEMPLATES.env.globals["journal_links"] = journal.links
 
 

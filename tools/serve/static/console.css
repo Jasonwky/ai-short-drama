@@ -166,3 +166,5 @@ pre.log { background: var(--ink); color: var(--paper); padding: 10px 12px; font-
   main.wrap { padding: 18px 16px 24px; }
   .top { padding: 10px 16px; flex-wrap: wrap; }
 }
+
+.nowrap { white-space: nowrap; }

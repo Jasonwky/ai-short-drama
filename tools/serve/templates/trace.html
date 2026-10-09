@@ -50,12 +50,12 @@
       <tr><th>时间</th><th>动作</th><th>对象</th><th></th></tr>
       {% for e in events %}
         <tr data-event="{{ e.kind }}" data-action="{{ e.action }}" {% if e.failed %}class="status-bad"{% endif %}>
-          <td><code title="{{ e.at }}">{{ e.at | bj }}</code></td>
-          <td><b>{{ e.action }}</b></td>
+          <td class="nowrap"><code title="{{ e.at }}">{{ e.at | bj }}</code></td>
+          <td class="nowrap"><b>{{ e.action }}</b></td>
           <td><a href="{{ e.href }}">{{ e.label }}</a>
             {% if e.is_global %}<span class="tag">全局</span>{% endif %}{% if e.unattributed %}<span class="tag">归属不明</span>{% endif %}
             {% if e.error %}<div class="err">{{ e.error }}</div>{% endif %}</td>
-          <td>{{ kinds[e.kind] }}</td>
+          <td class="nowrap">{{ kinds[e.kind] }}</td>
         </tr>
       {% endfor %}
     </table>

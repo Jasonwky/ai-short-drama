@@ -32,7 +32,7 @@
     {% else %}<code>{{ r.path }}</code> <span class="tag">不在本机</span>{% endif %}</div>
   {% else %}<p class="empty">没有参考</p>{% endfor %}
   <h2>参数</h2>
-  <pre class="log" data-task-params>{{ v.params | tojson(indent=1) }}</pre>
+  <pre class="log" data-task-params>{{ v.params | pretty }}</pre>
 </section>
 
 <section class="card">
