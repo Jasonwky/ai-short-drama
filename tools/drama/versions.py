@@ -20,7 +20,7 @@ from tools.drama.db import Store
 from tools.drama.invalidation import Impact
 from tools.gen.capability import Capability
 
-_FRAME_FIELDS = ("first_frame_path", "last_frame_path")
+_FRAME_FIELDS = ("first_frame_path", "last_frame_path", "key_frame_path")
 
 
 @dataclass(frozen=True)

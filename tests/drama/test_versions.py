@@ -69,3 +69,14 @@ def test_new_subtitles_keep_the_video(store, sample):
     confirm_pick(store, plan_pick(store, t, **CAPS))
     seg = repo.get(store, "segment", sample["seg"])
     assert seg["subtitle_path"] == "outputs/tasks/9/subtitles.srt" and seg["video_path"] == "videos/s1.mp4"
+
+
+def test_new_keyframe_costs_this_segments_video_only(store, sample):
+    repo.update(store, "segment", sample["seg"], key_time_sec=4.0, key_image_prompt="p", key_frame_path="frames/k.png")
+    t = _done(store, "segment", sample["seg"], "key_frame_path", "outputs/tasks/9/k2.png")
+    pick = plan_pick(store, t, **CAPS)
+    assert (pick.impact.videos, pick.impact.frames) == (1, 0)
+    confirm_pick(store, pick)
+    seg = repo.get(store, "segment", sample["seg"])
+    assert (seg["key_frame_path"], seg["video_path"], seg["first_frame_path"]) == ("outputs/tasks/9/k2.png", None,
+                                                                                  "frames/s1.png")

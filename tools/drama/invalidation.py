@@ -29,7 +29,7 @@ _AFFECTED = {
     "fourview": "SELECT segment_id FROM segment_character WHERE character_id = ?",
 }
 _VIDEO_ONLY = {"voice", "fourview"}
-_FRAME_FIELDS = ("first_frame_path", "last_frame_path")
+_FRAME_FIELDS = ("first_frame_path", "last_frame_path", "key_frame_path")
 
 
 @dataclass(frozen=True)
@@ -82,6 +82,22 @@ def one_video(store: Store, seg, video_cap: Capability) -> Impact:
                   est_note=b.note)
 
 
+def keyframe_edit(store: Store, seg, *, video_cap: Capability, image_cap: Capability, prompt_changed: bool) -> Impact:
+    """只改了关键帧(时刻 / 提示词):作废本段视频;提示词变了关键帧图也作废(调用方清 key_frame_path)。
+    首帧 / 尾帧不动 —— 否则第一次给已有首帧的段落填关键帧提示词,首帧会被冲掉。"""
+    from tools.gen import estimate
+    from tools.gen.presets import video_steps
+    b = estimate.basis(store)
+    frames = 1 if prompt_changed and seg["key_frame_path"] else 0
+    videos = 1 if seg["video_path"] else 0
+    est = 0.0
+    if videos:
+        est += b.video(video_cap, video_cap.frames_for(seg["duration_sec"]), video_steps(store)) or 0.0
+    est += frames * (b.item(image_cap) or 0.0)
+    ids = (seg["id"],) if frames or videos else ()
+    return Impact(ids, frames, videos, None if b.timing is None else est, True, b.note)
+
+
 def apply(store: Store, imp: Impact) -> None:
     """人确认后才调用:清掉受影响段落的产物指针。"""
     with store.write() as c:
@@ -89,6 +105,6 @@ def apply(store: Store, imp: Impact) -> None:
             c.executemany("UPDATE segment SET video_path = NULL, subtitle_path = NULL WHERE id = ?",
                           [(i,) for i in imp.segment_ids])
             return
-        c.executemany("UPDATE segment SET first_frame_path = NULL, last_frame_path = NULL,"
+        c.executemany("UPDATE segment SET first_frame_path = NULL, last_frame_path = NULL, key_frame_path = NULL,"
                       " video_path = NULL, subtitle_path = NULL WHERE id = ?",
                       [(i,) for i in imp.segment_ids])
