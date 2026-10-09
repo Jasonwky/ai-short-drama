@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -134,7 +134,8 @@ CREATE TABLE host (
   local_port INTEGER NOT NULL,
   remote_comfy_port INTEGER NOT NULL DEFAULT 8188,
   vram_gb REAL NOT NULL,
-  models_dir TEXT NOT NULL DEFAULT ''
+  models_dir TEXT NOT NULL DEFAULT '',
+  gpu TEXT
 );
 
 CREATE TABLE task (
@@ -270,6 +271,8 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE segment ADD COLUMN last_image_prompt TEXT NOT NULL DEFAULT ''"],
     # v7:工作流模板预设
     6: PRESET_DDL,
+    # v8:云机登记卡的型号(估时按卡算);旧云机为空 = 无法估时,到「主机」面板补登
+    7: ["ALTER TABLE host ADD COLUMN gpu TEXT"],
 }
 
 

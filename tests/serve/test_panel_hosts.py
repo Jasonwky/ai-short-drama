@@ -3,7 +3,7 @@ from tools.serve.hosts import get_host
 from tools.serve.panels import REGISTRY, url_for
 
 FORM = {"label": "4090", "ssh_host": "connect.example.com", "ssh_port": "14138", "key_ref": "C:/k/id_ed25519",
-        "models_dir": "/root/autodl-tmp/comfyui-models"}
+        "models_dir": "/root/autodl-tmp/comfyui-models", "gpu": "RTX 4090"}
 
 
 def test_add_host_then_status_after_a_round(client, runtime):
@@ -29,3 +29,11 @@ def test_global_panels_keep_the_drama_context(client, sample):
     url = url_for(hosts, sample["drama"], sample["episode"])
     assert url == f"/hosts?d={sample['drama']}"
     assert f'href="/drama/{sample["drama"]}/assets"' in client.get(url).text     # 左侧步骤仍可点
+
+
+def test_register_gpu_on_an_existing_host(client, store, host_id):
+    assert "未登记 —— 无法估时" in client.get("/hosts").text
+    client.post(f"/host/{host_id}/gpu", data={"gpu": "RTX 4080 SUPER"})
+    assert get_host(store, host_id).gpu == "RTX 4080 SUPER" and "未登记 —— 无法估时" not in client.get("/hosts").text
+    r = client.post(f"/host/{host_id}/gpu", data={"gpu": "GTX 1080"})
+    assert r.status_code == 400 and "没有实测耗时" in r.text

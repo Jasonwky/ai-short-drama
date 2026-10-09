@@ -8,13 +8,31 @@ from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 CAPS = {"video_cap": MINIMAX_H3, "image_cap": QWEN_IMAGE_EDIT_2511}
 
 
+def _host(store, gpu):
+    from tools.serve.hosts import add_host
+    add_host(store, label="a", ssh_host="h", ssh_port=1, ssh_user="root", key_ref="k", local_port=8188,
+             vram_gb=24.0, models_dir="/m", gpu=gpu)
+
+
 def test_character_change_hits_only_bound_segments(store, sample):
+    _host(store, "RTX 4090")
     imp = impact(store, "character", sample["lin"], **CAPS)
     assert imp.segment_ids == (sample["seg"],)
     assert (imp.videos, imp.frames) == (1, 1)
     # 8 秒片 = 192 帧 → 20 步 × 44.4 s;外加一张 4 步参考帧 25.3 s
     assert imp.est_seconds == pytest.approx(20 * 44.4 + 25.3)
-    assert imp.summary() == "这会重跑 1 条视频、1 张参考帧,约 0.3 小时(估算)"
+    assert imp.summary() == "这会重跑 1 条视频、1 张参考帧,约 0.3 小时(按 RTX 4090 估算)"
+
+
+def test_cost_follows_the_registered_card(store, sample):
+    _host(store, "RTX 4080 SUPER")
+    assert impact(store, "character", sample["lin"], **CAPS).est_seconds == pytest.approx(20 * 72.3 + 41.0)
+
+
+def test_no_card_registered_still_lists_the_impact(store, sample):
+    imp = impact(store, "character", sample["lin"], **CAPS)
+    assert imp.est_seconds is None and (imp.videos, imp.frames) == (1, 1)
+    assert imp.summary() == "这会重跑 1 条视频、1 张参考帧,无法估时:还没登记云机"
 
 
 def test_unbound_character_affects_nothing(store, sample):

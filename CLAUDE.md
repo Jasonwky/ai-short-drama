@@ -44,7 +44,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   由**数据库触发器**强制,不靠调用方自觉。写入一律走 `repo` 的字段白名单。
   段落编号**永不复用**(`repo.next_segment_id`):删段落只删段落与绑定,生成历史与文件保留;会删段落的 LLM 批准必须 `confirm_reset=True`
 - `tools/gen/capability.py` 后端能力声明:段落时长区间、参考槽位数、实测耗时都从这里读,
-  **领域层不硬编码模型参数**(换模型只改声明)。
+  **领域层不硬编码模型参数**(换模型只改声明)。实测耗时**按卡分开存**(`GPU_TIMINGS`,最终用哪张卡没定):
+  云机登记自己的卡,估时经 `gen/estimate.basis` 按已登记里最慢的一张算,没登记 = 「无法估时」不猜。
   视频的参考帧是**钉住**的(`build_h3(anchors=)`,ref2va 后串 `MiniMaxH3AddGuide`),不是只当参考图喂 —— 实测参考图一多首帧就守不住;
   参考模式(首帧 / 首尾帧 / 尾帧)在 `planner.VIDEO_MODES` 里定
 - `tools/gen/planner.py` 只做**规划**(内容就绪即写出参数定死的 task);`tools/serve/` 负责**提交与推进**:

@@ -12,12 +12,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from tools.cut import media
-from tools.drama import repo
+from tools.drama import invalidation, repo
 from tools.drama.db import Store
 from tools.drama.invalidation import Impact
 from tools.drama.tasks import record_local
 from tools.gen.capability import MINIMAX_H3
-from tools.gen.presets import video_steps
 from tools.serve.dispatch import sha256_file
 
 MODEL = "ffmpeg:last-frame"
@@ -46,8 +45,7 @@ def plan_tail(store: Store, data_root: Path, segment_id: int) -> TailPlan:
         raise ValueError(f"段落 {seg['number']} 是本集最后一段,没有下一段可以接")
     media.require_ffmpeg()
     if nxt["video_path"]:
-        imp = Impact((nxt["id"],), 0, 1, MINIMAX_H3.est_seconds(MINIMAX_H3.frames_for(nxt["duration_sec"]),
-                                                                 video_steps(store)))
+        imp = invalidation.one_video(store, nxt, MINIMAX_H3)
     else:
         imp = Impact((), 0, 0, 0.0)
     return TailPlan(segment_id, nxt["id"], seg["video_path"], imp)

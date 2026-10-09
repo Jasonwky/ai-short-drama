@@ -11,7 +11,7 @@
         <td>{{ i.label }}</td>
         <td class="{{ 'status-ok' if i.status == 'todo' else ('status-bad' if i.status == 'blocked' else '') }}">{{ status[i.status] }}</td>
         <td>{{ seeds.get((i.target_type, i.target_id), "—") }}</td>
-        <td>{{ i.reason }}{% if i.status == "todo" %}约 {{ "%.1f" | format(i.est_seconds / 60) }} 分钟(估算){% endif %}</td>
+        <td>{{ i.reason }}{% if i.status == "todo" and i.est_seconds is not none %}约 {{ "%.1f" | format(i.est_seconds / 60) }} 分钟(估算){% endif %}</td>
       </tr>
     {% endfor %}
   </table>

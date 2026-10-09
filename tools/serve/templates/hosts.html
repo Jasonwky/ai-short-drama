@@ -16,6 +16,12 @@
       <div><label>SSH 端口(AutoDL 每次开机都会变)</label><input type="number" name="ssh_port" value="{{ h.host.ssh_port }}"></div>
       <div><button class="btn" type="submit">改端口</button></div>
     </form>
+    <form method="post" action="/host/{{ h.host.id }}/gpu" class="row" data-host-gpu>
+      <div><label>GPU 型号(估时按它;几台卡不同时按最慢的一张){% if not h.host.gpu %} <b class="status-bad">未登记 —— 无法估时</b>{% endif %}</label>
+        <select name="gpu">{% if not h.host.gpu %}<option value="" disabled selected>选型号</option>{% endif %}
+          {% for g in gpus %}<option value="{{ g }}"{% if g == h.host.gpu %} selected{% endif %}>{{ g }}</option>{% endfor %}</select></div>
+      <div><button class="btn" type="submit">登记型号</button></div>
+    </form>
     <form method="post" action="/host/{{ h.host.id }}/object_info">
       <button class="btn" type="submit" data-refresh-nodes>刷新节点清单</button>
     </form>
@@ -36,7 +42,7 @@
   <h2>登记云机</h2>
   <form method="post" action="/hosts" data-add-host>
     <div class="row">
-      <div><label>名字</label><input type="text" name="label" value="4090" required></div>
+      <div><label>名字</label><input type="text" name="label" required></div>
       <div><label>SSH 地址</label><input type="text" name="ssh_host" required></div>
       <div><label>SSH 端口</label><input type="number" name="ssh_port" required></div>
       <div><label>用户</label><input type="text" name="ssh_user" value="root"></div>
@@ -45,6 +51,8 @@
     <div class="row">
       <div><label>本机端口</label><input type="number" name="local_port" value="8188"></div>
       <div><label>显存 GB</label><input type="number" step="1" name="vram_gb" value="24"></div>
+      <div><label>GPU 型号(只列有实测耗时的)</label><select name="gpu" required><option value="" disabled selected>选型号</option>
+        {% for g in gpus %}<option value="{{ g }}">{{ g }}</option>{% endfor %}</select></div>
       <div style="flex: 1"><label>云机模型目录</label><input type="text" name="models_dir" value="/root/autodl-tmp/comfyui-models"></div>
     </div>
     <button class="btn primary" type="submit">登记</button>

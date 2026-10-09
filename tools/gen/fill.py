@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from tools.drama import repo
 from tools.drama.db import Store
-from tools.gen import presets
+from tools.gen import estimate, presets
 from tools.gen.align import align_problems, plan_align
 from tools.gen.assets import SPEC, asset_problems, fourview_problems, locked_seed, plan_asset_image, plan_fourview
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511, WHISPER_ALIGN
@@ -36,7 +36,7 @@ class Item:
     label: str
     status: str          # has / in_flight / blocked / todo
     reason: str = ""
-    est_seconds: float = 0.0
+    est_seconds: float | None = 0.0    # None = 无法估时
     seed: int | None = None      # 锁定种子(角色);None = 用「起始种子 + 序号」
 
 
@@ -45,19 +45,23 @@ class FillPlan:
     kind: str
     scope_id: int
     items: tuple[Item, ...]
+    est_note: str = ""       # 「按 X 估算」或无法估时的原因
 
     @property
     def todo(self) -> list[Item]:
         return [i for i in self.items if i.status == "todo"]
 
-    def est_seconds(self) -> float:
+    def est_seconds(self) -> float | None:
+        if any(i.est_seconds is None for i in self.todo):
+            return None
         return sum(i.est_seconds for i in self.todo)
 
     def summary(self) -> str:
         count = {s: sum(1 for i in self.items if i.status == s) for s in ("has", "in_flight", "blocked")}
         what = KINDS[self.kind][1]
-        head = (f"将提交 {len(self.todo)} 条{what},约 {self.est_seconds() / 3600:.2f} 小时(按实测耗时估算)"
-                if self.todo else f"没有要补的{what}")
+        est = self.est_seconds()
+        cost = self.est_note if est is None else f"约 {est / 3600:.2f} 小时({self.est_note})"
+        head = f"将提交 {len(self.todo)} 条{what},{cost}" if self.todo else f"没有要补的{what}"
         return (f"{head};跳过:已有 {count['has']}、在途 {count['in_flight']}、不能做 {count['blocked']}")
 
 
@@ -85,22 +89,22 @@ def _item(store: Store, target_type: str, row, label: str, kind: str, field: str
 def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
     if kind not in KINDS:
         raise ValueError(f"未知的补全类型 {kind},可选:{sorted(KINDS)}")
-    items = []
+    items, b = [], estimate.basis(store)
     if kind in ("frames", "lastframes", "videos", "subtitles"):
         repo.get(store, "episode", scope_id)
         for s in store.conn.execute("SELECT * FROM segment WHERE episode_id = ? ORDER BY number", (scope_id,)):
             label = f"段落 {s['number']}"
             if kind == "frames":
                 items.append(_item(store, "segment", s, label, "image", "first_frame_path",
-                                   lambda sid=s["id"]: first_frame_problems(store, sid), QWEN_IMAGE_EDIT_2511.sec_per_item))
+                                   lambda sid=s["id"]: first_frame_problems(store, sid), b.item(QWEN_IMAGE_EDIT_2511)))
             elif kind == "lastframes":
                 items.append(_item(store, "segment", s, label, "image", "last_frame_path",
-                                   lambda sid=s["id"]: last_frame_problems(store, sid), QWEN_IMAGE_EDIT_2511.sec_per_item))
+                                   lambda sid=s["id"]: last_frame_problems(store, sid), b.item(QWEN_IMAGE_EDIT_2511)))
             elif kind == "subtitles":
                 items.append(_item(store, "segment", s, label, "align", "subtitle_path",
-                                   lambda sid=s["id"]: align_problems(store, sid), WHISPER_ALIGN.sec_per_item))
+                                   lambda sid=s["id"]: align_problems(store, sid), b.item(WHISPER_ALIGN)))
             else:
-                est = (MINIMAX_H3.est_seconds(MINIMAX_H3.frames_for(s["duration_sec"]), presets.video_steps(store))
+                est = (b.video(MINIMAX_H3, MINIMAX_H3.frames_for(s["duration_sec"]), presets.video_steps(store))
                        if s["duration_sec"] else 0.0)
                 items.append(_item(store, "segment", s, label, "video", "video_path",
                                    lambda sid=s["id"]: video_problems(store, sid), est))
@@ -108,7 +112,7 @@ def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
         repo.get(store, "drama", scope_id)
         for r in store.conn.execute("SELECT * FROM character WHERE drama_id = ? ORDER BY id", (scope_id,)):
             items.append(_item(store, "character", r, f"角色「{r['name']}」", "image", "fourview_path",
-                               lambda rid=r["id"]: fourview_problems(store, rid), QWEN_IMAGE_EDIT_2511.sec_per_item,
+                               lambda rid=r["id"]: fourview_problems(store, rid), b.item(QWEN_IMAGE_EDIT_2511),
                                seed_lock=False))      # 锁定的是正面图的种子,不管四视图
     else:
         repo.get(store, "drama", scope_id)
@@ -116,8 +120,8 @@ def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
             for r in store.conn.execute(f"SELECT * FROM {table} WHERE drama_id = ? ORDER BY id", (scope_id,)):
                 items.append(_item(store, table, r, f"{_ASSET_LABEL[table]}「{r['name']}」", "image", SPEC[table][0],
                                    lambda t=table, rid=r["id"]: asset_problems(store, t, rid),
-                                   QWEN_IMAGE_EDIT_2511.sec_per_item))
-    return FillPlan(kind, scope_id, tuple(items))
+                                   b.item(QWEN_IMAGE_EDIT_2511)))
+    return FillPlan(kind, scope_id, tuple(items), b.note)
 
 
 def confirm_fill(store: Store, kind: str, scope_id: int, targets: list[tuple[str, int]], base_seed: int) -> list[int]:

@@ -12,7 +12,7 @@ from tools.cut import subtitles
 from tools.drama import repo
 from tools.drama.tasks import tasks_for
 from tools.gen.capability import MINIMAX_H3
-from tools.gen import presets
+from tools.gen import estimate, presets
 from tools.gen.align import align_problems, plan_align
 from tools.gen.planner import plan_video
 from tools.serve.panels.common import new_seed, readiness, render, rt
@@ -25,18 +25,18 @@ def page(request: Request, episode_id: int):
     runtime = rt(request)
     store = runtime.store
     ep = repo.get(store, "episode", episode_id)
-    segs = []
+    segs, b = [], estimate.basis(store)
     for s in store.conn.execute("SELECT * FROM segment WHERE episode_id = ? ORDER BY number", (episode_id,)):
-        est = (MINIMAX_H3.est_seconds(MINIMAX_H3.frames_for(s["duration_sec"]), presets.video_steps(store)) / 60
-               if s["duration_sec"] else None)
+        est = b.video(MINIMAX_H3, MINIMAX_H3.frames_for(s["duration_sec"]), presets.video_steps(store))             if s["duration_sec"] else None
         tasks = tasks_for(store, "segment", s["id"])
         sub = runtime.data_root / s["subtitle_path"] if s["subtitle_path"] else None
-        segs.append({"row": s, "checks": readiness(runtime, s["id"]), "est_min": est,
+        segs.append({"row": s, "checks": readiness(runtime, s["id"]), "est_min": None if est is None else est / 60,
                      "tasks": [t for t in tasks if t["kind"] == "video"],
                      "align_tasks": [t for t in tasks if t["kind"] == "align"],
                      "align_problems": align_problems(store, s["id"]),
                      "cues": subtitles.parse_srt(sub.read_text(encoding="utf-8")) if sub and sub.is_file() else []})
-    return render(request, "videos.html", "videos", episode_id=episode_id, ep=ep, segs=segs, seed=new_seed())
+    return render(request, "videos.html", "videos", episode_id=episode_id, ep=ep, segs=segs, seed=new_seed(),
+                  est_note=b.note)
 
 
 @router.post("/segment/{segment_id}/video")

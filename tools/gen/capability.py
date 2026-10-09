@@ -32,10 +32,9 @@ class Capability:
     # ── 其它 ────────────────────────────
     supports_audio: bool = False
     aspect_ratios: tuple[str, ...] = field(default_factory=tuple)
-    # ── 实测耗时(用来给「重跑要多久」报估算,不是承诺)──
-    timing_points: tuple[tuple[int, float], ...] = ()   # (帧数, 秒/步),视频后端
+    # ── 耗时形状(绝对值按卡另存,见 GPU_TIMINGS)──
     default_steps: int = 0
-    sec_per_item: float = 0.0                              # 单张耗时,图片后端
+    frame_cost_exponent: float = 1.0   # 每步耗时 ∝ 帧数^k(注意力随序列长度超线性);模型的性质,与卡无关
 
     # ---------- 时长 ↔ 帧数 ----------
 
@@ -48,25 +47,6 @@ class Capability:
         step, base = self.frame_grid_step, self.frame_grid_base
         remainder = (raw - base) % step
         return raw if remainder == 0 else raw + (step - remainder)
-
-    def est_seconds(self, frames: int, steps: int | None = None) -> float:
-        """按实测点估算一条视频的生成秒数。
-
-        每步耗时随帧数**超线性**增长(注意力随序列长度),所以两点之间按幂律
-        s = s0 · (f/f0)^k 插值/外推,k 由两个实测点反解。只有一个点时按线性。
-        这是估算 —— 界面上必须标「估算」。
-        """
-        if not self.timing_points:
-            raise ValueError(f"{self.name} 没有实测耗时点,不能估算")
-        pts = sorted(self.timing_points)
-        steps = steps or self.default_steps
-        f0, s0 = pts[0]
-        if len(pts) == 1:
-            k = 1.0
-        else:
-            f1, s1 = pts[-1]
-            k = math.log(s1 / s0) / math.log(f1 / f0)
-        return steps * s0 * (frames / f0) ** k
 
     def seconds_for(self, frames: int) -> float:
         return frames / self.fps
@@ -121,10 +101,9 @@ MINIMAX_H3 = Capability(
     max_ref_audios=3,
     supports_audio=True,
     aspect_ratios=("16:9", "9:16", "1:1", "4:3", "3:4", "21:9"),
-    # 192 帧:闸门 0 实测 2026-09-23(4090,20 步 44.4 s/it)
-    # 328 帧:ai-ecommerce 实测 2026-09-07(4090,20 步 109.3 s/it)
-    timing_points=((192, 44.4), (328, 109.3)),
     default_steps=20,
+    # 由 4090 上两个实测点反解:192 帧 44.4 s/步、328 帧 109.3 s/步(见 RTX_4090)
+    frame_cost_exponent=math.log(109.3 / 44.4) / math.log(328 / 192),
 )
 
 QWEN_IMAGE_EDIT_2511 = Capability(
@@ -133,7 +112,6 @@ QWEN_IMAGE_EDIT_2511 = Capability(
     frame_min_trained=0, frame_max_trained=0,
     max_ref_images=3,             # 🔴 image1/2/3,固定槽位不是 Autogrow
     supports_audio=False,
-    sec_per_item=25.3,            # 闸门 0 实测:4 步档、3 张参考图、928x1664
 )
 
 BACKENDS = {"minimax_h3": MINIMAX_H3, "qwen_image_edit_2511": QWEN_IMAGE_EDIT_2511}
@@ -151,7 +129,6 @@ class AlignBackend:
     python: str          # 云机上带 transformers / torch 的解释器
     model_dir: str       # whisper 权重目录
     input_dir: str       # ComfyUI 的 input 目录:视频经 ComfyUI 上传接口放到这里
-    sec_per_item: float  # 实测:GPU 每条 8 秒片 5–6 s,加模型加载约 20 s
     vram_gb: float       # 跑一次要的显存:实测 whisper 进程占 3.81 GiB(2026-09-29),留余量
 
 
@@ -160,9 +137,52 @@ WHISPER_ALIGN = AlignBackend(
     python="/root/autodl-tmp/ComfyUI/venv/bin/python",
     model_dir="/root/autodl-tmp/shortdrama-eval/whisper-large-v3-turbo",
     input_dir="/root/autodl-tmp/ComfyUI/input",
-    sec_per_item=30.0,
     vram_gb=6.0,
 )
+
+
+# ──────────────────────────────────────────────────────────────
+# 实测耗时,按卡分开存(给「重跑要多久」报估算,不是承诺)
+#   最终用哪张卡没定(用户 2026-10-09):每台云机登记自己的卡,估时按已登记里最慢的一张(gen/estimate.py)。
+#   换卡 = 加一份,不改旧的;没实测过的卡登记不进来。数据与量法:spike-results/2026-10-09-RTX4080SUPER耗时实测.md
+# ──────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class GpuTiming:
+    gpu: str
+    sec_per_step: dict[str, tuple[int, float]]   # 视频后端名 → (实测帧数, 秒/步),只计采样
+    sec_per_item: dict[str, float]               # 图片 / 对齐后端名 → 一张 / 一条的秒数
+
+    def video(self, cap: Capability, frames: int, steps: int | None = None) -> float:
+        """s = 步数 · s0 · (f/f0)^k:一个实测点定绝对值,模型声明的 k 定形状。这是估算 —— 界面上必须标「估算」。"""
+        if cap.name not in self.sec_per_step:
+            raise ValueError(f"{cap.name} 在 {self.gpu} 上没有实测耗时,不能估算")
+        f0, s0 = self.sec_per_step[cap.name]
+        return (steps or cap.default_steps) * s0 * (frames / f0) ** cap.frame_cost_exponent
+
+    def item(self, backend) -> float:
+        if backend.name not in self.sec_per_item:
+            raise ValueError(f"{backend.name} 在 {self.gpu} 上没有实测耗时,不能估算")
+        return self.sec_per_item[backend.name]
+
+
+RTX_4090 = GpuTiming(
+    gpu="RTX 4090",
+    # 192 帧:闸门 0 实测 2026-09-23(20 步 44.4 s/it);328 帧:ai-ecommerce 实测 2026-09-07(20 步 109.3 s/it)
+    sec_per_step={MINIMAX_H3.name: (192, 44.4)},
+    sec_per_item={QWEN_IMAGE_EDIT_2511.name: 25.3,    # 闸门 0 实测:4 步档、3 张参考图、928x1664
+                  WHISPER_ALIGN.name: 30.0},          # 2026-09-29:GPU 每条 8 秒片 5–6 s,加模型加载约 20 s
+)
+
+RTX_4080_SUPER = GpuTiming(
+    gpu="RTX 4080 SUPER",
+    # 2026-10-09 P10 验收第 4 层:192 帧 20 步采样 24:07(72.3 s/it);328 帧没测,形状按模型声明外推
+    sec_per_step={MINIMAX_H3.name: (192, 72.3)},
+    sec_per_item={QWEN_IMAGE_EDIT_2511.name: 41.0,    # 同次:首帧 41 s(含冷加载;紧接着的四视图 21 s),取保守的
+                  WHISPER_ALIGN.name: 36.0},          # 同次:对齐一条 36 s(含模型加载)
+)
+
+GPU_TIMINGS = {t.gpu: t for t in (RTX_4090, RTX_4080_SUPER)}
 
 
 # ──────────────────────────────────────────────────────────────

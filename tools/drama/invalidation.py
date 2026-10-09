@@ -37,14 +37,15 @@ class Impact:
     segment_ids: tuple[int, ...]
     frames: int          # 要重出的参考帧张数(只算已经出过的)
     videos: int          # 要重跑的视频条数(只算已经出过的)
-    est_seconds: float
+    est_seconds: float | None    # None = 无法估时(原因在 est_note)
     videos_only: bool = False    # True:只作废视频,参考帧保留
+    est_note: str = ""           # 「按 X 估算」或无法估时的原因(gen/estimate.py)
 
     def summary(self) -> str:
         if self.videos == 0 and self.frames == 0:
             return "不影响任何已生成的产物"
-        return (f"这会重跑 {self.videos} 条视频、{self.frames} 张参考帧,"
-                f"约 {self.est_seconds / 3600:.1f} 小时(估算)")
+        est = self.est_note if self.est_seconds is None else f"约 {self.est_seconds / 3600:.1f} 小时({self.est_note})"
+        return f"这会重跑 {self.videos} 条视频、{self.frames} 张参考帧,{est}"
 
 
 def impact(store: Store, event: str, target_id: int, *, video_cap: Capability,
@@ -54,21 +55,31 @@ def impact(store: Store, event: str, target_id: int, *, video_cap: Capability,
     ids = sorted({r[0] for r in store.conn.execute(_AFFECTED[event], (target_id,))})
     frames = videos = 0
     est = 0.0
-    from tools.gen.presets import video_steps    # 延迟导入:当前视频预设可能改了步数,重跑代价按它算
-    steps = video_steps(store)
+    from tools.gen import estimate               # 延迟导入(gen 依赖 drama)
+    from tools.gen.presets import video_steps    # 当前视频预设可能改了步数,重跑代价按它算
+    steps, b = video_steps(store), estimate.basis(store)
     for sid in ids:
         seg = repo.get(store, "segment", sid)
         if seg["video_path"]:
             if seg["duration_sec"] is None:
                 raise ValueError(f"段落 {sid} 有视频却没有时长 —— 数据不一致,不能估算")
             videos += 1
-            est += video_cap.est_seconds(video_cap.frames_for(seg["duration_sec"]), steps)
+            est += b.video(video_cap, video_cap.frames_for(seg["duration_sec"]), steps) or 0.0
         if event in _VIDEO_ONLY:
             continue
         n = sum(1 for f in _FRAME_FIELDS if seg[f])
         frames += n
-        est += n * image_cap.sec_per_item
-    return Impact(tuple(ids), frames, videos, est, event in _VIDEO_ONLY)
+        est += n * (b.item(image_cap) or 0.0)
+    return Impact(tuple(ids), frames, videos, None if b.timing is None else est, event in _VIDEO_ONLY, b.note)
+
+
+def one_video(store: Store, seg, video_cap: Capability) -> Impact:
+    """只作废这一段的视频(换参考帧 / 抽尾帧接下一段)。"""
+    from tools.gen import estimate
+    from tools.gen.presets import video_steps
+    b = estimate.basis(store)
+    return Impact((seg["id"],), 0, 1, b.video(video_cap, video_cap.frames_for(seg["duration_sec"]), video_steps(store)),
+                  est_note=b.note)
 
 
 def apply(store: Store, imp: Impact) -> None:

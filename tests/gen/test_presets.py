@@ -118,9 +118,11 @@ def test_tasks_bind_the_current_preset_at_planning_time(store, sample, tmp_path)
 
 def test_estimates_follow_the_current_video_preset_steps(store, sample):
     from tools.drama import invalidation
-    from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
+    from tools.gen.capability import GPU_TIMINGS, MINIMAX_H3, QWEN_IMAGE_EDIT_2511
     from tools.gen.fill import plan_fill
     caps = {"video_cap": MINIMAX_H3, "image_cap": QWEN_IMAGE_EDIT_2511}
+    add_host(store, label="a", ssh_host="h", ssh_port=1, ssh_user="root", key_ref="k", local_port=8188,
+             vram_gb=24.0, models_dir="/m", gpu="RTX 4090")
     before = invalidation.impact(store, "voice", sample["lin"], **caps).est_seconds
 
     def steps40(wf):
@@ -130,4 +132,4 @@ def test_estimates_follow_the_current_video_preset_steps(store, sample):
     assert after == pytest.approx(before * 2)                         # 20 步 → 40 步,重跑代价翻倍
     repo.update(store, "segment", sample["seg"], video_path=None)
     [item] = plan_fill(store, "videos", sample["episode"]).items
-    assert item.est_seconds == pytest.approx(MINIMAX_H3.est_seconds(192, 40))
+    assert item.est_seconds == pytest.approx(GPU_TIMINGS["RTX 4090"].video(MINIMAX_H3, 192, 40))

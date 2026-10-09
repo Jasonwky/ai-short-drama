@@ -103,7 +103,7 @@ def seed_demo(store: Store, data_root: Path) -> dict:
     repo.bind_characters(store, seg3, [lin])
     repo.bind_props(store, seg3, [jade])
     add_host(store, label="假云机", ssh_host="fake.local", ssh_port=1, ssh_user="root", key_ref="C:/fake/key",
-             local_port=8188, vram_gb=24.0, models_dir="/fake/models")
+             local_port=8188, vram_gb=24.0, models_dir="/fake/models", gpu="RTX 4090")
     return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2, "photo": photo, "lin": lin,
             "episode2": ep2, "segment3": seg3}
 
@@ -232,6 +232,9 @@ def run(out_dir: Path) -> dict:
                     ("frames:episode2", "生成尾帧(首尾帧模式)", {}, [f"#seg-{seg3} [data-generate-last-frame]"],
                      f"#seg-{seg3} [data-last-frame] img", 40),
                     ("hosts", "刷新节点清单", {}, ["[data-refresh-nodes]"], "[data-node-cache] code", 20),
+                    ("hosts", "改 GPU 型号(估时按它)", {},
+                     [lambda pg: pg.locator("[data-host-gpu] select").select_option("RTX 4080 SUPER"), "[data-host-gpu] button"],
+                     '[data-host-gpu] option[value="RTX 4080 SUPER"][selected]', 20),
                     ("frames", "在 ComfyUI 中编辑 → 画布里改种子 → 提交为新版本", {},
                      [f"#seg-{seg} [data-comfy-edit-link]", _canvas_ready, _set_widget("seed", 4242), "[data-submit]"],
                      "@[data-edit-ok]", 60),

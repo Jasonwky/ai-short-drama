@@ -8,6 +8,12 @@ from tools.drama.tasks import create_task, set_task_state, tasks_for
 from tools.gen.fill import confirm_fill, plan_fill
 
 
+def _host(store):
+    from tools.serve.hosts import add_host
+    add_host(store, label="a", ssh_host="h", ssh_port=1, ssh_user="root", key_ref="k", local_port=8188,
+             vram_gb=24.0, models_dir="/m", gpu="RTX 4090")
+
+
 def _seg(store, sample, number, **fields):
     sid = repo.add_segment(store, sample["episode"], number, scene_id=sample["yard"], duration_sec=8.0,
                            reference_mode="first",
@@ -31,12 +37,13 @@ def test_frames_are_sorted_into_four_kinds(store, sample):
     create_task(store, kind="image", target_type="segment", target_id=busy, model="m",
                 params={"writes": "first_frame_path"}, seed=1, prompt="p", refs=[])
 
+    _host(store)
     plan = plan_fill(store, "frames", sample["episode"])
     st = _status(plan)
     assert st["段落 1"] == ("has", "") and st["段落 2"] == ("todo", "") and st["段落 4"] == ("in_flight", "")
     assert st["段落 3"][0] == "blocked" and "未绑定场景" in st["段落 3"][1]
     assert [i.target_id for i in plan.todo] == [todo]
-    assert plan.summary().startswith("将提交 1 条首帧,约 0.01 小时") and "已有 1、在途 1、不能做 1" in plan.summary()
+    assert plan.summary().startswith("将提交 1 条首帧,约 0.01 小时(按 RTX 4090 估算)") and "已有 1、在途 1、不能做 1" in plan.summary()
 
 
 def test_confirm_uses_listed_targets_and_seeds_in_order(store, sample):
@@ -67,6 +74,7 @@ def test_failed_without_product_is_redone_but_failed_with_product_is_not(store, 
     t = create_task(store, kind="video", target_type="segment", target_id=sample["seg"], model="m", params={},
                     seed=1, prompt="p", refs=[])
     set_task_state(store, t, "failed", error="ComfyUI 执行失败")
+    _host(store)
     plan = plan_fill(store, "videos", sample["episode"])
     assert _status(plan)["段落 1"] == ("todo", "") and 0 < plan.est_seconds() < 3600
     repo.update(store, "segment", sample["seg"], video_path="videos/s1.mp4")
@@ -122,3 +130,9 @@ def test_in_flight_is_per_field_first_frame_does_not_block_the_last_frame(store,
                 last_image_prompt="@林小雨 站在 @老宅庭院 里,手里拿着 @玉佩")
     confirm_fill(store, "frames", sample["episode"], [("segment", sample["seg"])], base_seed=1)
     assert _status(plan_fill(store, "lastframes", sample["episode"]))["段落 1"] == ("todo", "")
+
+
+def test_no_card_registered_lists_the_work_without_a_number(store, sample):
+    repo.update(store, "segment", sample["seg"], video_path=None)
+    plan = plan_fill(store, "videos", sample["episode"])
+    assert plan.est_seconds() is None and plan.summary().startswith("将提交 1 条视频,无法估时:还没登记云机")

@@ -17,6 +17,7 @@ def _make_v1(path):
     s.conn.execute("DROP TABLE llm_run")          # v3 新增(触发器随表一起删)
     s.conn.execute("DROP TABLE export")           # v4 新增
     s.conn.execute("DROP TABLE setting")
+    s.conn.execute("ALTER TABLE host DROP COLUMN gpu")                         # v8 新增
     s.conn.execute("DROP TABLE workflow_preset_active")                       # v7 新增
     s.conn.execute("DROP TABLE workflow_preset")
     s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")        # v6 新增
@@ -65,6 +66,7 @@ def test_v4_llm_run_is_rebuilt_to_allow_scene_and_prop_targets(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):
         runs.start(s, task="describe", target_type="scene", target_id=1, model="m", input_sha="x", llm_mode="real",
                    params={})
+    s.conn.execute("ALTER TABLE host DROP COLUMN gpu")                         # v8 新增
     s.conn.execute("DROP TABLE workflow_preset_active")                       # v7 新增
     s.conn.execute("DROP TABLE workflow_preset")
     s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")        # v6 新增
@@ -87,6 +89,7 @@ def test_v5_database_gains_fourview_and_last_frame_prompt(tmp_path):
     s = Store(path)
     d = repo.create_drama(s, "玉佩", "9:16")
     lin = repo.add_character(s, d, "林小雨", turnaround_path="assets/lin.png")
+    s.conn.execute("ALTER TABLE host DROP COLUMN gpu")                         # v8 新增
     s.conn.execute("DROP TABLE workflow_preset_active")                       # v7 新增
     s.conn.execute("DROP TABLE workflow_preset")
     s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")
@@ -112,6 +115,7 @@ def test_v6_database_gains_preset_tables_and_presets_are_immutable(tmp_path):
 
     path = tmp_path / "drama.db"
     s = Store(path)
+    s.conn.execute("ALTER TABLE host DROP COLUMN gpu")
     s.conn.execute("DROP TABLE workflow_preset_active")
     s.conn.execute("DROP TABLE workflow_preset")
     s.conn.execute("UPDATE meta SET value = '6' WHERE key = 'schema_version'")
@@ -125,4 +129,25 @@ def test_v6_database_gains_preset_tables_and_presets_are_immutable(tmp_path):
         s.conn.execute("DELETE FROM workflow_preset")
     with pytest.raises(sqlite3.IntegrityError):
         s.conn.execute("INSERT INTO workflow_preset_active (category) VALUES ('music')")
+    s.close()
+
+
+def test_v7_hosts_gain_an_unregistered_gpu(tmp_path):
+    """v8:云机登记卡的型号(估时按卡算)。旧云机没有型号 = 无法估时,不猜。"""
+    from tools.gen import estimate
+    from tools.serve.hosts import add_host, get_host, set_gpu
+
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    hid = add_host(s, label="4090", ssh_host="h", ssh_port=1, ssh_user="root", key_ref="k", local_port=8188,
+                   vram_gb=24.0, models_dir="/m")
+    s.conn.execute("ALTER TABLE host DROP COLUMN gpu")
+    s.conn.execute("UPDATE meta SET value = '7' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    assert get_host(s, hid).ssh_port == 1 and get_host(s, hid).gpu is None
+    assert estimate.basis(s).timing is None
+    set_gpu(s, hid, "RTX 4090")
+    assert estimate.basis(s).note == "按 RTX 4090 估算"
     s.close()
