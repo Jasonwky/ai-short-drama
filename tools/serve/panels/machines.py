@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
+from tools.gen import nodecache
 from tools.serve import journal
 from tools.serve.hosts import add_host, get_host, set_ssh_port
 from tools.serve.panels.common import render, rt
@@ -21,7 +22,7 @@ def page(request: Request):
     runtime = rt(request)
     hosts = [{"host": get_host(runtime.store, hid), "status": runtime.status.get(hid)} for hid in runtime.host_ids()]
     return render(request, "hosts.html", "hosts", hosts=hosts, log=journal.tail(runtime.data_root, 40),
-                  last_error=runtime.last_error)
+                  last_error=runtime.last_error, nodes=nodecache.meta(runtime.data_root))
 
 
 @router.post("/hosts")
@@ -30,6 +31,13 @@ def add(request: Request, label: str = Form(...), ssh_host: str = Form(...), ssh
         vram_gb: float = Form(24.0), models_dir: str = Form(...)):
     add_host(rt(request).store, label=label, ssh_host=ssh_host, ssh_port=ssh_port, ssh_user=ssh_user,
              key_ref=key_ref, local_port=local_port, vram_gb=vram_gb, models_dir=models_dir)
+    return RedirectResponse("/hosts", status_code=303)
+
+
+@router.post("/host/{host_id}/object_info")
+def refresh_nodes(request: Request, host_id: int):
+    """抓一份云机的节点清单存本机 —— 关机后编辑工作流靠它。"""
+    rt(request).refresh_object_info(host_id)
     return RedirectResponse("/hosts", status_code=303)
 
 

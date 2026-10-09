@@ -83,6 +83,14 @@ class ComfyClient:
     def system_stats(self) -> dict:
         return self._request("/system_stats")
 
+    def object_info(self) -> dict:
+        """节点清单(约 2.5 MB,1370 个节点类型):给工作流编辑的离线缓存用。"""
+        old, self.timeout = self.timeout, max(self.timeout, 120)
+        try:
+            return self._request("/object_info")
+        finally:
+            self.timeout = old
+
     def vram_free_gb(self) -> float:
         """第一块卡的剩余显存(GiB),取自 /system_stats。"""
         return self.system_stats()["devices"][0]["vram_free"] / 2 ** 30

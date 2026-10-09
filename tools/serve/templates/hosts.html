@@ -16,10 +16,22 @@
       <div><label>SSH 端口(AutoDL 每次开机都会变)</label><input type="number" name="ssh_port" value="{{ h.host.ssh_port }}"></div>
       <div><button class="btn" type="submit">改端口</button></div>
     </form>
+    <form method="post" action="/host/{{ h.host.id }}/object_info">
+      <button class="btn" type="submit" data-refresh-nodes>刷新节点清单</button>
+    </form>
   </section>
 {% else %}
   <section class="card empty">还没有登记云机</section>
 {% endfor %}
+<section class="card" data-node-cache>
+  <h2>节点清单缓存(离线编辑工作流用)</h2>
+  {% if nodes %}
+    <p class="hint"><code>{{ nodes.fetched_at }}</code> 抓自 {{ nodes.host }} · {{ nodes.node_types }} 个节点类型 ·
+      云机 ComfyUI <code>{{ nodes.comfyui_version }}</code>,要求前端 <code>{{ nodes.required_frontend_version }}</code></p>
+  {% else %}
+    <p class="empty">还没抓过 —— 云机开着时点上面的「刷新节点清单」;之后云机关机也能编辑工作流</p>
+  {% endif %}
+</section>
 <section class="card">
   <h2>登记云机</h2>
   <form method="post" action="/hosts" data-add-host>

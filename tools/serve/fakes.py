@@ -15,6 +15,8 @@ from pathlib import Path
 from tools.gen.assets import _png
 from tools.gen.comfy_client import ComfyClient, ComfyError, ComfyUnreachable
 
+OBJECT_INFO_MIN = Path(__file__).with_name("fixtures") / "object_info_min.json"
+
 
 class FakeComfy:
     def __init__(self):
@@ -59,6 +61,16 @@ class FakeComfy:
     def vram_free_gb(self):
         self._up()
         return self.vram_gb
+
+    def object_info(self):
+        """真实节点清单的瘦身版(2026-10-08 抓自云机,只留我们会用到的节点)。"""
+        self._up()
+        return json.loads(OBJECT_INFO_MIN.read_text(encoding="utf-8"))
+
+    def system_stats(self):
+        self._up()
+        return {"system": {"comfyui_version": "0.34.0", "required_frontend_version": "1.51.9"},
+                "devices": [{"name": "fake", "vram_free": int(self.vram_gb * 2 ** 30)}]}
 
     def free_models(self):
         self._up()

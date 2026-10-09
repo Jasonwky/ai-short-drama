@@ -21,7 +21,7 @@ from pathlib import Path
 
 from tools.cut import export
 from tools.drama.db import Store
-from tools.gen import preflight
+from tools.gen import nodecache, preflight
 from tools.gen.comfy_client import ComfyClient, ComfyUnreachable
 from tools.llm import runs, service
 from tools.llm.client import ChatClient, LLMUnavailable, read_key
@@ -104,10 +104,33 @@ class Runtime:
                                                 client_for=b.client_for, tunnel=b.tunnel, run_for=b.run_for,
                                                 align_for=b.align_for)
             lines = journal.append(self.data_root, w.tick(), prefix=f"host={hid} ")
-            st = probe(get_host(self.store, hid), self.backend)
+            host = get_host(self.store, hid)
+            st = probe(host, self.backend)
+            if st.comfy_ok and nodecache.stale(nodecache.meta(self.data_root)):
+                lines += self._refresh_nodes(host)        # 云机连通、节点清单超过一天:顺手刷新离线编辑用的缓存
             st.last_tick = time.strftime("%H:%M:%S")
             st.last_lines = lines
             self.status[hid] = st
+
+    def _refresh_nodes(self, host: Host) -> list[str]:
+        try:
+            m = nodecache.refresh(self.data_root, self.backend.client_for(host), host.label)
+        except ComfyUnreachable as e:
+            return journal.append(self.data_root, [f"节点清单刷新失败:{e}"], prefix=f"host={host.id} ")
+        return journal.append(self.data_root, [f"节点清单已刷新:{m['node_types']} 个节点类型,"
+                                               f"云机要求前端 {m['required_frontend_version']}"], prefix=f"host={host.id} ")
+
+    def refresh_object_info(self, host_id: int) -> dict:
+        """主机面板「刷新节点清单」。隧道没通 / 连不上 ComfyUI 当场报错(400),不写半份缓存。"""
+        host = get_host(self.store, host_id)
+        if not self.backend.tunnel.ensure(host):
+            raise ValueError(f"隧道未通(本机端口 {host.local_port})—— 先开云机、确认 SSH 端口")
+        try:
+            m = nodecache.refresh(self.data_root, self.backend.client_for(host), host.label)
+        except ComfyUnreachable as e:
+            raise ValueError(f"连不上云机的 ComfyUI:{e}") from e
+        journal.append(self.data_root, [f"节点清单已刷新:{m['node_types']} 个节点类型"], prefix=f"host={host_id} ")
+        return m
 
     def any_host_ready(self) -> tuple[bool, str]:
         if not self.status:
