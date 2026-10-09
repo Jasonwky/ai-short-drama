@@ -50,6 +50,7 @@ KEY_SELECTOR = {
     "frames": "[data-generate-frame]",
     "videos": "[data-readiness] .checklist",
     "final": "[data-export-form]",
+    "workflows": "[data-preset-category]",
     "hosts": "[data-host-status]",
 }
 

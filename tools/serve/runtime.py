@@ -87,6 +87,7 @@ class Runtime:
         self._llm_jobs: list[Future] = []
         self._cut_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="drama-cut")
         self._cut_jobs: list[Future] = []
+        self.frontend_job: dict | None = None    # 「下载前端」的后台任务状态(工作流面板上显示)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -131,6 +132,22 @@ class Runtime:
             raise ValueError(f"连不上云机的 ComfyUI:{e}") from e
         journal.append(self.data_root, [f"节点清单已刷新:{m['node_types']} 个节点类型"], prefix=f"host={host_id} ")
         return m
+
+    def start_frontend_install(self, root) -> None:
+        """后台下载 ComfyUI 前端(约 22 MB,核 sha256)。同时只跑一个。"""
+        from tools.gen import frontend
+        if self.frontend_job and self.frontend_job["state"] == "running":
+            raise ValueError("前端正在下载,别重复点")
+        self.frontend_job = {"state": "running", "message": f"正在下载前端 {frontend.VERSION}"}
+
+        def job():
+            try:
+                d = frontend.install(root)
+                self.frontend_job = {"state": "done", "message": f"已安装到 {d}"}
+            except Exception as e:         # 不吞:失败原因显示在面板上、进 journal
+                self.frontend_job = {"state": "failed", "message": f"{type(e).__name__}: {e}"}
+            journal.append(self.data_root, [f"下载前端:{self.frontend_job['message']}"], prefix="runtime ")
+        threading.Thread(target=job, name="drama-frontend", daemon=True).start()
 
     def any_host_ready(self) -> tuple[bool, str]:
         if not self.status:

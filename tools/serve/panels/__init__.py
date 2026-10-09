@@ -27,6 +27,7 @@ REGISTRY: tuple[Panel, ...] = (
     Panel("frames", "参考帧", "episode", "/episode/{episode_id}/frames"),
     Panel("videos", "视频", "episode", "/episode/{episode_id}/videos"),
     Panel("final", "成片", "episode", "/episode/{episode_id}/final"),
+    Panel("workflows", "工作流", "global", "/workflows"),
     Panel("hosts", "主机", "global", "/hosts"),
 )
 

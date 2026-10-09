@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>工作流</h1>
+<p class="hint">每类生成的工作流模板可以在 ComfyUI 画布里改(采样器、步数、加节点……),存成有版本的预设;设为「当前」后,之后新规划的任务都按它拼。
+  提示词、参考图、种子、尺寸 / 帧数、锚点由控制台每次填,画布里改了不算。云机关着也能改(用本机缓存的节点清单)。</p>
+
+<section class="card" data-editor-status>
+  <h2>编辑器</h2>
+  <ul class="checklist">
+    {% if frontend_dir %}<li class="ok">ComfyUI 前端 <code>{{ frontend_version }}</code> 已在本机(GPL-3.0,不进仓库)</li>
+    {% else %}<li class="bad">本机还没有 ComfyUI 前端 <code>{{ frontend_version }}</code>(约 22 MB,下载后核 sha256)</li>{% endif %}
+    {% if nodes %}<li class="ok">节点清单:<code>{{ nodes.fetched_at }}</code> 抓自 {{ nodes.host }},{{ nodes.node_types }} 个节点类型</li>
+    {% else %}<li class="bad">还没有节点清单缓存 —— 云机开着时去「主机」面板点「刷新节点清单」</li>{% endif %}
+    {% if frontend_job %}<li class="{{ 'ok' if frontend_job.state == 'done' else ('bad' if frontend_job.state == 'failed' else 'warn') }}" data-frontend-job>{{ frontend_job.message }}</li>{% endif %}
+  </ul>
+  {% if not frontend_dir %}
+    <form method="post" action="/workflows/frontend"><button class="btn primary" type="submit" data-install-frontend>下载前端</button></form>
+  {% endif %}
+</section>
+
+{% for c in cats %}
+  <section class="card" data-preset-category="{{ c.key }}">
+    <h2>{{ c.label }}
+      <span class="tag">当前:{{ ("v" ~ c.active.version) if c.active else "内置" }}</span>
+      <a class="btn small" href="/comfy-edit/preset/{{ c.key }}" data-edit-preset>在 ComfyUI 中编辑</a></h2>
+    {% if c.versions %}
+      <table>
+        <tr><th>版本</th><th>相对内置的改动</th><th>说明</th><th>时间</th><th></th></tr>
+        {% for v in c.versions | reverse %}
+          <tr data-preset-version="{{ v.row.version }}">
+            <td><code>v{{ v.row.version }}</code>{% if c.active and c.active.id == v.row.id %} <span class="tag">当前</span>{% endif %}</td>
+            <td>{% for line in v.lines %}<div><code>{{ line }}</code></div>{% endfor %}</td>
+            <td>{{ v.row.note }}</td>
+            <td><code>{{ v.row.created_at }}</code></td>
+            <td>{% if not (c.active and c.active.id == v.row.id) %}
+              <form method="post" action="/workflows/{{ c.key }}/activate"><input type="hidden" name="preset_id" value="{{ v.row.id }}">
+                <button class="btn small" type="submit" data-activate>设为当前</button></form>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </table>
+      {% if c.active %}
+        <form method="post" action="/workflows/{{ c.key }}/activate"><input type="hidden" name="preset_id" value="">
+          <button class="btn small" type="submit">回到内置模板</button></form>
+      {% endif %}
+    {% else %}<p class="empty">还没有预设,用的是内置模板</p>{% endif %}
+  </section>
+{% endfor %}
+
+<section class="card">
+  <h2>模型白名单</h2>
+  <p class="hint">工作流里出现的每个模型文件都必须在这张表里(共用云机上别的项目的模型,例如非商用的 flux1-dev,提交时会被拦下)。
+    要用新模型:改 <code>tools/gen/capability.py</code> 的 <code>ALLOWED_MODELS</code>,许可证一栏必填。</p>
+  <table>
+    <tr><th>文件</th><th>用途</th><th>许可证</th></tr>
+    {% for m in models %}<tr><td><code>{{ m.name }}</code></td><td>{{ m.use }}</td><td>{{ m.license }}</td></tr>{% endfor %}
+  </table>
+</section>
+{% endblock %}

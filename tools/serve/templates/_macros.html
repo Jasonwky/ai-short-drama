@@ -17,6 +17,7 @@
         {% if t.result_path and t.result_path == current %}<span class="tag">当前版</span>{% endif %}
       </div>
       {% if t.error %}<div class="err" data-task-error>{{ t.error }}</div>{% endif %}
+      {% if comfy_link(t) %}<a class="btn small" href="{{ comfy_link(t) }}" data-comfy-edit-link>在 ComfyUI 中编辑</a>{% endif %}
       {% if t.state == "done" and t.result_path != current %}
         <form method="post" action="/task/{{ t.id }}/pick">
           <input type="hidden" name="next" value="{{ next_url }}">

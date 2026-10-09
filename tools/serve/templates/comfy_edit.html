@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card" data-comfy-edit data-mode="{{ mode }}" data-action="{{ action }}" data-token="{{ token }}">
+  <h2>{{ title }} <a class="btn small" href="{{ back }}">← 返回</a></h2>
+  <p class="hint">节点清单:<code>{{ nodes.fetched_at }}</code> 抓自 {{ nodes.host }}(提交时云机在线会再用实时清单核一次)。
+    {% if mode == "task" %}提示词、参考图、尺寸、帧数、锚点归控制台,画布里不能改;种子、采样参数、加减节点可以改。
+    {% else %}参考图是占位图(标红正常);提示词、参考图、种子、尺寸、锚点用时由控制台填。{% endif %}
+    画布里的「运行」不会提交 —— 用下面的按钮。</p>
+  {% if rebuilt %}<p class="status-bad">这条任务没有存下当时提交的工作流(老任务),下面是按当前代码重建的,可能与当时不同。</p>{% endif %}
+  <div class="row">
+    {% if mode == "preset" %}<div style="flex:1;min-width:260px"><label>这一版的说明</label><input type="text" data-note></div>{% endif %}
+    <div><button class="btn primary" type="button" data-submit>{{ "提交为新版本" if mode == "task" else "检查并预览改动" }}</button></div>
+  </div>
+  <div data-edit-result></div>
+</section>
+<script type="application/json" data-graph>{{ graph | tojson }}</script>
+<iframe src="/comfy/" data-comfy-frame title="ComfyUI" style="width:100%;height:78vh;border:1px solid var(--line);background:var(--ink)"></iframe>
+<script src="/static/comfy_edit.js" defer></script>
+{% endblock %}
