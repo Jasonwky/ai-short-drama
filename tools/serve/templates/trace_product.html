@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_trace.html" import preview, llm_sources, siblings %}
+{% block content %}
+<h1>倒查 <code>{{ tree.path }}</code></h1>
+<p class="hint">从这个产物往回追:谁产出它、用了哪些参考,一层层到素材。每个文件都核对 sha256 与生成记录 ——
+  <span class="status-bad">红</span> = 文件被替换过,灰 = 不在本机,「人工提供」= 没有生成记录(上传的原始素材或导入的工程)。
+  「确证」= 文字逐字出现在提示词里;「按时间推断」= 任务创建前最近一次批准的。</p>
+{% macro node(n) %}
+  <div class="card" data-node="{{ n.status }}" style="margin-left: 0">
+    <div class="row">
+      <div style="min-width: 180px">{% if n.status != "missing" %}{{ preview(n.path) }}{% else %}<p class="empty">文件不在本机</p>{% endif %}</div>
+      <div style="flex: 1">
+        <p><code>{{ n.path }}</code>
+          {% if n.status == "mismatch" %}<span class="tag status-bad">文件与生成记录的 sha256 不一致(被替换过)</span>
+          {% elif n.status == "missing" %}<span class="tag">不在本机</span>
+          {% elif n.status == "manual" %}<span class="tag">人工提供或导入的素材,没有生成记录</span>{% endif %}</p>
+        {% if n.task %}
+          <p><a href="/task/{{ n.task.id }}" data-node-task>task {{ n.task.id }}</a> · {{ n.target }} · {{ n.task.model }} · 种子 {{ n.task.seed }}
+            · {{ n.task.host }} · 创建 <span title="{{ n.task.created_at }}">{{ n.task.created_at | bj }}</span>
+            {% if n.started_at %}· 开跑 <span title="{{ n.started_at }}">{{ n.started_at | bj }}</span>{% endif %}
+            · 完成 <span title="{{ n.task.finished_at }}">{{ n.task.finished_at | bj }}</span></p>
+          <details><summary class="hint">提示词</summary><p>{{ n.task.prompt }}</p></details>
+          {{ llm_sources(n.llm) }}
+          {{ siblings(n.siblings) }}
+        {% endif %}
+      </div>
+    </div>
+    {% if n.inputs %}<div style="margin-left: 32px; border-left: 2px solid #ccc; padding-left: 12px" data-node-inputs>
+      {% for i in n.inputs %}{{ node(i) }}{% endfor %}</div>{% endif %}
+  </div>
+{% endmacro %}
+<div data-trace-tree>{{ node(tree) }}</div>
+{% endblock %}

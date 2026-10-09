@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_trace.html" import preview, llm_sources, siblings %}
+{% block content %}
+{% set t = v.row %}
+<h1>task {{ t.id }} <span class="tag">{{ state_label[t.state] }}</span></h1>
+<p class="hint">{{ v.target }} · {{ t.kind }} · {{ t.model }} · 种子 {{ t.seed }}{% if t.external_id %} · 云机任务号 <code>{{ t.external_id }}</code>{% endif %}</p>
+{% if t.error %}<section class="card refused"><p class="reason" data-task-error>{{ t.error }}</p></section>{% endif %}
+
+<section class="card" data-task-detail>
+  <div class="row">
+    {% if t.result_path %}<div style="min-width: 200px">{{ preview(t.result_path) }}
+      <p><a class="btn small" href="/trace/product?path={{ t.result_path | urlencode }}" data-trace-link>倒查这个产物</a></p></div>{% endif %}
+    <div style="flex: 1">
+      <table>
+        <tr><th>创建</th><td><code title="{{ t.created_at }}">{{ t.created_at | bj }}</code></td></tr>
+        <tr><th>开跑</th><td>{% if t.started_at %}<code title="{{ t.started_at }}">{{ t.started_at | bj }}</code>{% else %}没看到(可能在两次轮询之间就跑完了){% endif %}</td></tr>
+        <tr><th>完成</th><td>{% if t.finished_at %}<code title="{{ t.finished_at }}">{{ t.finished_at | bj }}</code>{% endif %}</td></tr>
+        <tr><th>进入当前状态</th><td><code title="{{ t.state_since }}">{{ t.state_since | bj }}</code></td></tr>
+        <tr><th>产物</th><td>{% if t.result_path %}<code>{{ t.result_path }}</code> · sha256 <code>{{ (t.result_sha256 or "")[:16] }}</code>{% endif %}</td></tr>
+      </table>
+      {{ llm_sources(v.llm) }}
+      {{ siblings(v.siblings) }}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>提示词</h2>
+  <p data-task-prompt>{{ t.prompt }}</p>
+  <h2>参考</h2>
+  {% for r in v.refs %}<div>{% if r.exists %}<a href="/trace/product?path={{ r.path | urlencode }}"><code>{{ r.path }}</code></a>
+    {% else %}<code>{{ r.path }}</code> <span class="tag">不在本机</span>{% endif %}</div>
+  {% else %}<p class="empty">没有参考</p>{% endfor %}
+  <h2>参数</h2>
+  <pre class="log" data-task-params>{{ v.params | tojson(indent=1) }}</pre>
+</section>
+
+<section class="card">
+  <h2>实际提交给云机的工作流</h2>
+  {% if v.submitted %}<details><summary class="hint">outputs/tasks/{{ t.id }}/workflow.json</summary><pre class="log">{{ v.submitted }}</pre></details>
+    {% if comfy_link(t) %}<a class="btn small" href="{{ comfy_link(t) }}">在 ComfyUI 中编辑</a>{% endif %}
+  {% else %}<p class="empty">没有(本机生成的、没提交成功的、或 P10 之前提交的)</p>{% endif %}
+</section>
+
+<section class="card" data-task-journal>
+  <h2>流水里提到它的行</h2>
+  {% if v.journal.more %}<p class="hint">还有 {{ v.journal.more }} 条更早的没显示</p>{% endif %}
+  <pre class="log">{% for line in v.journal.lines %}{% for text, href in journal_links(line) %}{% if href %}<a href="{{ href }}">{{ text }}</a>{% else %}{{ text }}{% endif %}{% endfor %}
+{% else %}流水里没有提到它{% endfor %}</pre>
+</section>
+{% endblock %}

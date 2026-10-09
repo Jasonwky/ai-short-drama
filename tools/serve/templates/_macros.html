@@ -13,9 +13,10 @@
         {% endif %}
       {% endif %}
       <div class="meta">
-        #{{ t.id }} · 种子 {{ t.seed }} · <b>{{ state_label[t.state] }}</b>
+        <a href="/task/{{ t.id }}" data-task-link>#{{ t.id }}</a> · 种子 {{ t.seed }} · <b>{{ state_label[t.state] }}</b>
         {% if t.result_path and t.result_path == current %}<span class="tag">当前版</span>{% endif %}
       </div>
+      {% if t.result_path %}<a class="btn small" href="/trace/product?path={{ t.result_path | urlencode }}" data-trace-link>溯源</a>{% endif %}
       {% if t.error %}<div class="err" data-task-error>{{ t.error }}</div>{% endif %}
       {% if comfy_link(t) %}<a class="btn small" href="{{ comfy_link(t) }}" data-comfy-edit-link>在 ComfyUI 中编辑</a>{% endif %}
       {% if t.state == "done" and t.result_path != current %}

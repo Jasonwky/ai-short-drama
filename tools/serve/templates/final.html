@@ -57,7 +57,8 @@
           <div><label>无显式标识版</label><video src="/media/{{ e.row.plain_path }}" controls preload="metadata" style="max-height: 360px"></video></div>
         </div>
         <p><a href="/media/{{ e.row.report_path }}" target="_blank">溯源报告(JSON)</a> ·
-           <a href="/media/{{ e.row.report_path[:-5] }}.md" target="_blank">溯源报告(Markdown)</a></p>
+           <a href="/media/{{ e.row.report_path[:-5] }}.md" target="_blank">溯源报告(Markdown)</a> ·
+           <a href="/trace/export/{{ e.row.id }}" data-export-trace>在控制台里看</a></p>
       {% endif %}
     </div>
   {% else %}

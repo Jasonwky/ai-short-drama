@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "_trace.html" import preview %}
+{% block content %}
+<h1>成片导出 #{{ v.row.id }} <code>{{ v.row.produce_id }}</code></h1>
+<p class="hint">成片不重新追:下面是<b>导出时的溯源报告</b>(当时的快照,也是备案材料),再标出之后换过的。
+  状态 <b>{{ v.row.state }}</b> · 开始 <span title="{{ v.row.created_at }}">{{ v.row.created_at | bj }}</span>
+  {% if v.row.finished_at %}· 结束 <span title="{{ v.row.finished_at }}">{{ v.row.finished_at | bj }}</span>{% endif %}</p>
+{% if v.row.error %}<section class="card refused"><p class="reason">{{ v.row.error }}</p></section>{% endif %}
+{% if not v.report %}
+  <section class="card"><p class="empty">没有溯源报告(导出没跑完或失败)</p></section>
+{% else %}
+  <section class="card" data-export-changed>
+    <h2>导出之后换过的</h2>
+    {% if v.changed %}<ul class="checklist">{% for c in v.changed %}<li class="bad">{{ c }}</li>{% endfor %}</ul>
+    {% else %}<p class="status-ok">没有 —— 现在的文件与导出时一致</p>{% endif %}
+  </section>
+  {% macro node(n) %}
+    <div style="margin-left: 16px">
+      <p><code>{{ n.path }}</code> · sha256 <code>{{ (n.sha256 or "缺失")[:16] }}</code>
+        {% if n.task %}· <a href="/task/{{ n.task.id }}">task {{ n.task.id }}</a> · {{ n.task.model }} · 种子 {{ n.task.seed }} · {{ n.task.host }}
+        {% else %}· 人工提供{% endif %}</p>
+      {% for i in n.inputs %}{{ node(i) }}{% endfor %}
+    </div>
+  {% endmacro %}
+  {% for s in v.report.segments %}
+    <section class="card" data-export-segment="{{ s.number }}">
+      <h2>段落 {{ s.number }}({{ s.duration_sec }} 秒)</h2>
+      <p class="hint">{{ s.description }}</p>
+      {{ node(s.video) }}
+      {% if s.subtitles %}<p class="hint">字幕:</p>{{ node(s.subtitles) }}{% endif %}
+    </section>
+  {% endfor %}
+  <p><a href="/media/{{ v.row.report_path }}" target="_blank">溯源报告原文(JSON)</a></p>
+{% endif %}
+{% endblock %}

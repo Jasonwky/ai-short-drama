@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>留痕</h1>
+<p class="hint">控制台与 worker 做过的事:失败归类、时间线(来自任务 / LLM / 导出 / 预设四张表)、原始流水(<code>journal/worker.log</code>)。
+  时间按北京时间显示,悬停看库里的原始 UTC。验收脚本自己的失败不进库,看验收报告。从某张图 / 某条视频倒查,点各面板生成记录里的「溯源」。</p>
+
+<form method="get" action="/trace" class="card" data-trace-filters>
+  {% if drama %}<input type="hidden" name="d" value="{{ drama.id }}">{% endif %}
+  <div class="row">
+    {% if episodes %}<div><label>集</label><select name="ep"><option value="">全部</option>
+      {% for e in episodes %}<option value="{{ e.id }}" {% if flt.episode_id == e.id %}selected{% endif %}>第 {{ e.number }} 集</option>{% endfor %}</select></div>{% endif %}
+    <div><label>云机(选了只剩任务事件:只有任务经云机)</label><select name="host"><option value="">全部</option>
+      {% for h in hosts %}<option value="{{ h.id }}" {% if flt.host_id == h.id %}selected{% endif %}>{{ h.label }}</option>{% endfor %}</select></div>
+    <div><label>从(北京时间)</label><input type="datetime-local" name="since" value="{{ q.get('since', '') }}"></div>
+    <div><label>到</label><input type="datetime-local" name="until" value="{{ q.get('until', '') }}"></div>
+  </div>
+  <div class="row">
+    <div><label>类型</label>
+      {% for k, label in kinds.items() %}<label style="display: inline; margin-right: 12px"><input type="checkbox" name="kind" value="{{ k }}"
+        {% if k in flt.kinds %}checked{% endif %} data-kind="{{ k }}"> {{ label }}</label>{% endfor %}</div>
+    <div><label style="display: inline"><input type="checkbox" name="failed" value="1" {% if flt.failed_only %}checked{% endif %} data-failed-only> 只看失败</label></div>
+    <div><button class="btn primary" type="submit" data-trace-apply>筛选</button>
+      <a class="btn" href="/trace{% if drama %}?d={{ drama.id }}{% endif %}">清空</a></div>
+  </div>
+  <p class="hint">{% if drama %}只看《{{ drama.title }}》(全局的模板预设也显示;归属不明的不显示){% else %}全部剧(含「归属不明」:段落已删、顺着参考图也追不到的){% endif %}</p>
+</form>
+
+<section class="card" data-trace-failures>
+  <h2>失败归类</h2>
+  {% if groups %}
+    <table>
+      <tr><th>原因</th><th>条数</th><th>最近一条</th></tr>
+      {% for g in groups %}
+        <tr data-failure-group="{{ g.key }}">
+          <td><details><summary><b>{{ g.key }}</b></summary>
+            {% for e in g.events %}<div class="hint"><span title="{{ e.at }}">{{ e.at | bj }}</span> · <a href="{{ e.href }}">{{ e.label }}</a><br>{{ e.error }}</div>{% endfor %}
+          </details></td>
+          <td>{{ g.count }}</td>
+          <td><span title="{{ g.latest.at }}">{{ g.latest.at | bj }}</span> · <a href="{{ g.latest.href }}">{{ g.latest.label }}</a></td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% else %}<p class="empty">还没有失败</p>{% endif %}
+</section>
+
+<section class="card" data-trace-timeline>
+  <h2>时间线 <span class="tag">{{ total }} 条</span></h2>
+  {% if events %}
+    <table>
+      <tr><th>时间</th><th>动作</th><th>对象</th><th></th></tr>
+      {% for e in events %}
+        <tr data-event="{{ e.kind }}" data-action="{{ e.action }}" {% if e.failed %}class="status-bad"{% endif %}>
+          <td><code title="{{ e.at }}">{{ e.at | bj }}</code></td>
+          <td><b>{{ e.action }}</b></td>
+          <td><a href="{{ e.href }}">{{ e.label }}</a>
+            {% if e.is_global %}<span class="tag">全局</span>{% endif %}{% if e.unattributed %}<span class="tag">归属不明</span>{% endif %}
+            {% if e.error %}<div class="err">{{ e.error }}</div>{% endif %}</td>
+          <td>{{ kinds[e.kind] }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+    {% if pages > 1 %}<p class="hint">第 {{ page }} / {{ pages }} 页 ·
+      {% if page > 1 %}<a href="?{{ qs }}&page={{ page - 1 }}">上一页</a>{% endif %}
+      {% if page < pages %}<a href="?{{ qs }}&page={{ page + 1 }}">下一页</a>{% endif %}</p>{% endif %}
+  {% else %}<p class="empty">没有符合条件的事件</p>{% endif %}
+</section>
+
+<section class="card" data-journal-raw>
+  <h2>原始流水</h2>
+  <form method="get" action="/trace" class="row">
+    {% for k, v in q.multi_items() if k != "prefix" and k != "page" %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <div><label>前缀</label><select name="prefix">
+      {% for k, label in prefixes.items() %}<option value="{{ k }}" {% if k == prefix %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div><button class="btn" type="submit">过滤</button></div>
+  </form>
+  {% if raw.more %}<p class="hint">还有 {{ raw.more }} 条更早的没显示 —— 缩小时间段</p>{% endif %}
+  <pre class="log">{% for line in raw.lines %}{% for text, href in journal_links(line) %}{% if href %}<a href="{{ href }}">{{ text }}</a>{% else %}{{ text }}{% endif %}{% endfor %}
+{% else %}还没有流水{% endfor %}</pre>
+</section>
+{% endblock %}

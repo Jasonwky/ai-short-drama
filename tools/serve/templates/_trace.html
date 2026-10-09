@@ -1,0 +1,20 @@
+{# 留痕共用:产物预览、LLM 来源、其它尝试 #}
+{% macro preview(path) %}
+  {% if path.endswith(".mp4") %}<video src="/media/{{ path }}" controls preload="metadata" style="max-height: 220px"></video>
+  {% elif path.endswith(".srt") %}<a href="/media/{{ path }}" target="_blank">字幕文件(SRT)</a>
+  {% else %}<a href="/media/{{ path }}" target="_blank"><img src="/media/{{ path }}" alt="{{ path }}" style="max-height: 160px"></a>{% endif %}
+{% endmacro %}
+
+{% macro llm_sources(items) %}
+  {% if items %}<div class="hint" data-llm-sources>文字来源:
+    {% for s in items %}<a href="{{ s.href }}">llm_run {{ s.run_id }} · {{ s.task }}</a>
+      <span class="tag">{{ s.how }}</span>{% if not loop.last %};{% endif %}{% endfor %}</div>{% endif %}
+{% endmacro %}
+
+{% macro siblings(items) %}
+  {% if items %}<details data-siblings><summary class="hint">同一目标的其它尝试({{ items | length }})</summary>
+    {% for x in items %}<div class="hint"><a href="/task/{{ x.id }}">task {{ x.id }}</a> <span class="tag">{{ x.note }}</span>
+      {% if x.result_path %}<a href="/trace/product?path={{ x.result_path | urlencode }}">{{ x.result_path }}</a>{% endif %}
+      {% if x.error %}<span class="status-bad">{{ x.error }}</span>{% endif %}</div>{% endfor %}
+  </details>{% endif %}
+{% endmacro %}

@@ -62,6 +62,7 @@ KEY_SELECTOR = {
     "final": "[data-export-form]",
     "workflows": "[data-preset-category]",
     "hosts": "[data-host-status]",
+    "trace": "[data-trace-filters]",
 }
 
 
