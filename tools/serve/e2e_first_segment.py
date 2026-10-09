@@ -124,23 +124,27 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
     seg, lin = build_drama(store, assets)
     host_id = add_host(store, **host)
     worker = make_worker(store, host_id, data_root)
-    report = {"segment": seg, "tasks": [], "preset": _use_frame_preset(store, worker, host_id, sleep)}
+    try:
+        report = {"segment": seg, "tasks": [], "preset": _use_frame_preset(store, worker, host_id, sleep)}
 
-    for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_fourview(store, lin, seed=seed + 2),
-                 lambda: plan_video(store, seg, seed=seed + 1), lambda: plan_align(store, seg)):
-        tid = plan()
-        state = run_until_final(worker, store, tid, timeout_sec=timeout_sec, sleep=sleep)
-        if state == "failed":
-            raise RuntimeError(f"task {tid} 失败:{repo.get(store, 'task', tid)['error']}")
-        report["tasks"].append(provenance(store, tid))
-    s = repo.get(store, "segment", seg)
-    report["first_frame_path"], report["video_path"] = s["first_frame_path"], s["video_path"]
-    report["subtitle_path"] = s["subtitle_path"]
-    report["fourview_path"] = repo.get(store, "character", lin)["fourview_path"]
-    submitted = json.loads((data_root / "outputs/tasks" / str(report["tasks"][0]["id"]) / SUBMITTED).read_text(encoding="utf-8"))
-    if submitted["submitted"]["27"]["inputs"]["scheduler"] != PRESET_SCHEDULER:
-        raise RuntimeError("首帧实际提交的工作流里没有叠上预设的改动")
-    (data_root / "provenance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_fourview(store, lin, seed=seed + 2),
+                     lambda: plan_video(store, seg, seed=seed + 1), lambda: plan_align(store, seg)):
+            tid = plan()
+            state = run_until_final(worker, store, tid, timeout_sec=timeout_sec, sleep=sleep)
+            if state == "failed":
+                raise RuntimeError(f"task {tid} 失败:{repo.get(store, 'task', tid)['error']}")
+            report["tasks"].append(provenance(store, tid))
+        s = repo.get(store, "segment", seg)
+        report["first_frame_path"], report["video_path"] = s["first_frame_path"], s["video_path"]
+        report["subtitle_path"] = s["subtitle_path"]
+        report["fourview_path"] = repo.get(store, "character", lin)["fourview_path"]
+        submitted = json.loads((data_root / "outputs/tasks" / str(report["tasks"][0]["id"]) / SUBMITTED).read_text(encoding="utf-8"))
+        if submitted["submitted"]["27"]["inputs"]["scheduler"] != PRESET_SCHEDULER:
+            raise RuntimeError("首帧实际提交的工作流里没有叠上预设的改动")
+        (data_root / "provenance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    finally:
+        # 隧道是脱离进程起的,不收就一直留着(两次验收后残留);只停本进程起的,接管来的 stop 碰不到
+        worker.tunnel.stop(host_id)
     return report
 
 

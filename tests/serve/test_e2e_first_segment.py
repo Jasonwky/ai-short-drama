@@ -113,3 +113,20 @@ def test_preset_step_gives_up_when_the_tunnel_never_comes_up(tmp_path, images):
     with pytest.raises(RuntimeError, match="隧道 60s 内没通"):
         run(tmp_path / "e2e", images, HOST, seed=5, timeout_sec=60,
             make_worker=_worker_with_tunnel(FakeComfy(), _SlowTunnel(up_after=10 ** 9)), sleep=lambda s: None)
+
+
+def test_stops_its_own_tunnel_when_done(tmp_path, images):
+    """隧道是脱离进程起的,不收就一直留着(2026-09-29、10-09 两次验收后残留,手工关的)。"""
+    comfy, tunnel = FakeComfy(), FakeTunnel()
+    run(tmp_path / "e2e", images, HOST, seed=5, timeout_sec=60,
+        make_worker=_worker_with_tunnel(comfy, tunnel), sleep=_gpu(comfy))
+    assert tunnel.stopped == [1]
+
+
+def test_stops_its_own_tunnel_when_the_chain_fails(tmp_path, images):
+    comfy, tunnel = FakeComfy(), FakeTunnel()
+    comfy.reject_next_submit = "unet_name not in list"
+    with pytest.raises(RuntimeError):
+        run(tmp_path / "e2e", images, HOST, seed=1, timeout_sec=60,
+            make_worker=_worker_with_tunnel(comfy, tunnel), sleep=_gpu(comfy))
+    assert tunnel.stopped == [1]
