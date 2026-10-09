@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -107,6 +107,9 @@ CREATE TABLE segment (
   last_frame_path TEXT,
   video_path TEXT,
   subtitle_path TEXT,
+  key_time_sec REAL,
+  key_image_prompt TEXT NOT NULL DEFAULT '',
+  key_frame_path TEXT,
   UNIQUE (episode_id, number)
 );
 
@@ -273,6 +276,10 @@ MIGRATIONS: dict[int, list[str]] = {
     6: PRESET_DDL,
     # v8:云机登记卡的型号(估时按卡算);旧云机为空 = 无法估时,到「主机」面板补登
     7: ["ALTER TABLE host ADD COLUMN gpu TEXT"],
+    # v9:中间关键帧(叠加在任何参考模式上;key_time_sec 为空 = 不用),spike-results/2026-10-09-中间关键帧锚定实测.md
+    8: ["ALTER TABLE segment ADD COLUMN key_time_sec REAL",
+        "ALTER TABLE segment ADD COLUMN key_image_prompt TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE segment ADD COLUMN key_frame_path TEXT"],
 }
 
 

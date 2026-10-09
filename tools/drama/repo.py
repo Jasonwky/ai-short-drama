@@ -22,7 +22,8 @@ _COLUMNS: dict[str, set[str]] = {
     # scene_id 不在这里:改场景要走 set_scene(),它会核对归属
     "segment": {"duration_sec", "shot_type", "angle", "movement", "description", "result",
                 "atmosphere", "layout", "image_prompt", "last_image_prompt", "video_prompt", "bgm_prompt", "sfx_prompt",
-                "reference_mode", "first_frame_path", "last_frame_path", "video_path", "subtitle_path"},
+                "reference_mode", "first_frame_path", "last_frame_path", "video_path", "subtitle_path",
+                "key_time_sec", "key_image_prompt", "key_frame_path"},
 }
 _READABLE = {"drama", "episode", "character", "scene", "prop", "segment", "task", "host"}
 

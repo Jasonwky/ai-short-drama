@@ -17,6 +17,9 @@ def _make_v1(path):
     s.conn.execute("DROP TABLE llm_run")          # v3 新增(触发器随表一起删)
     s.conn.execute("DROP TABLE export")           # v4 新增
     s.conn.execute("DROP TABLE setting")
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_time_sec")                # v9 新增
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_image_prompt")
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_frame_path")
     s.conn.execute("ALTER TABLE host DROP COLUMN gpu")                         # v8 新增
     s.conn.execute("DROP TABLE workflow_preset_active")                       # v7 新增
     s.conn.execute("DROP TABLE workflow_preset")
@@ -66,6 +69,9 @@ def test_v4_llm_run_is_rebuilt_to_allow_scene_and_prop_targets(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):
         runs.start(s, task="describe", target_type="scene", target_id=1, model="m", input_sha="x", llm_mode="real",
                    params={})
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_time_sec")                # v9 新增
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_image_prompt")
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_frame_path")
     s.conn.execute("ALTER TABLE host DROP COLUMN gpu")                         # v8 新增
     s.conn.execute("DROP TABLE workflow_preset_active")                       # v7 新增
     s.conn.execute("DROP TABLE workflow_preset")
@@ -89,6 +95,9 @@ def test_v5_database_gains_fourview_and_last_frame_prompt(tmp_path):
     s = Store(path)
     d = repo.create_drama(s, "玉佩", "9:16")
     lin = repo.add_character(s, d, "林小雨", turnaround_path="assets/lin.png")
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_time_sec")                # v9 新增
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_image_prompt")
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_frame_path")
     s.conn.execute("ALTER TABLE host DROP COLUMN gpu")                         # v8 新增
     s.conn.execute("DROP TABLE workflow_preset_active")                       # v7 新增
     s.conn.execute("DROP TABLE workflow_preset")
@@ -115,6 +124,9 @@ def test_v6_database_gains_preset_tables_and_presets_are_immutable(tmp_path):
 
     path = tmp_path / "drama.db"
     s = Store(path)
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_time_sec")                # v9 新增
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_image_prompt")
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_frame_path")
     s.conn.execute("ALTER TABLE host DROP COLUMN gpu")
     s.conn.execute("DROP TABLE workflow_preset_active")
     s.conn.execute("DROP TABLE workflow_preset")
@@ -141,6 +153,9 @@ def test_v7_hosts_gain_an_unregistered_gpu(tmp_path):
     s = Store(path)
     hid = add_host(s, label="4090", ssh_host="h", ssh_port=1, ssh_user="root", key_ref="k", local_port=8188,
                    vram_gb=24.0, models_dir="/m")
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_time_sec")                # v9 新增
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_image_prompt")
+    s.conn.execute("ALTER TABLE segment DROP COLUMN key_frame_path")
     s.conn.execute("ALTER TABLE host DROP COLUMN gpu")
     s.conn.execute("UPDATE meta SET value = '7' WHERE key = 'schema_version'")
     s.close()
@@ -150,4 +165,23 @@ def test_v7_hosts_gain_an_unregistered_gpu(tmp_path):
     assert estimate.basis(s).timing is None
     set_gpu(s, hid, "RTX 4090")
     assert estimate.basis(s).note == "按 RTX 4090 估算"
+    s.close()
+
+
+def test_v8_segments_gain_an_optional_keyframe(tmp_path):
+    """v9:段落可叠加一张中间关键帧(第几秒、提示词、当前图)。旧段落没有 = 不用关键帧。"""
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "玉佩", "9:16")
+    seg = repo.add_segment(s, repo.add_episode(s, d, 1, "script"), 1, duration_sec=8.0)
+    for col in ("key_time_sec", "key_image_prompt", "key_frame_path"):
+        s.conn.execute(f"ALTER TABLE segment DROP COLUMN {col}")
+    s.conn.execute("UPDATE meta SET value = '8' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    row = repo.get(s, "segment", seg)
+    assert (row["key_time_sec"], row["key_image_prompt"], row["key_frame_path"]) == (None, "", None)
+    repo.update(s, "segment", seg, key_time_sec=4.0, key_image_prompt="@林小雨 转身", key_frame_path="k.png")
+    assert repo.get(s, "segment", seg)["key_time_sec"] == 4.0
     s.close()
