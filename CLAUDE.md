@@ -58,7 +58,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   面板只**规划**任务,提交与推进由 `runtime` 里的后台 worker 负责。假后端(`tools/serve/fakes.py`)只进测试与自测。
   ComfyUI 工作流编辑:前端挂在 `/comfy/`(`serve/comfy_shim.py` 本机垫片,离线可用、数据不外发、画布里「运行」被拒),
   编辑页同源 iframe 嵌入 —— **工作流对象要在 iframe 自己的 JS 环境里造**(父页面的数组跨过去会丢连线)。
-  画布改出来的工作流过 `gen/graph_checks` 把关(模型白名单 `capability.ALLOWED_MODELS`);模板预设 `gen/presets` 规划时绑定、dispatch 时叠加
+  画布改出来的工作流过 `gen/graph_checks` 把关(模型白名单 `capability.ALLOWED_MODELS`);模板预设 `gen/presets` 规划时绑定、dispatch 时叠加。
+  留痕(三支柱的查看器):`serve/trace.py` 时间线 / 归属 / 失败归类,`serve/trace_views.py` 倒查 / 任务详情 / 成片快照 —— **只读**,
+  以库里四张表为主、`journal/worker.log` 为辅;LLM 来源能证明的标「确证」,其余标「按时间推断」
 - `tools/llm/`:LLM 一律经 `gate.run_gated` —— 只用 strict 工具调用、客户端 JSON Schema 再校验、代码判卷、带错误回炉、
   轮次上限 fail-loud、每轮落 `journal/llm/`。产物进 `llm_run`(落盘不可改、批准即锁定、假产物触发器拦审批),
   **人在审阅页批准才写回**。新增 LLM 任务 = 在 `service.TASKS` 登记一个模块(SYSTEM / schema / user_message / judge_factory / apply)
