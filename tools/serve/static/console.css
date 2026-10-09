@@ -168,3 +168,7 @@ pre.log { background: var(--ink); color: var(--paper); padding: 10px 12px; font-
 }
 
 .nowrap { white-space: nowrap; }
+
+/* 中间关键帧:锚点时间轴示意 */
+.key-timeline { position: relative; height: 44px; margin: 8px 18px 8px; border-top: 2px solid var(--line, #999); }
+.key-timeline .mark { position: absolute; top: 4px; transform: translateX(-50%); font-size: 12px; text-align: center; white-space: nowrap; }

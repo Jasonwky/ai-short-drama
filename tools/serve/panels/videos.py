@@ -8,7 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from tools.cut import subtitles
+from tools.cut import keycheck, subtitles
 from tools.drama import repo
 from tools.drama.tasks import tasks_for
 from tools.gen.capability import MINIMAX_H3
@@ -34,9 +34,10 @@ def page(request: Request, episode_id: int):
                      "tasks": [t for t in tasks if t["kind"] == "video"],
                      "align_tasks": [t for t in tasks if t["kind"] == "align"],
                      "align_problems": align_problems(store, s["id"]),
+                     "key": keycheck.check(store, runtime.data_root, s["id"]),
                      "cues": subtitles.parse_srt(sub.read_text(encoding="utf-8")) if sub and sub.is_file() else []})
     return render(request, "videos.html", "videos", episode_id=episode_id, ep=ep, segs=segs, seed=new_seed(),
-                  est_note=b.note)
+                  est_note=b.note, key_ref=(keycheck.HIT, keycheck.OTHER))
 
 
 @router.post("/segment/{segment_id}/video")

@@ -24,6 +24,21 @@
       </div>
     </div>
     {{ history(s.tasks, s.row.video_path, state_label, "/episode/" ~ ep.id ~ "/videos") }}
+    {% if s.key %}
+    <h3>关键帧钉住了吗</h3>
+    <div class="row" data-keycheck>
+      <div><p class="hint">这条视频钉的图(第 {{ s.key.frame_idx }} 帧)</p>
+        <a href="/media/{{ s.key.anchor_path }}" target="_blank"><img src="/media/{{ s.key.anchor_path }}" alt="关键帧" style="max-height: 240px"></a></div>
+      <div><p class="hint">视频第 {{ s.key.frame_idx }} 帧的实际画面</p>
+        {% if s.key.frame_png %}<a href="/media/{{ s.key.frame_png }}" target="_blank"><img src="/media/{{ s.key.frame_png }}" alt="实际画面" style="max-height: 240px"></a>
+        {% else %}<p class="empty">{{ s.key.problem }}</p>{% endif %}</div>
+      <div style="flex: 1; min-width: 220px">
+        {% if s.key.diff is not none %}<p data-key-diff>差值 <b>{{ s.key.diff }}</b>
+          <span class="hint">(72×128 灰度平均绝对差;调研参照:钉中约 {{ key_ref[0] }},不同画面 {{ key_ref[1] }} 以上)</span></p>{% endif %}
+        {% if s.key.stale %}<p class="status-bad" data-key-stale>关键帧之后换过(图或时刻),视频还没重出</p>{% endif %}
+      </div>
+    </div>
+    {% endif %}
     <h3>字幕</h3>
     <div class="row" data-subtitles>
       <div style="flex: 1; min-width: 260px">

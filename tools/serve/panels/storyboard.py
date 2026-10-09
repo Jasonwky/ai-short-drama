@@ -10,6 +10,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from tools.drama import invalidation, repo, rules
+from tools.drama.readiness import KEY_MARGIN_SEC, key_frame_index
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.llm import runs
 from tools.serve.panels.common import confirm_page, needs_confirm, readiness, render, rt
@@ -18,17 +19,18 @@ router = APIRouter()
 CAPS = {"video_cap": MINIMAX_H3, "image_cap": QWEN_IMAGE_EDIT_2511}
 MODES = [("first", "首帧(钉住第一帧)"), ("first_last", "首尾帧(两头都钉住)"), ("last", "尾帧(钉住最后一帧)"),
          ("text_only", "纯文字(视频生成未实现)")]
-TEXT_FIELDS = ("description", "image_prompt", "last_image_prompt", "video_prompt", "reference_mode")
+TEXT_FIELDS = ("description", "image_prompt", "last_image_prompt", "video_prompt", "reference_mode", "key_image_prompt")
+KEY_FIELDS = {"key_time_sec", "key_image_prompt"}
 
 
-def _seconds(text: str) -> float | None:
+def _seconds(text: str, what: str = "时长") -> float | None:
     text = text.strip()
     if not text:
         return None
     try:
         return float(text)
     except ValueError as e:
-        raise ValueError(f"时长要填数字(秒),填的是 {text!r}") from e
+        raise ValueError(f"{what}要填数字(秒),填的是 {text!r}") from e
 
 
 def _names(store, sql, sid):
@@ -74,7 +76,18 @@ def edit_page(request: Request, segment_id: int):
     assets = repo.segment_assets(store, segment_id)
     all_of = {t: store.conn.execute(f"SELECT id, name FROM {t} WHERE drama_id = ? ORDER BY id", (drama_id,)).fetchall()
               for t in ("character", "scene", "prop")}
+    frames = MINIMAX_H3.frames_for(seg["duration_sec"]) if seg["duration_sec"] else None
+    marks = []                  # 时间轴示意:各锚点落在第几帧(占全片的百分比)
+    if frames:
+        if seg["reference_mode"] in ("first", "first_last"):
+            marks.append(("首帧", 0, 0))
+        if seg["reference_mode"] in ("last", "first_last"):
+            marks.append(("尾帧", frames - 1, 100))
+        if seg["key_time_sec"] is not None:
+            idx = key_frame_index(seg, MINIMAX_H3)
+            marks.append(("关键帧", idx, min(100, round(100 * idx / (frames - 1)))))
     return render(request, "segment_edit.html", "storyboard", episode_id=seg["episode_id"], seg=seg, modes=MODES,
+                  frames=frames, marks=marks, margin=KEY_MARGIN_SEC,
                   all_of=all_of, bound_chars={c["id"] for c in assets["characters"]},
                   bound_props={p["id"] for p in assets["props"]}, checks=readiness(runtime, segment_id))
 
@@ -87,23 +100,32 @@ async def save(request: Request, segment_id: int):
     assets = repo.segment_assets(store, segment_id)
     new = {k: str(form.get(k, "")) for k in TEXT_FIELDS}
     new["duration_sec"] = _seconds(str(form.get("duration_sec", "")))
+    new["key_time_sec"] = _seconds(str(form.get("key_time_sec", "")), "关键帧时刻")
     scene_id = int(form["scene_id"]) if form.get("scene_id") else None
     chars = [int(x) for x in form.getlist("character_ids")]
     props = [int(x) for x in form.getlist("prop_ids")]
 
-    changed = (any(new[k] != seg[k] for k in new) or scene_id != seg["scene_id"]
-               or chars != [c["id"] for c in assets["characters"]] or props != [p["id"] for p in assets["props"]])
+    bindings_changed = (scene_id != seg["scene_id"] or chars != [c["id"] for c in assets["characters"]]
+                        or props != [p["id"] for p in assets["props"]])
+    fields_changed = {k for k in new if new[k] != seg[k]}
     back = f"/segment/{segment_id}/edit"
-    if not changed:
+    if not fields_changed and not bindings_changed:
         return RedirectResponse(back, status_code=303)
-    imp = invalidation.impact(store, "segment_prompt", segment_id, **CAPS)
+    key_only = not bindings_changed and fields_changed <= KEY_FIELDS
+    prompt_changed = "key_image_prompt" in fields_changed
+    if key_only:      # 只改了关键帧:作废本段视频(提示词变了连关键帧图);首帧 / 尾帧不动
+        imp = invalidation.keyframe_edit(store, seg, prompt_changed=prompt_changed, **CAPS)
+    else:
+        imp = invalidation.impact(store, "segment_prompt", segment_id, **CAPS)
     if needs_confirm(imp, form):
-        fields = {k: str(form.get(k, "")) for k in (*TEXT_FIELDS, "duration_sec", "scene_id")}
+        fields = {k: str(form.get(k, "")) for k in (*TEXT_FIELDS, "duration_sec", "key_time_sec", "scene_id")}
         fields |= {"character_ids": [str(c) for c in chars], "prop_ids": [str(p) for p in props]}
         return confirm_page(request, summary=imp.summary(), action=back, fields=fields, back=back,
                             panel_key="storyboard", episode_id=seg["episode_id"])
     if imp.videos or imp.frames:
         invalidation.apply(store, imp)
+    if key_only and prompt_changed:
+        new["key_frame_path"] = None
     repo.update(store, "segment", segment_id, **new)
     repo.set_scene(store, segment_id, scene_id)
     repo.bind_characters(store, segment_id, chars)
