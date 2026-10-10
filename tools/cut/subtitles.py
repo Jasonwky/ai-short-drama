@@ -53,6 +53,43 @@ def align(lines: list[str], chars: list[tuple[str, float, float]]) -> list[dict]
     return out
 
 
+EXTRA_MIN_CHARS = 3     # 台词之外多说至少这么多字(去标点)才报:单个「嗯」「啊」不算
+
+
+def extra_speech(lines: list[str], chars: list[tuple[str, float, float]],
+                 envelope: list[float]) -> tuple[list[dict], str]:
+    """台词之外有没有多说(路线图未决项 #7:人物把舞台指示念了出来)。返回 ([{text, start, end}], 不能判断的原因)。
+    - 复用 align 的匹配:每句覆盖识别字 [first − lead, last];覆盖之外的连续识别字是候选;
+    - 任一句台词命中率低于 MIN_HIT → 不判(否则一句没识别出来,所有识别字都成了「多说」);
+    - **用数据审 whisper**:候选所在时间段的能量要达到开口门槛 —— whisper 会在静音尾巴上编出「字幕由……提供」。"""
+    aligned = align(lines, chars)
+    if any(a["total"] and a["hit"] / a["total"] < MIN_HIT for a in aligned):
+        return [], "识别与台词对不上,无法判断是否多说"
+    covered: set[int] = set()
+    for a in aligned:
+        if a["first"] is not None:
+            covered |= set(range(max(0, a["first"] - a["lead"]), a["last"] + 1))
+    groups, cur = [], []
+    for i in range(len(chars)):
+        if i in covered:
+            if cur:
+                groups.append(cur)
+            cur = []
+        else:
+            cur.append(i)
+    if cur:
+        groups.append(cur)
+    th = (max(envelope) if envelope else 0.0) * ONSET_RATIO
+    runs = []
+    for g in groups:
+        text = _clean("".join(chars[i][0] for i in g))
+        start, end = chars[g[0]][1], chars[g[-1]][2]
+        voiced = th > 0 and any(envelope[k] >= th for k in range(round(start / STEP), min(len(envelope), round(end / STEP) + 1)))
+        if len(text) >= EXTRA_MIN_CHARS and voiced:
+            runs.append({"text": text, "start": start, "end": end})
+    return runs, ""
+
+
 def onset(envelope: list[float], lo: float, hi: float) -> float | None:
     """[lo, hi] 内能量第一个**上升沿**(前一窗低于、这一窗达到峰值的 ONSET_RATIO)的时刻;没有返回 None。
     要上升沿而不是「第一次高于」:lo 是上一句的句尾,上一句的尾音可能还没落下去。"""
