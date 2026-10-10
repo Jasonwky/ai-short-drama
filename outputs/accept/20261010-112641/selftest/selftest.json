@@ -1,0 +1,260 @@
+{
+  "base": "http://127.0.0.1:61735",
+  "work_dir": "C:\\Users\\WKY\\AppData\\Local\\Temp\\drama-selftest-55zaxk7c",
+  "headed": true,
+  "panels": [
+    {
+      "panel": "projects",
+      "title": "立项",
+      "url": "http://127.0.0.1:61735/?d=1",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\01_projects.png"
+    },
+    {
+      "panel": "outline",
+      "title": "大纲",
+      "url": "http://127.0.0.1:61735/drama/1/outline",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\02_outline.png"
+    },
+    {
+      "panel": "script",
+      "title": "剧本",
+      "url": "http://127.0.0.1:61735/drama/1/script",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\03_script.png"
+    },
+    {
+      "panel": "assets",
+      "title": "资产",
+      "url": "http://127.0.0.1:61735/drama/1/assets",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\04_assets.png"
+    },
+    {
+      "panel": "storyboard",
+      "title": "分镜",
+      "url": "http://127.0.0.1:61735/episode/1/storyboard",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\05_storyboard.png"
+    },
+    {
+      "panel": "frames",
+      "title": "参考帧",
+      "url": "http://127.0.0.1:61735/episode/1/frames",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\06_frames.png"
+    },
+    {
+      "panel": "videos",
+      "title": "视频",
+      "url": "http://127.0.0.1:61735/episode/1/videos",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\07_videos.png"
+    },
+    {
+      "panel": "final",
+      "title": "成片",
+      "url": "http://127.0.0.1:61735/episode/1/final",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\08_final.png"
+    },
+    {
+      "panel": "workflows",
+      "title": "工作流",
+      "url": "http://127.0.0.1:61735/workflows?d=1",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\09_workflows.png"
+    },
+    {
+      "panel": "hosts",
+      "title": "主机",
+      "url": "http://127.0.0.1:61735/hosts?d=1",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\10_hosts.png"
+    },
+    {
+      "panel": "trace",
+      "title": "留痕",
+      "url": "http://127.0.0.1:61735/trace?d=1",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\11_trace.png"
+    }
+  ],
+  "flows": [
+    {
+      "flow": "frames: 点「生成首帧」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_1_frames.png"
+    },
+    {
+      "flow": "videos: 点「生成视频」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_2_videos.png"
+    },
+    {
+      "flow": "videos: 点「生成记录里点「溯源」→ 倒查到首帧」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_3_videos.png"
+    },
+    {
+      "flow": "frames: 点「生成记录里点任务号 → 任务详情」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_4_frames.png"
+    },
+    {
+      "flow": "frames: 点「用段落 1 视频的尾帧」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_5_frames.png"
+    },
+    {
+      "flow": "videos: 点「补全本集缺的视频 → 确认」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_6_videos.png"
+    },
+    {
+      "flow": "videos: 点「补全本集缺的字幕 → 确认」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_7_videos.png"
+    },
+    {
+      "flow": "videos: 点「字幕区出现台词外多说提醒」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_8_videos.png"
+    },
+    {
+      "flow": "final: 点「导出成片」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_9_final.png"
+    },
+    {
+      "flow": "projects: 点「导出工程」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_10_projects.png"
+    },
+    {
+      "flow": "projects: 点「导入为新剧」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_11_projects.png"
+    },
+    {
+      "flow": "assets: 点「LLM 定声音」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_12_assets.png"
+    },
+    {
+      "flow": "outline: 点「下一步:看分批」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_13_outline.png"
+    },
+    {
+      "flow": "assets: 点「改声音描述 → 先报代价」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_14_assets.png"
+    },
+    {
+      "flow": "assets: 点「上传参考图」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_15_assets.png"
+    },
+    {
+      "flow": "assets: 点「从图反推描述」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_16_assets.png"
+    },
+    {
+      "flow": "trace: 点「只看失败 → 失败归类里有刚才那次反推」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_17_trace.png"
+    },
+    {
+      "flow": "assets: 点「生成四视图」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_18_assets.png"
+    },
+    {
+      "flow": "frames: 点「生成尾帧(首尾帧模式)」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_19_frames.png"
+    },
+    {
+      "flow": "hosts: 点「刷新节点清单」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_20_hosts.png"
+    },
+    {
+      "flow": "hosts: 点「改 GPU 型号(估时按它)」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_21_hosts.png"
+    },
+    {
+      "flow": "frames: 点「在 ComfyUI 中编辑 → 画布里改种子 → 提交为新版本」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_22_frames.png"
+    },
+    {
+      "flow": "workflows: 点「改首帧模板 → 确认改动 → 保存」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_23_workflows.png"
+    },
+    {
+      "flow": "workflows: 点「设为当前(先出确认页)」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_24_workflows.png"
+    },
+    {
+      "flow": "frames: 点「编辑段落设关键帧(第 0.5 秒)」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_25_frames.png"
+    },
+    {
+      "flow": "frames: 点「生成关键帧」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_26_frames.png"
+    },
+    {
+      "flow": "videos: 点「重新生成视频 → 关键帧 vs 实际画面」→ 产物出现在面板上",
+      "ok": true,
+      "problems": [],
+      "screenshot": "outputs\\accept\\20261010-112641\\selftest\\flow_27_videos.png"
+    }
+  ],
+  "ok": true
+}
