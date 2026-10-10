@@ -14,3 +14,14 @@ _FOLD = {c: c - 0xFEE0 for c in range(0xFF01, 0xFF5F)}
 def squash(text: str) -> str:
     return "".join(ch for ch in text if not ch.isspace()).translate(_FOLD)
 
+
+def restore(text: str, source: str) -> str | None:
+    """text 折叠后在 source 里出现时,返回 source 里**原本的写法**(那一段原文);找不到返回 None。
+    判卷按折叠后比对放行模型的抄写;写回时换回原文,不让模型改过的标点宽度进剧本和字幕。"""
+    pos = [i for i, ch in enumerate(source) if not ch.isspace()]
+    folded = "".join(source[i] for i in pos).translate(_FOLD)
+    want = squash(text)
+    at = folded.find(want) if want else -1
+    if at < 0:
+        return None
+    return source[pos[at]:pos[at + len(want) - 1] + 1]

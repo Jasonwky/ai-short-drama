@@ -17,7 +17,7 @@ import re
 from tools.drama import refs, repo, rules
 from tools.drama.db import Store
 from tools.gen.capability import MINIMAX_H3
-from tools.llm.verbatim import squash
+from tools.llm.verbatim import restore, squash
 
 TASK = "storyboard"
 TOOL = "submit_storyboard"
@@ -171,6 +171,9 @@ def apply(store: Store, episode_id: int, args: dict, ctx: dict) -> list[int]:
            for t in ("character", "scene", "prop")}
     created = []
     for n, seg in enumerate(args["segments"], 1):
+        # 判卷按折叠后比对放行了台词;写回用剧本原文的写法(2026-10-10 真 LLM 把「，」抄成「,」,半角逗号会进字幕)
+        seg = {**seg, "subshots": [{**s, "line": restore(s["line"], ctx["script"]) or s["line"]} if s["line"] else s
+                                   for s in seg["subshots"]]}
         desc = describe(seg)
         sid = repo.add_segment(store, episode_id, n, scene_id=ids["scene"][seg["scene"]],
                                duration_sec=duration(desc, seg["pace"]), reference_mode="first", description=desc,

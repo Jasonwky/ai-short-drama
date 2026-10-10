@@ -162,3 +162,14 @@ def test_apply_creates_segments_with_bindings_and_computed_durations(store):
     assert [c["name"] for c in assets["characters"]] == ["林小雨", "沈墨"] and assets["scene"]["name"] == "老宅庭院"
     with pytest.raises(ValueError, match="已经有段落"):          # 批准前有人手工建了段落 → 不重复写
         sb.apply(store, ep, good_args(), CTX)
+
+
+def test_apply_writes_back_the_scripts_own_wording(store):
+    """模型抄台词时换了标点宽度,判卷(折叠后比)放行;写回段落描述要用剧本原文的写法,不用模型抄的。"""
+    ep = _episode(store)
+    args = good_args()
+    args["segments"][0]["subshots"][1]["line"] = "这块玉佩,是我母亲留给我的。"            # 半角逗号
+    assert sb.judge_factory(CTX)(args) == []
+    ids = sb.apply(store, ep, args, CTX)
+    desc = repo.get(store, "segment", ids[0])["description"]
+    assert "这块玉佩，是我母亲留给我的。" in desc and "这块玉佩," not in desc

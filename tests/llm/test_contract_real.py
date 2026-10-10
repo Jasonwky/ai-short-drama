@@ -14,6 +14,7 @@ from tools.llm import describe, outline, script_writer, storyboard, voices
 from tools.llm.client import ChatClient, LLMUnavailable, read_key
 from tools.llm.gate import GateFailed, run_gated, schema_errors
 from tools.llm.service import DEFAULT_MODEL, TASKS, VISION_MODEL
+from tools.llm.verbatim import restore, squash
 
 pytestmark = pytest.mark.real_llm
 GOLDEN = Path(__file__).parent / "golden"
@@ -40,7 +41,11 @@ def test_storyboard_golden(client):
     lo, hi = rules.expected_segment_range(script)
     assert lo <= len(res.args["segments"]) <= hi
     said = [s["line"] for seg in res.args["segments"] for s in seg["subshots"] if s["line"]]
-    assert said == [line for _, line in rules.dialogue_lines(script)]      # 逐字、按顺序、一句不漏
+    want = [line for _, line in rules.dialogue_lines(script)]
+    # 模型的抄写:折叠标点宽度后逐字、按顺序、一句不漏(判卷同一口径 —— 2026-09-24 实测模型会换标点宽度)
+    assert [squash(x) for x in said] == [squash(x) for x in want]
+    # 写回用的是剧本原文的写法:逐字节一致(2026-10-10 真 LLM 把「，」抄成「,」,以前会带进字幕)
+    assert [restore(x, script) for x in said] == want
 
 
 def test_voice(client):
