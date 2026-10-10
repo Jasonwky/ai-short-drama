@@ -113,3 +113,21 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
         repo.update(store, "segment", task["target_id"], subtitle_path=rel)
     set_task_state(store, tid, "done", result_path=rel, result_sha256=sha256_file(srt))
     return Outcome("done", note or rel)
+
+
+def extra_speech_for(store: Store, data_root: Path, segment_id: int) -> dict | None:
+    """当前视频的最新一次对齐(成功、失败都算 —— 失败的也留着 align.json)里,台词之外有没有多说。
+    只认 params.video 等于当前视频的:换过视频,旧对齐属于旧视频,不拿来判新视频。没有对齐记录返回 None。"""
+    seg = repo.get(store, "segment", segment_id)
+    if not seg["video_path"]:
+        return None
+    task = store.conn.execute(
+        "SELECT id FROM task WHERE kind = 'align' AND target_type = 'segment' AND target_id = ?"
+        " AND state IN ('done', 'failed') AND json_extract(params_json, '$.video') = ? ORDER BY id DESC LIMIT 1",
+        (segment_id, seg["video_path"])).fetchone()
+    f = Path(data_root) / "outputs" / "tasks" / str(task["id"]) / "align.json" if task else None
+    if f is None or not f.is_file():
+        return None
+    d = json.loads(f.read_text(encoding="utf-8"))
+    runs, problem = subtitles.extra_speech(d["lines"], [tuple(c) for c in d["chars"]], d["envelope"])
+    return {"runs": runs, "problem": problem}

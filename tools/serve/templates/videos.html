@@ -40,6 +40,11 @@
     </div>
     {% endif %}
     <h3>字幕</h3>
+    {% if s.extra and s.extra.problem %}<p class="hint" data-extra-speech-unknown>{{ s.extra.problem }}</p>{% endif %}
+    {% for r in (s.extra.runs if s.extra else []) %}
+      <p class="status-bad" data-extra-speech>人物在台词外多说了:「{{ r.text }}」({{ "%.1f" | format(r.start) }}–{{ "%.1f" | format(r.end) }} 秒)—— 建议换种子重出视频
+        <span class="hint">(字幕按台词原文出,不受影响;依据:字幕对齐时 whisper 听到的字 + 能量曲线)</span></p>
+    {% endfor %}
     <div class="row" data-subtitles>
       <div style="flex: 1; min-width: 260px">
         {% if s.cues %}

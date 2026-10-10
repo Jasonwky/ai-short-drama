@@ -15,6 +15,7 @@ from tools.gen.capability import MINIMAX_H3
 from tools.gen import estimate, presets
 from tools.gen.align import align_problems, plan_align
 from tools.gen.planner import plan_video
+from tools.serve import aligner
 from tools.serve.panels.common import new_seed, readiness, render, rt
 
 router = APIRouter()
@@ -35,6 +36,7 @@ def page(request: Request, episode_id: int):
                      "align_tasks": [t for t in tasks if t["kind"] == "align"],
                      "align_problems": align_problems(store, s["id"]),
                      "key": keycheck.check(store, runtime.data_root, s["id"]),
+                     "extra": aligner.extra_speech_for(store, runtime.data_root, s["id"]),
                      "cues": subtitles.parse_srt(sub.read_text(encoding="utf-8")) if sub and sub.is_file() else []})
     return render(request, "videos.html", "videos", episode_id=episode_id, ep=ep, segs=segs, seed=new_seed(),
                   est_note=b.note, key_ref=(keycheck.HIT, keycheck.OTHER))
