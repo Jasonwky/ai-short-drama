@@ -229,6 +229,8 @@ def run(out_dir: Path) -> dict:
                      f"#seg-{seg2} .current-media video", 60),
                     ("videos", "补全本集缺的字幕 → 确认", {}, ['[data-fill="subtitles"] [data-fill-button]', "[data-confirm]"],
                      f"#seg-{seg2} [data-cue]", 30),
+                    # 两段共用一段假的「听到的话」(见上面 heard):段落 1 天然多出「我会一直带着它」—— 台词外多说提醒的正例
+                    ("videos", "字幕区出现台词外多说提醒", {}, [], f"#seg-{seg} [data-extra-speech]", 20),
                     ("final", "导出成片", {"[data-producer]": "SELFTEST-ONLY"}, ["[data-export]"],
                      '[data-export-state="done"] [data-export-video]', 90),
                     ("projects", "导出工程", {}, ["[data-export-bundle]"], "[data-bundle-link]", 20),
