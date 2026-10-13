@@ -1,0 +1,126 @@
+{
+ "baseline_A": {
+  "frames": 192,
+  "cuts": [
+   [
+    38,
+    56.2
+   ],
+   [
+    78,
+    38.4
+   ],
+   [
+    126,
+    68.0
+   ]
+  ],
+  "first_vs_anchor": 10.4,
+  "last_vs_first_anchor": 75.1
+ },
+ "cam_same_ends": {
+  "frames": 192,
+  "cuts": [
+   [
+    50,
+    58.9
+   ],
+   [
+    158,
+    60.4
+   ]
+  ],
+  "first_vs_anchor": 10.0,
+  "last_vs_first_anchor": 9.7,
+  "s_per_step": 73.3,
+  "sampling": "24:25",
+  "note": "A-B-A: cut away to a wider oblique shot at 50, cut back to the pinned composition at 158"
+ },
+ "cam_strong_prompt": {
+  "frames": 192,
+  "cuts": [
+   [
+    80,
+    75.7
+   ],
+   [
+    126,
+    58.3
+   ]
+  ],
+  "first_vs_anchor": 10.2,
+  "last_vs_first_anchor": 78.6,
+  "s_per_step": 71.4,
+  "note": "wide (0-79) -> jade close-up insert (80-125) -> face close-up (126-191); classic coverage editing despite explicit no-cut wording"
+ },
+ "multi_key": {
+  "frames": 192,
+  "cuts": [
+   [
+    78,
+    66.8
+   ],
+   [
+    140,
+    69.0
+   ]
+  ],
+  "first_vs_anchor": 9.8,
+  "frame72_vs_keyB": 9.6,
+  "frame144_vs_first": 9.6,
+  "last_vs_first_anchor": 11.5,
+  "s_per_step": 75.3,
+  "note": "0-77 one continuous shot: front -> turns away (keyB hit by motion, no cut); 78 cut to wide establishing shot; 140 cut back to first composition, holds it through 144 anchor to end"
+ },
+ "text_only": {
+  "frames": 192,
+  "cuts": [
+   [
+    101,
+    59.1
+   ]
+  ],
+  "first_vs_anchor": 64.0,
+  "last_vs_first_anchor": 72.0,
+  "s_per_step": 65.1,
+  "note": "no first-frame ref/anchor, four-view only: scene drifts (daytime seated by brick wall instead of sunset courtyard, standing); jade becomes small pale pendant instead of large green carved one; character look roughly kept; 1 cut to face close-up"
+ },
+ "steps_10": {
+  "frames": 192,
+  "cuts": [
+   [
+    38,
+    57.3
+   ],
+   [
+    126,
+    70.5
+   ]
+  ],
+  "first_vs_anchor": 10.7,
+  "last_vs_first_anchor": 70.9,
+  "s_per_step": 71.08,
+  "sampling": "11:50",
+  "executed": "12:59",
+  "note": "same shot structure as A (cuts 38/126; A's weaker 78 cut absent); sharpness comparable at frames 20/100/160; frame ~100: jade duplicated (one in hand + one still on necklace) - prop duplication not present in A"
+ },
+ "steps_14": {
+  "frames": 192,
+  "cuts": [
+   [
+    38,
+    56.4
+   ],
+   [
+    126,
+    73.1
+   ]
+  ],
+  "first_vs_anchor": 10.6,
+  "last_vs_first_anchor": 77.2,
+  "s_per_step": 71.2,
+  "sampling": "16:36",
+  "executed": "17:36",
+  "note": "same structure as A/steps_10; frame 100 also shows duplicated jade (hand + necklace) like steps_10; A (20 steps) has single jade; face close-up quality comparable"
+ }
+}
