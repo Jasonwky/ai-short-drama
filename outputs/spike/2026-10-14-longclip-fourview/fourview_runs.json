@@ -1,0 +1,264 @@
+{
+ "control_20260925": {
+  "prompt_id": "074d3770-d4bd-4aeb-b463-bf7a2c4f070a",
+  "submitted_at": 1791908297.096497,
+  "file": "tmp\\fourview\\control_20260925\\gate0_00016_.png",
+  "history_status": {
+   "status_str": "success",
+   "completed": true,
+   "messages": [
+    [
+     "execution_start",
+     {
+      "prompt_id": "074d3770-d4bd-4aeb-b463-bf7a2c4f070a",
+      "timestamp": 1791908296948
+     }
+    ],
+    [
+     "execution_cached",
+     {
+      "nodes": [],
+      "prompt_id": "074d3770-d4bd-4aeb-b463-bf7a2c4f070a",
+      "timestamp": 1791908296974
+     }
+    ],
+    [
+     "execution_success",
+     {
+      "prompt_id": "074d3770-d4bd-4aeb-b463-bf7a2c4f070a",
+      "timestamp": 1791908334858
+     }
+    ]
+   ]
+  },
+  "facing_score": 3.82
+ },
+ "control_20260926": {
+  "prompt_id": "af0f2cdf-da61-45e5-9681-b7a28e67dfa0",
+  "submitted_at": 1791908343.8578074,
+  "file": "tmp\\fourview\\control_20260926\\gate0_00017_.png",
+  "history_status": {
+   "status_str": "success",
+   "completed": true,
+   "messages": [
+    [
+     "execution_start",
+     {
+      "prompt_id": "af0f2cdf-da61-45e5-9681-b7a28e67dfa0",
+      "timestamp": 1791908343694
+     }
+    ],
+    [
+     "execution_cached",
+     {
+      "nodes": [
+       "1",
+       "10",
+       "11",
+       "12",
+       "13",
+       "14",
+       "15",
+       "16",
+       "17",
+       "18",
+       "2",
+       "21",
+       "22",
+       "23",
+       "24",
+       "30",
+       "4",
+       "5",
+       "6",
+       "7",
+       "8",
+       "9"
+      ],
+      "prompt_id": "af0f2cdf-da61-45e5-9681-b7a28e67dfa0",
+      "timestamp": 1791908343706
+     }
+    ],
+    [
+     "execution_success",
+     {
+      "prompt_id": "af0f2cdf-da61-45e5-9681-b7a28e67dfa0",
+      "timestamp": 1791908359022
+     }
+    ]
+   ]
+  },
+  "facing_score": 2.38
+ },
+ "control_20260927": {
+  "prompt_id": "4ee17d1e-02e5-43db-afe0-52ad09ec05e7",
+  "submitted_at": 1791908360.9428704,
+  "file": "tmp\\fourview\\control_20260927\\gate0_00018_.png",
+  "history_status": {
+   "status_str": "success",
+   "completed": true,
+   "messages": [
+    [
+     "execution_start",
+     {
+      "prompt_id": "4ee17d1e-02e5-43db-afe0-52ad09ec05e7",
+      "timestamp": 1791908360771
+     }
+    ],
+    [
+     "execution_cached",
+     {
+      "nodes": [
+       "1",
+       "10",
+       "11",
+       "12",
+       "13",
+       "14",
+       "15",
+       "16",
+       "17",
+       "18",
+       "2",
+       "21",
+       "22",
+       "23",
+       "24",
+       "30",
+       "4",
+       "5",
+       "6",
+       "7",
+       "8",
+       "9"
+      ],
+      "prompt_id": "4ee17d1e-02e5-43db-afe0-52ad09ec05e7",
+      "timestamp": 1791908360790
+     }
+    ],
+    [
+     "execution_success",
+     {
+      "prompt_id": "4ee17d1e-02e5-43db-afe0-52ad09ec05e7",
+      "timestamp": 1791908375979
+     }
+    ]
+   ]
+  },
+  "facing_score": 26.55
+ },
+ "control_20260928": {
+  "prompt_id": "84322725-fdc6-4302-9764-442986876428",
+  "submitted_at": 1791908377.9866996,
+  "file": "tmp\\fourview\\control_20260928\\gate0_00019_.png",
+  "history_status": {
+   "status_str": "success",
+   "completed": true,
+   "messages": [
+    [
+     "execution_start",
+     {
+      "prompt_id": "84322725-fdc6-4302-9764-442986876428",
+      "timestamp": 1791908377846
+     }
+    ],
+    [
+     "execution_cached",
+     {
+      "nodes": [
+       "1",
+       "10",
+       "11",
+       "12",
+       "13",
+       "14",
+       "15",
+       "16",
+       "17",
+       "18",
+       "2",
+       "21",
+       "22",
+       "23",
+       "24",
+       "30",
+       "4",
+       "5",
+       "6",
+       "7",
+       "8",
+       "9"
+      ],
+      "prompt_id": "84322725-fdc6-4302-9764-442986876428",
+      "timestamp": 1791908377864
+     }
+    ],
+    [
+     "execution_success",
+     {
+      "prompt_id": "84322725-fdc6-4302-9764-442986876428",
+      "timestamp": 1791908393154
+     }
+    ]
+   ]
+  },
+  "facing_score": -0.2
+ },
+ "control_20260929": {
+  "prompt_id": "91fd5157-a41d-413d-8f36-e939ee165453",
+  "submitted_at": 1791908395.1175532,
+  "file": "tmp\\fourview\\control_20260929\\gate0_00020_.png",
+  "history_status": {
+   "status_str": "success",
+   "completed": true,
+   "messages": [
+    [
+     "execution_start",
+     {
+      "prompt_id": "91fd5157-a41d-413d-8f36-e939ee165453",
+      "timestamp": 1791908395011
+     }
+    ],
+    [
+     "execution_cached",
+     {
+      "nodes": [
+       "1",
+       "10",
+       "11",
+       "12",
+       "13",
+       "14",
+       "15",
+       "16",
+       "17",
+       "18",
+       "2",
+       "21",
+       "22",
+       "23",
+       "24",
+       "30",
+       "4",
+       "5",
+       "6",
+       "7",
+       "8",
+       "9"
+      ],
+      "prompt_id": "91fd5157-a41d-413d-8f36-e939ee165453",
+      "timestamp": 1791908395029
+     }
+    ],
+    [
+     "execution_success",
+     {
+      "prompt_id": "91fd5157-a41d-413d-8f36-e939ee165453",
+      "timestamp": 1791908410262
+     }
+    ]
+   ]
+  },
+  "facing_score": -8.9
+ }
+}
