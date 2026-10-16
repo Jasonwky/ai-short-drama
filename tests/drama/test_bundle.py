@@ -212,11 +212,10 @@ def test_keyframes_and_their_task_ids_move_with_the_bundle(store, project, tmp_p
     assert json.loads(deleted["params_json"])["keyframe_id"] is None and targets.slot(dest, deleted)[1] is None
 
 
-def test_video_anchors_and_the_keyframe_move_with_the_bundle(store, project, tmp_path):
+def test_video_anchors_move_with_the_bundle(store, project, tmp_path):
     """视频任务参数里的锚点 [[路径, 帧号], …] 导入后也要加前缀(P7 起就漏了;关键帧对比要从它取图)。"""
     _file(project["root"], "outputs/tasks/8/k.png", b"k")
-    repo.update(store, "segment", project["seg"], key_time_sec=4.0, key_image_prompt="p",
-                key_frame_path="outputs/tasks/8/k.png")
+    repo.add_keyframe(store, project["seg"], 4.0, "p", "outputs/tasks/8/k.png")
     t = create_task(store, kind="video", target_type="segment", target_id=project["seg"], model="m", seed=5,
                     params={"workflow": "minimax_h3", "writes": "video_path", "image_refs": ["outputs/tasks/2/a.png"],
                             "anchors": [["outputs/tasks/2/a.png", 0], ["outputs/tasks/8/k.png", 96]]},
@@ -229,7 +228,6 @@ def test_video_anchors_and_the_keyframe_move_with_the_bundle(store, project, tmp
     [seg] = dest.conn.execute("SELECT s.* FROM segment s JOIN episode e ON e.id = s.episode_id WHERE e.drama_id = ?",
                               (new,)).fetchall()
     prefix = seg["first_frame_path"].split("/outputs/")[0]
-    assert seg["key_frame_path"] == f"{prefix}/outputs/tasks/8/k.png" and seg["key_time_sec"] == 4.0
     [video] = [r for r in tasks_for(dest, "segment", seg["id"]) if r["kind"] == "video"]
     assert json.loads(video["params_json"])["anchors"] == [[f"{prefix}/outputs/tasks/2/a.png", 0],
                                                             [f"{prefix}/outputs/tasks/8/k.png", 96]]

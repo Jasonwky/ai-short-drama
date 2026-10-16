@@ -18,9 +18,6 @@ def _make_v1(path):
     s.conn.execute("DROP TABLE export")           # v4 新增
     s.conn.execute("DROP TABLE setting")
     s.conn.execute("DROP TABLE segment_keyframe")                               # v10 新增
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_time_sec")                # v9 新增
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_image_prompt")
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_frame_path")
     s.conn.execute("ALTER TABLE host DROP COLUMN gpu")                         # v8 新增
     s.conn.execute("DROP TABLE workflow_preset_active")                       # v7 新增
     s.conn.execute("DROP TABLE workflow_preset")
@@ -71,9 +68,6 @@ def test_v4_llm_run_is_rebuilt_to_allow_scene_and_prop_targets(tmp_path):
         runs.start(s, task="describe", target_type="scene", target_id=1, model="m", input_sha="x", llm_mode="real",
                    params={})
     s.conn.execute("DROP TABLE segment_keyframe")                               # v10 新增
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_time_sec")                # v9 新增
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_image_prompt")
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_frame_path")
     s.conn.execute("ALTER TABLE host DROP COLUMN gpu")                         # v8 新增
     s.conn.execute("DROP TABLE workflow_preset_active")                       # v7 新增
     s.conn.execute("DROP TABLE workflow_preset")
@@ -98,9 +92,6 @@ def test_v5_database_gains_fourview_and_last_frame_prompt(tmp_path):
     d = repo.create_drama(s, "玉佩", "9:16")
     lin = repo.add_character(s, d, "林小雨", turnaround_path="assets/lin.png")
     s.conn.execute("DROP TABLE segment_keyframe")                               # v10 新增
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_time_sec")                # v9 新增
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_image_prompt")
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_frame_path")
     s.conn.execute("ALTER TABLE host DROP COLUMN gpu")                         # v8 新增
     s.conn.execute("DROP TABLE workflow_preset_active")                       # v7 新增
     s.conn.execute("DROP TABLE workflow_preset")
@@ -128,9 +119,6 @@ def test_v6_database_gains_preset_tables_and_presets_are_immutable(tmp_path):
     path = tmp_path / "drama.db"
     s = Store(path)
     s.conn.execute("DROP TABLE segment_keyframe")                               # v10 新增
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_time_sec")                # v9 新增
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_image_prompt")
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_frame_path")
     s.conn.execute("ALTER TABLE host DROP COLUMN gpu")
     s.conn.execute("DROP TABLE workflow_preset_active")
     s.conn.execute("DROP TABLE workflow_preset")
@@ -158,9 +146,6 @@ def test_v7_hosts_gain_an_unregistered_gpu(tmp_path):
     hid = add_host(s, label="4090", ssh_host="h", ssh_port=1, ssh_user="root", key_ref="k", local_port=8188,
                    vram_gb=24.0, models_dir="/m")
     s.conn.execute("DROP TABLE segment_keyframe")                               # v10 新增
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_time_sec")                # v9 新增
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_image_prompt")
-    s.conn.execute("ALTER TABLE segment DROP COLUMN key_frame_path")
     s.conn.execute("ALTER TABLE host DROP COLUMN gpu")
     s.conn.execute("UPDATE meta SET value = '7' WHERE key = 'schema_version'")
     s.close()
@@ -173,23 +158,18 @@ def test_v7_hosts_gain_an_unregistered_gpu(tmp_path):
     s.close()
 
 
-def test_v8_segments_gain_an_optional_keyframe(tmp_path):
-    """v9:段落可叠加一张中间关键帧(第几秒、提示词、当前图)。旧段落没有 = 不用关键帧。"""
+def test_v8_segments_pass_through_v9_without_keyframes(tmp_path):
+    """v9 加的三列在 v10 搬走、删掉:v8 的段落一路升上来没有关键帧,段落上也不留那三列。"""
     path = tmp_path / "drama.db"
     s = Store(path)
     d = repo.create_drama(s, "玉佩", "9:16")
     seg = repo.add_segment(s, repo.add_episode(s, d, 1, "script"), 1, duration_sec=8.0)
-    for col in ("key_time_sec", "key_image_prompt", "key_frame_path"):
-        s.conn.execute(f"ALTER TABLE segment DROP COLUMN {col}")
     s.conn.execute("DROP TABLE segment_keyframe")
     s.conn.execute("UPDATE meta SET value = '8' WHERE key = 'schema_version'")
     s.close()
 
     s = Store(path)
-    row = repo.get(s, "segment", seg)
-    assert (row["key_time_sec"], row["key_image_prompt"], row["key_frame_path"]) == (None, "", None)
-    repo.update(s, "segment", seg, key_time_sec=4.0, key_image_prompt="@林小雨 转身", key_frame_path="k.png")
-    assert repo.get(s, "segment", seg)["key_time_sec"] == 4.0
+    assert repo.keyframes(s, seg) == [] and not {"key_time_sec", "key_image_prompt", "key_frame_path"} & _cols(s, "segment")
     s.close()
 
 
@@ -202,7 +182,11 @@ def test_v9_keyframe_moves_into_its_own_table(tmp_path):
     seg = repo.add_segment(s, ep, 1, duration_sec=8.0)
     plain = repo.add_segment(s, ep, 2, duration_sec=8.0)
     s.conn.execute("DROP TABLE segment_keyframe")
-    repo.update(s, "segment", seg, key_time_sec=4.0, key_image_prompt="@林小雨 转身", key_frame_path="k.png")
+    s.conn.execute("ALTER TABLE segment ADD COLUMN key_time_sec REAL")
+    s.conn.execute("ALTER TABLE segment ADD COLUMN key_image_prompt TEXT NOT NULL DEFAULT ''")
+    s.conn.execute("ALTER TABLE segment ADD COLUMN key_frame_path TEXT")
+    s.conn.execute("UPDATE segment SET key_time_sec = 4.0, key_image_prompt = '@林小雨 转身', key_frame_path = 'k.png'"
+                   " WHERE id = ?", (seg,))
     s.conn.execute("UPDATE meta SET value = '9' WHERE key = 'schema_version'")
     s.close()
 
@@ -210,4 +194,5 @@ def test_v9_keyframe_moves_into_its_own_table(tmp_path):
     [k] = repo.keyframes(s, seg)
     assert (k["time_sec"], k["image_prompt"], k["frame_path"], k["legacy_v9"]) == (4.0, "@林小雨 转身", "k.png", 1)
     assert repo.keyframes(s, plain) == []
+    assert not {"key_time_sec", "key_image_prompt", "key_frame_path"} & _cols(s, "segment")   # 旧列删掉了
     s.close()

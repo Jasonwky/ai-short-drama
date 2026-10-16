@@ -105,7 +105,7 @@ def apply(store: Store, imp: Impact) -> None:
             c.executemany("UPDATE segment SET video_path = NULL, subtitle_path = NULL WHERE id = ?",
                           [(i,) for i in imp.segment_ids])
             return
-        c.executemany("UPDATE segment SET first_frame_path = NULL, last_frame_path = NULL, key_frame_path = NULL,"
+        c.executemany("UPDATE segment SET first_frame_path = NULL, last_frame_path = NULL,"
                       " video_path = NULL, subtitle_path = NULL WHERE id = ?",
                       [(i,) for i in imp.segment_ids])
         c.executemany("UPDATE segment_keyframe SET frame_path = NULL WHERE segment_id = ?", [(i,) for i in imp.segment_ids])

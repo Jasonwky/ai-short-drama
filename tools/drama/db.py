@@ -107,9 +107,6 @@ CREATE TABLE segment (
   last_frame_path TEXT,
   video_path TEXT,
   subtitle_path TEXT,
-  key_time_sec REAL,
-  key_image_prompt TEXT NOT NULL DEFAULT '',
-  key_frame_path TEXT,
   UNIQUE (episode_id, number)
 );
 
@@ -294,10 +291,14 @@ MIGRATIONS: dict[int, list[str]] = {
     8: ["ALTER TABLE segment ADD COLUMN key_time_sec REAL",
         "ALTER TABLE segment ADD COLUMN key_image_prompt TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE segment ADD COLUMN key_frame_path TEXT"],
-    # v10:关键帧搬进 segment_keyframe(一段多张);v9 段落上设了的那张原样搬过去,标 legacy_v9
+    # v10:关键帧搬进 segment_keyframe(一段多张);v9 段落上设了的那张原样搬过去,标 legacy_v9。
+    # 段落上的三列删掉(不留着不读写):漏改的读写点当场报错,而不是静默读到旧值
     9: [*KEYFRAME_DDL,
         "INSERT INTO segment_keyframe (segment_id, time_sec, image_prompt, frame_path, legacy_v9)"
-        " SELECT id, key_time_sec, key_image_prompt, key_frame_path, 1 FROM segment WHERE key_time_sec IS NOT NULL"],
+        " SELECT id, key_time_sec, key_image_prompt, key_frame_path, 1 FROM segment WHERE key_time_sec IS NOT NULL",
+        "ALTER TABLE segment DROP COLUMN key_time_sec",
+        "ALTER TABLE segment DROP COLUMN key_image_prompt",
+        "ALTER TABLE segment DROP COLUMN key_frame_path"],
 }
 
 
