@@ -57,7 +57,7 @@ def check(store: Store, root: Path, segment_id: int) -> KeyCheck | None:
     if not keys:
         return None
     path, idx = keys[0]
-    stale = seg["key_frame_path"] != path or seg["key_time_sec"] is None or key_frame_index(seg, MINIMAX_H3) != idx
+    stale = seg["key_frame_path"] != path or seg["key_time_sec"] is None or key_frame_index(seg["key_time_sec"], MINIMAX_H3) != idx
 
     def done(**kw) -> KeyCheck:
         return KeyCheck(path, idx, **{"frame_png": None, "diff": None, "problem": "", "stale": stale, **kw})

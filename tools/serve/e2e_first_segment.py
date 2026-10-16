@@ -57,11 +57,11 @@ def build_drama(store: Store, assets: dict[str, str]) -> int:
         store, ep, 1, scene_id=yard, duration_sec=8.0, reference_mode="first",
         description="【镜头1】林小雨低头看着手里的玉佩。【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」",
         image_prompt="@林小雨 站在黄昏的 @老宅庭院 里,双手捧着 @玉佩,中景,竖构图",
-        video_prompt="@林小雨 在 @老宅庭院 低头看 @玉佩,然后抬眼说话,固定机位,环境声,无配乐",
-        key_time_sec=4.0, key_image_prompt="@林小雨 在黄昏的 @老宅庭院 里转过身,背对镜头,手里握着 @玉佩,中景,竖构图")
+        video_prompt="@林小雨 在 @老宅庭院 低头看 @玉佩,然后抬眼说话,固定机位,环境声,无配乐")
     repo.bind_characters(store, seg, [lin])
     repo.bind_props(store, seg, [jade])
-    return seg, lin
+    key = repo.add_keyframe(store, seg, 4.0, "@林小雨 在黄昏的 @老宅庭院 里转过身,背对镜头,手里握着 @玉佩,中景,竖构图")
+    return seg, lin, key
 
 
 PRESET_SCHEDULER = "normal"      # 首帧模板预设:采样调度器 simple → normal(只改一处,验证叠加机制)
@@ -126,13 +126,13 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
         assets[kind] = dst.relative_to(data_root).as_posix()
 
     store = Store(data_root / "drama.db")
-    seg, lin = build_drama(store, assets)
+    seg, lin, key = build_drama(store, assets)
     host_id = add_host(store, **host)
     worker = make_worker(store, host_id, data_root)
     try:
         report = {"segment": seg, "tasks": [], "preset": _use_frame_preset(store, worker, host_id, sleep)}
 
-        for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_key_frame(store, seg, seed=seed),
+        for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_key_frame(store, key, seed=seed),
                      lambda: plan_fourview(store, lin, seed=seed + 2),
                      lambda: plan_video(store, seg, seed=seed + 1), lambda: plan_align(store, seg)):
             tid = plan()

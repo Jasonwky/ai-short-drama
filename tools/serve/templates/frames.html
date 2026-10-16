@@ -47,25 +47,29 @@
     {{ history(s.last_tasks, s.row.last_frame_path, state_label, "/episode/" ~ ep.id ~ "/frames") }}
     {% endif %}
     <h3>中间关键帧</h3>
-    {% if s.row.key_time_sec is none %}
-      <p class="empty" data-no-keyframe>没设关键帧(在「编辑段落」里设第几秒)</p>
-    {% else %}
-    <p class="hint">第 {{ s.row.key_time_sec }} 秒 · {{ s.row.key_image_prompt or "(还没写关键帧图提示词 —— 在「编辑段落」里写)" }}</p>
-    <div class="row">
-      <div class="current-media" data-key-frame>
-        {% if s.row.key_frame_path %}<img src="/media/{{ s.row.key_frame_path }}" alt="关键帧">
-        {% else %}<p class="empty">还没有关键帧图</p>{% endif %}
+    {% set seg_no = loop.index %}
+    {% for k in s.keyframes %}
+    <div class="keyframe" data-keyframe="{{ k.row.id }}">
+      <h4>第 {{ k.row.time_sec }} 秒</h4>
+      <p class="hint">{{ k.row.image_prompt or "(还没写关键帧图提示词 —— 在「编辑段落」里写)" }}</p>
+      <div class="row">
+        <div class="current-media" data-key-frame>
+          {% if k.row.frame_path %}<img src="/media/{{ k.row.frame_path }}" alt="关键帧">
+          {% else %}<p class="empty">还没有关键帧图</p>{% endif %}
+        </div>
+        <div style="flex: 1; min-width: 260px">
+          <form method="post" action="/keyframe/{{ k.row.id }}/frame">
+            <label>种子</label><input type="number" name="seed" value="{{ seed + 200 + 10 * seg_no + loop.index }}">
+            <button class="btn primary" type="submit" data-generate-key-frame>生成关键帧</button>
+          </form>
+          {% if loop.first %}{{ key_limits() }}{% endif %}
+        </div>
       </div>
-      <div style="flex: 1; min-width: 260px">
-        <form method="post" action="/segment/{{ s.row.id }}/keyframe">
-          <label>种子</label><input type="number" name="seed" value="{{ seed + 200 + loop.index }}">
-          <button class="btn primary" type="submit" data-generate-key-frame>生成关键帧</button>
-        </form>
-        {{ key_limits() }}
-      </div>
+      {{ history(k.tasks, k.row.frame_path, state_label, "/episode/" ~ ep.id ~ "/frames") }}
     </div>
-    {{ history(s.key_tasks, s.row.key_frame_path, state_label, "/episode/" ~ ep.id ~ "/frames") }}
-    {% endif %}
+    {% else %}
+      <p class="empty" data-no-keyframe>没设关键帧(在「编辑段落」里加,一段最多 3 张)</p>
+    {% endfor %}
   </section>
 {% else %}
   <section class="card empty">这一集还没有段落(去「分镜」新建)</section>

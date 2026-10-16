@@ -23,7 +23,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from tools.drama import repo
+from tools.drama import repo, targets
 from tools.drama.db import Store
 from tools.drama.tasks import set_task_state
 from tools.gen.comfy_client import ComfyUnreachable
@@ -107,11 +107,13 @@ class Collector:
             return self._unreachable(store, task, e)
         rel = local.relative_to(self.data_root).as_posix()
 
-        target = repo.get(store, task["target_type"], task["target_id"])
+        table, row_id, field = targets.slot(store, task)
         note = ""
-        if target[p["writes"]]:
+        if row_id is None:
+            note = "关键帧已删除,产物只留在任务记录里"
+        elif repo.get(store, table, row_id)[field]:
             note = f"{p['writes']} 已有产物,新版本留在任务记录里待人挑选"
         else:
-            repo.update(store, task["target_type"], task["target_id"], **{p["writes"]: rel})
+            repo.update(store, table, row_id, **{field: rel})
         set_task_state(store, tid, "done", result_path=rel, result_sha256=sha256_file(local))
         return Outcome("done", note or rel)

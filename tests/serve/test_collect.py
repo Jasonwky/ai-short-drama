@@ -148,3 +148,33 @@ def test_disconnect_during_fetch_goes_to_waiting_host(store, inflight, tmp_path,
     assert _t(store, tid)["state"] == "waiting_host"     # 库里也得是,不能只是返回值
     monkeypatch.undo()
     assert c.advance(store, comfy, _t(store, tid)).state == "done"
+
+
+def _key_task(store, sample, host_id, comfy, keyframe_id):
+    tid = create_task(store, kind="image", target_type="segment", target_id=sample["seg"], model="q",
+                      params={"writes": "key_frame_path", "keyframe_id": keyframe_id, "expect_ext": ".png"},
+                      seed=1, prompt="p", refs=[])
+    pid = comfy.submit({})
+    set_task_state(store, tid, "queued", external_id=pid, host_id=host_id)
+    comfy.finish(pid, "k.png")
+    return tid
+
+
+def test_keyframe_lands_on_its_own_keyframe(store, sample, host_id, tmp_path):
+    """关键帧任务挂在段落上,写回到参数里记的那一张(另一张不动)。"""
+    comfy = FakeComfy()
+    k3 = repo.add_keyframe(store, sample["seg"], 3.0, "p")
+    k6 = repo.add_keyframe(store, sample["seg"], 6.0, "p")
+    tid = _key_task(store, sample, host_id, comfy, k6)
+    assert Collector(tmp_path, Clock()).advance(store, comfy, _t(store, tid)).state == "done"
+    assert repo.get(store, "segment_keyframe", k6)["frame_path"] == _t(store, tid)["result_path"]
+    assert repo.get(store, "segment_keyframe", k3)["frame_path"] is None
+
+
+def test_keyframe_deleted_meanwhile_is_done_without_write_back(store, sample, host_id, tmp_path):
+    comfy = FakeComfy()
+    k = repo.add_keyframe(store, sample["seg"], 3.0, "p")
+    tid = _key_task(store, sample, host_id, comfy, k)
+    repo.delete_keyframe(store, k)
+    out = Collector(tmp_path, Clock()).advance(store, comfy, _t(store, tid))
+    assert out.state == "done" and out.message == "关键帧已删除,产物只留在任务记录里"

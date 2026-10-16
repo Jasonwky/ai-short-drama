@@ -63,14 +63,16 @@ def test_edit_page_shows_the_anchor_timeline_and_limits(client, store, sample):
     assert "第 96 帧" in page and "第 0 帧" in page and "说话特写在哪儿切由台词决定" in page
 
 
-def test_frames_panel_keyframe_card(client, store, sample):
+def test_frames_panel_has_a_card_per_keyframe(client, store, sample):
     page = client.get(f"/episode/{sample['episode']}/frames").text
     assert "data-no-keyframe" in page and 'data-fill="keyframes"' in page
-    repo.update(store, "segment", sample["seg"], key_time_sec=4.0, key_image_prompt=KEY_PROMPT)
-    assert "data-generate-key-frame" in client.get(f"/episode/{sample['episode']}/frames").text
-    client.post(f"/segment/{sample['seg']}/keyframe", data={"seed": "5"})
+    k3 = repo.add_keyframe(store, sample["seg"], 3.0, KEY_PROMPT)
+    k6 = repo.add_keyframe(store, sample["seg"], 6.0, KEY_PROMPT + ",回头")
+    page = client.get(f"/episode/{sample['episode']}/frames").text
+    assert page.count("data-generate-key-frame") == 2 and f'data-keyframe="{k3}"' in page and "第 6.0 秒" in page
+    client.post(f"/keyframe/{k6}/frame", data={"seed": "5"})
     [t] = [t for t in tasks_for(store, "segment", sample["seg"]) if t["kind"] == "image"]
-    assert json.loads(t["params_json"])["writes"] == "key_frame_path"
+    assert json.loads(t["params_json"])["keyframe_id"] == k6
 
 
 def test_videos_panel_compares_the_anchored_image_with_the_frame(client, runtime, store, sample, mp4_bytes):  # noqa: F811

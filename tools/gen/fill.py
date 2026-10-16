@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tools.drama import repo
+from tools.drama import repo, targets
 from tools.drama.db import Store
 from tools.gen import estimate, presets
 from tools.gen.align import align_problems, plan_align
@@ -67,7 +67,14 @@ class FillPlan:
 
 
 def _in_flight(store: Store, target_type: str, target_id: int, field: str) -> bool:
-    """这个目标的这个字段有没有在途任务。按写回字段分:首帧 / 尾帧、正面图 / 四视图都是同一目标的 image 任务。"""
+    """这个目标的这个字段有没有在途任务。按写回字段分:首帧 / 尾帧、正面图 / 四视图都是同一目标的 image 任务。
+    关键帧任务挂在段落上:按写回的是哪一张认(tools/drama/targets.py)。"""
+    if target_type == "segment_keyframe":
+        seg = repo.get(store, "segment_keyframe", target_id)["segment_id"]
+        rows = store.conn.execute(
+            f"SELECT * FROM task WHERE target_type = 'segment' AND target_id = ? AND json_extract(params_json, '$.writes') = ?"
+            f" AND state IN ({','.join('?' * len(IN_FLIGHT))})", (seg, targets.KEY_WRITES, *IN_FLIGHT)).fetchall()
+        return any(targets.slot(store, t)[1] == target_id for t in rows)
     return store.conn.execute(
         f"SELECT 1 FROM task WHERE target_type = ? AND target_id = ? AND json_extract(params_json, '$.writes') = ?"
         f" AND state IN ({','.join('?' * len(IN_FLIGHT))}) LIMIT 1",
@@ -101,11 +108,11 @@ def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
             elif kind == "lastframes":
                 items.append(_item(store, "segment", s, label, "image", "last_frame_path",
                                    lambda sid=s["id"]: last_frame_problems(store, sid), b.item(QWEN_IMAGE_EDIT_2511)))
-            elif kind == "keyframes":
-                if s["key_time_sec"] is None:
-                    continue                                   # 没设关键帧的段落不算「缺」
-                items.append(_item(store, "segment", s, label, "image", "key_frame_path",
-                                   lambda sid=s["id"]: key_frame_problems(store, sid), b.item(QWEN_IMAGE_EDIT_2511)))
+            elif kind == "keyframes":                           # 按张列;没设关键帧的段落不算「缺」
+                for k in repo.keyframes(store, s["id"]):
+                    items.append(_item(store, "segment_keyframe", k, f"{label} · 第 {k['time_sec']:g} 秒", "image",
+                                       "frame_path", lambda kid=k["id"]: key_frame_problems(store, kid),
+                                       b.item(QWEN_IMAGE_EDIT_2511)))
             elif kind == "subtitles":
                 items.append(_item(store, "segment", s, label, "align", "subtitle_path",
                                    lambda sid=s["id"]: align_problems(store, sid), b.item(WHISPER_ALIGN)))

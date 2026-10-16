@@ -24,6 +24,11 @@ FRAMES_NEEDED: dict[str, tuple[str, ...]] = {
 FRAME_LABEL = {"first_frame_path": "首帧", "last_frame_path": "尾帧"}
 # 中间关键帧:叠加在任何参考模式上(spike-results/2026-10-09-中间关键帧锚定实测.md)。离两头至少这么远
 KEY_MARGIN_SEC = 0.5
+# 一段多张(specs/2026-10-15-多关键帧与草稿档-design.md §2.2):张与张之间至少隔这么远(0.5 秒 = 12 帧,帧号不会相同);
+# 最多 3 张(用户 2026-10-15 定),真机只验证到 2 张(spike-results/2026-10-14-开卡调研批次-运镜关键帧步数.md)
+KEY_GAP_SEC = 0.5
+KEY_MAX = 3
+KEY_TESTED = 2
 KIND_LABEL = {"character": "角色", "scene": "场景", "prop": "道具"}
 
 
@@ -39,27 +44,38 @@ def is_ready(checks: list[Check]) -> bool:
     return all(c.ok for c in checks)
 
 
-def key_frame_index(seg, cap: Capability) -> int:
+def key_frame_index(time_sec: float, cap: Capability) -> int:
     """关键帧钉在第几帧:秒 × 模型帧率(AddGuide 的 frame_idx 是像素帧号,不按 latent 取整)。"""
-    return round(seg["key_time_sec"] * cap.fps)
+    return round(time_sec * cap.fps)
 
 
-def key_problems(seg, cap: Capability) -> list[str]:
-    """段落设了关键帧时还差什么。范围按**实际帧数**算(时长会吸附到模型的帧网格上)。"""
-    if seg["duration_sec"] is None:
-        return ["段落没有时长,算不出关键帧在第几帧"]
-    t, dur = seg["key_time_sec"], seg["duration_sec"]
+def key_problems(seg, key, cap: Capability) -> list[str]:
+    """一张关键帧还差什么。范围按**实际帧数**算(时长会吸附到模型的帧网格上)。每条都写明是第几秒的那张。"""
+    t, dur = key["time_sec"], seg["duration_sec"]
     problems = []
     if not KEY_MARGIN_SEC <= t <= dur - KEY_MARGIN_SEC:
-        problems.append(f"关键帧在第 {t:g} 秒,要在 {KEY_MARGIN_SEC:g}–{dur - KEY_MARGIN_SEC:g} 秒之间")
+        problems.append(f"第 {t:g} 秒的关键帧不在 {KEY_MARGIN_SEC:g}–{dur - KEY_MARGIN_SEC:g} 秒之间")
     else:
-        idx = key_frame_index(seg, cap)
+        idx = key_frame_index(t, cap)
         if idx <= 0 or idx >= cap.frames_for(dur) - 1:
-            problems.append(f"关键帧落在第 {idx} 帧,与首帧 / 尾帧锚点重合")
-    if not seg["key_image_prompt"].strip():
-        problems.append("缺少关键帧图提示词")
-    if not seg["key_frame_path"]:
-        problems.append("还没有关键帧图(在「参考帧」面板生成)")
+            problems.append(f"第 {t:g} 秒的关键帧落在第 {idx} 帧,与首帧 / 尾帧锚点重合")
+    if not key["image_prompt"].strip():
+        problems.append(f"第 {t:g} 秒的关键帧缺图提示词")
+    if not key["frame_path"]:
+        problems.append(f"第 {t:g} 秒的关键帧还没有图(在「参考帧」面板生成)")
+    return problems
+
+
+def keys_problems(seg, keys, cap: Capability) -> list[str]:
+    """本段全部关键帧(按时刻先后)还差什么:张数、逐张、张与张之间的间距。"""
+    problems = [f"最多 {KEY_MAX} 张关键帧,现在 {len(keys)} 张"] if len(keys) > KEY_MAX else []
+    if seg["duration_sec"] is None:
+        return problems + ["段落没有时长,算不出关键帧在第几帧"]
+    for k in keys:
+        problems += key_problems(seg, k, cap)
+    for a, b in zip(keys, keys[1:]):
+        if b["time_sec"] - a["time_sec"] < KEY_GAP_SEC:
+            problems.append(f"第 {a['time_sec']:g} 秒与第 {b['time_sec']:g} 秒的关键帧相隔不到 {KEY_GAP_SEC:g} 秒")
     return problems
 
 
@@ -111,10 +127,14 @@ def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, i
         else:
             checks.append(Check("refs_ready", True, f"参考模式 {mode},参考帧齐备"))
 
-    if seg["key_time_sec"] is not None:
-        bad_key = key_problems(seg, video_cap)
-        checks.append(Check("keyframe", not bad_key, ";".join(bad_key) or
-                            f"关键帧(第 {seg['key_time_sec']:g} 秒 = 第 {key_frame_index(seg, video_cap)} 帧)已就绪"))
+    keys = repo.keyframes(store, segment_id)
+    if keys:
+        bad_key = keys_problems(seg, keys, video_cap)
+        at = "、".join(f"第 {k['time_sec']:g} 秒 = 第 {key_frame_index(k['time_sec'], video_cap)} 帧" for k in keys)
+        checks.append(Check("keyframe", not bad_key, ";".join(bad_key) or f"关键帧({at})已就绪"))
+        if len(keys) > KEY_TESTED:
+            checks.append(Check("keyframe_count", True,
+                                f"{len(keys)} 张关键帧:此数量未经真机验证(实测到 {KEY_TESTED} 张)", warn=True))
         if mode == "first_last":
             checks.append(Check("keyframe_untested", True, "首尾帧 + 关键帧三个锚点同时用:此组合未经真机验证", warn=True))
 

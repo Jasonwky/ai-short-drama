@@ -87,9 +87,8 @@ def test_last_frame_mode_needs_its_own_prompt(store, sample):
     assert not c.ok and "尾帧图提示词" in c.msg
 
 
-def _key(store, seg, **fields):
-    repo.update(store, "segment", seg, **{"key_time_sec": 4.0, "key_image_prompt": "@林小雨 转身背对镜头",
-                                          "key_frame_path": "frames/k.png", **fields})
+def _key(store, seg, time_sec=4.0, prompt="@林小雨 转身背对镜头", path="frames/k.png"):
+    return repo.add_keyframe(store, seg, time_sec, prompt, path)
 
 
 def test_no_keyframe_means_no_keyframe_check(store, sample):
@@ -102,32 +101,58 @@ def test_ready_keyframe_names_its_frame(store, sample):
     assert c.ok and c.msg == "关键帧(第 4 秒 = 第 96 帧)已就绪"
 
 
+def test_two_keyframes_name_their_frames(store, sample):
+    _key(store, sample["seg"], 6.0)
+    _key(store, sample["seg"], 3.0)
+    c = _by_key(_check(store, sample["seg"]))["keyframe"]
+    assert c.ok and c.msg == "关键帧(第 3 秒 = 第 72 帧、第 6 秒 = 第 144 帧)已就绪"
+    assert "keyframe_count" not in _by_key(_check(store, sample["seg"]))       # 2 张实测过,不警告
+
+
 def test_keyframe_index_uses_the_model_fps():
     from tools.drama.readiness import key_frame_index
-    assert key_frame_index({"key_time_sec": 4.0}, MINIMAX_H3) == 96
-    assert key_frame_index({"key_time_sec": 0.52}, MINIMAX_H3) == 12
+    assert key_frame_index(4.0, MINIMAX_H3) == 96
+    assert key_frame_index(0.52, MINIMAX_H3) == 12
 
 
 def test_keyframe_problems_block(store, sample):
-    """8 秒片实际 192 帧:关键帧要在 0.5 秒 ~ 时长 − 0.5 秒,还要有提示词与图。"""
-    seg = sample["seg"]
+    """8 秒片实际 192 帧:每张关键帧要在 0.5 秒 ~ 时长 − 0.5 秒,还要有提示词与图;原因写明是第几秒那张。"""
     cases = {
-        (0.2, "p", "k.png"): "关键帧在第 0.2 秒,要在 0.5–7.5 秒之间",
-        (7.8, "p", "k.png"): "关键帧在第 7.8 秒,要在 0.5–7.5 秒之间",
-        (4.0, " ", "k.png"): "缺少关键帧图提示词",
-        (4.0, "p", None): "还没有关键帧图",
+        (0.2, "p", "k.png"): "第 0.2 秒的关键帧不在 0.5–7.5 秒之间",
+        (7.8, "p", "k.png"): "第 7.8 秒的关键帧不在 0.5–7.5 秒之间",
+        (4.0, " ", "k.png"): "第 4 秒的关键帧缺图提示词",
+        (4.0, "p", None): "第 4 秒的关键帧还没有图",
     }
     for (t, prompt, path), msg in cases.items():
-        _key(store, seg, key_time_sec=t, key_image_prompt=prompt, key_frame_path=path)
-        c = _by_key(_check(store, seg))["keyframe"]
+        k = _key(store, sample["seg"], t, prompt, path)
+        c = _by_key(_check(store, sample["seg"]))["keyframe"]
         assert not c.ok and msg in c.msg, (t, c.msg)
+        repo.delete_keyframe(store, k)
+
+
+def test_keyframes_too_close_block(store, sample):
+    _key(store, sample["seg"], 3.0)
+    _key(store, sample["seg"], 3.4)
+    c = _by_key(_check(store, sample["seg"]))["keyframe"]
+    assert not c.ok and "第 3 秒与第 3.4 秒的关键帧相隔不到 0.5 秒" in c.msg
+
+
+def test_three_keyframes_warn_and_four_block(store, sample):
+    """最多 3 张(用户定);第 3 张标「未经真机验证」(实测到 2 张)。"""
+    for t in (2.0, 4.0, 6.0):
+        _key(store, sample["seg"], t)
+    by = _by_key(_check(store, sample["seg"]))
+    assert by["keyframe"].ok and by["keyframe_count"].warn and "实测到 2 张" in by["keyframe_count"].msg
+    _key(store, sample["seg"], 7.0)
+    c = _by_key(_check(store, sample["seg"]))["keyframe"]
+    assert not c.ok and "最多 3 张关键帧,现在 4 张" in c.msg
 
 
 def test_shortened_segment_pushes_the_keyframe_out(store, sample):
-    _key(store, sample["seg"], key_time_sec=7.0)
+    _key(store, sample["seg"], 7.0)
     repo.update(store, "segment", sample["seg"], duration_sec=6.0)
     c = _by_key(_check(store, sample["seg"]))["keyframe"]
-    assert not c.ok and "要在 0.5–5.5 秒之间" in c.msg
+    assert not c.ok and "不在 0.5–5.5 秒之间" in c.msg
 
 
 def test_first_last_plus_keyframe_is_flagged_untested(store, sample):

@@ -84,7 +84,7 @@ def edit_page(request: Request, segment_id: int):
         if seg["reference_mode"] in ("last", "first_last"):
             marks.append(("尾帧", frames - 1, 100))
         if seg["key_time_sec"] is not None:
-            idx = key_frame_index(seg, MINIMAX_H3)
+            idx = key_frame_index(seg["key_time_sec"], MINIMAX_H3)
             marks.append(("关键帧", idx, min(100, round(100 * idx / (frames - 1)))))
     return render(request, "segment_edit.html", "storyboard", episode_id=seg["episode_id"], seg=seg, modes=MODES,
                   frames=frames, marks=marks, margin=KEY_MARGIN_SEC,
