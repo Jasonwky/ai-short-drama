@@ -187,6 +187,31 @@ def test_custom_workflow_image_paths_move_with_the_bundle(store, project, tmp_pa
     assert p["graph"]["18"]["inputs"]["image"] == f"{prefix}/assets/lin.png" == p["image_refs"][0]
 
 
+def test_keyframes_and_their_task_ids_move_with_the_bundle(store, project, tmp_path):
+    """关键帧随段落过去(图加前缀、legacy_v9 原样);任务参数里的 keyframe_id 按新编号重映射,原库已删的仍是「已删除」。"""
+    from tools.drama import targets
+    gone = repo.add_keyframe(store, project["seg"], 1.0)
+    repo.delete_keyframe(store, gone)                                   # 原库编号从 2 起,与导入后的新编号错开
+    _file(project["root"], "outputs/tasks/8/k.png", b"k")
+    k = repo.add_keyframe(store, project["seg"], 4.0, "p", "outputs/tasks/8/k.png")
+    for kid in (k, gone):                                               # 在途的不让导出:记成失败的尝试
+        t = create_task(store, kind="image", target_type="segment", target_id=project["seg"], model="m", seed=1,
+                        prompt="p", params={"writes": "key_frame_path", "keyframe_id": kid}, refs=[])
+        set_task_state(store, t, "failed", error="x")
+    dest = Store(":memory:")
+    new = bundle.import_bundle(dest, tmp_path / "dst", project["root"] / bundle.export_bundle(store, project["root"],
+                                                                                              project["drama"]))
+    [seg] = dest.conn.execute("SELECT s.* FROM segment s JOIN episode e ON e.id = s.episode_id WHERE e.drama_id = ?",
+                              (new,)).fetchall()
+    prefix = seg["first_frame_path"].split("/outputs/")[0]
+    [nk] = repo.keyframes(dest, seg["id"])
+    assert (nk["time_sec"], nk["frame_path"], nk["legacy_v9"]) == (4.0, f"{prefix}/outputs/tasks/8/k.png", 0)
+    assert (tmp_path / "dst" / nk["frame_path"]).read_bytes() == b"k"
+    mine, deleted = [r for r in tasks_for(dest, "segment", seg["id"]) if "key" in r["params_json"]]
+    assert targets.slot(dest, mine) == ("segment_keyframe", nk["id"], "frame_path") and nk["id"] != k
+    assert json.loads(deleted["params_json"])["keyframe_id"] is None and targets.slot(dest, deleted)[1] is None
+
+
 def test_video_anchors_and_the_keyframe_move_with_the_bundle(store, project, tmp_path):
     """视频任务参数里的锚点 [[路径, 帧号], …] 导入后也要加前缀(P7 起就漏了;关键帧对比要从它取图)。"""
     _file(project["root"], "outputs/tasks/8/k.png", b"k")

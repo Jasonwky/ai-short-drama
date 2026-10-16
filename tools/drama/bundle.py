@@ -28,7 +28,8 @@ from tools.drama.repo import next_segment_id
 FORMAT = 1
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
 PATH_FIELDS = {"character": ("turnaround_path", "fourview_path", "voice_ref_path"), "scene": ("image_path",), "prop": ("image_path",),
-               "segment": ("first_frame_path", "last_frame_path", "key_frame_path", "video_path", "subtitle_path")}
+               "segment": ("first_frame_path", "last_frame_path", "key_frame_path", "video_path", "subtitle_path"),
+               "segment_keyframe": ("frame_path",)}
 PARAM_PATH_KEYS = ("image_refs", "audio_ref", "video")      # task.params_json 里存路径的键(video:字幕对齐的输入)
 
 
@@ -60,6 +61,7 @@ def collect(store: Store, drama_id: int) -> dict:
     segs = [r["id"] for r in t["segment"]]
     for link in ("segment_character", "segment_prop"):
         t[link] = _rows(store, f"SELECT * FROM {link} WHERE segment_id IN ({_in(segs)}) ORDER BY segment_id, position", ())
+    t["segment_keyframe"] = _rows(store, f"SELECT * FROM segment_keyframe WHERE segment_id IN ({_in(segs)}) ORDER BY id", ())
     owned = {"segment": segs, **{k: [r["id"] for r in t[k]] for k in ("character", "scene", "prop")}}
     t["task"] = _rows(store, " UNION ".join(
         f"SELECT * FROM task WHERE target_type = '{k}' AND target_id IN ({_in(v)})" for k, v in owned.items())
@@ -166,7 +168,8 @@ def _insert(store: Store, m: dict, prefix: str, root: Path) -> int:
         return c.execute(f"INSERT INTO {table} ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
                          tuple(row.values())).lastrowid
 
-    ids: dict[str, dict[int, int]] = {k: {} for k in ("drama", "episode", "character", "scene", "prop", "segment")}
+    ids: dict[str, dict[int, int]] = {k: {} for k in ("drama", "episode", "character", "scene", "prop", "segment",
+                                                      "segment_keyframe")}
     with store.write() as c:
         [d] = t["drama"]
         ids["drama"][d["id"]] = new_drama = insert(c, "drama", d)
@@ -183,6 +186,9 @@ def _insert(store: Store, m: dict, prefix: str, root: Path) -> int:
             if r["scene_id"] is not None:
                 over["scene_id"] = ids["scene"][r["scene_id"]]
             ids["segment"][r["id"]] = insert(c, "segment", r, id=next_segment_id(c), **over)   # 编号永不复用
+        for r in t["segment_keyframe"]:                 # legacy_v9 原样带过去:P12 时代的任务还靠它认
+            ids["segment_keyframe"][r["id"]] = insert(c, "segment_keyframe", r, segment_id=ids["segment"][r["segment_id"]],
+                                                      frame_path=mv(r["frame_path"]))
         for link, col, table in (("segment_character", "character_id", "character"), ("segment_prop", "prop_id", "prop")):
             for r in t[link]:
                 c.execute(f"INSERT INTO {link} (segment_id, {col}, position) VALUES (?, ?, ?)",
@@ -197,6 +203,9 @@ def _insert(store: Store, m: dict, prefix: str, root: Path) -> int:
             # 视频锚点 [[路径, 帧号], …](首帧 / 尾帧 / 关键帧钉在哪一帧;P7 加锚点时这里漏了)
             if params.get("anchors"):
                 params["anchors"] = [[mv(p), idx] for p, idx in params["anchors"]]
+            # 关键帧任务写回哪一张:编号全部重新分配,不改就指到别的剧的关键帧或空号;那张在原库里已删 → None(仍是「已删除」)
+            if "keyframe_id" in params:
+                params["keyframe_id"] = ids["segment_keyframe"].get(params["keyframe_id"])
             for node in params.get("graph", {}).values():     # 改参重跑的整份工作流:「加载图像」节点也写着素材库路径
                 if node.get("class_type") == "LoadImage" and node["inputs"].get("image"):
                     node["inputs"]["image"] = mv(node["inputs"]["image"])
