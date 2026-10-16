@@ -28,6 +28,9 @@ H3_MODEL = "minimax_h3_ref2va_pruned_fp8_scaled.safetensors"
 
 QWEN_PRESETS = {"fast": (4, 1.0), "baseline": (20, 4.0)}   # (步数, CFG);fast 是闸门 0 定的默认档
 H3_STEPS = 20
+# 草稿档:每步耗时不变、总时长按步数线性降,画质肉眼无差,但 10 / 14 步都出过道具重复、20 步没有
+# (spike-results/2026-10-14-开卡调研批次-运镜关键帧步数.md,1 个种子)。用来快速看构图 / 动作,定稿用 H3_STEPS
+DRAFT_STEPS = 10
 H3_IMAGE_SLOTS = 3                                          # 模板预留的参考图槽(节点 8/9/10)
 
 FRAME_SIZE = {"9:16": (928, 1664), "16:9": (1664, 928)}    # Qwen 原生档

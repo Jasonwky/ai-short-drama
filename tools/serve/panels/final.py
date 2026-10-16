@@ -13,6 +13,9 @@ from fastapi.responses import RedirectResponse
 
 from tools.cut import export, media
 from tools.drama import repo
+from tools.drama.tasks import producer
+from tools.gen.workflows import H3_STEPS
+from tools.serve.dispatch import FEW_STEPS_NOTE, steps_of
 from tools.serve.panels.common import render, rt
 
 router = APIRouter()
@@ -26,7 +29,13 @@ def page(request: Request, episode_id: int):
     segs = store.conn.execute("SELECT * FROM segment WHERE episode_id = ? ORDER BY number", (episode_id,)).fetchall()
     rows = [{"row": r, "checks": json.loads(r["checks_json"]) if r["checks_json"] else []}
             for r in export.list_for(store, episode_id)]
-    return render(request, "final.html", "final", episode_id=episode_id, ep=ep, segs=segs,
+    few = []                   # 少步数的视频:提醒、不拦(用户 2026-10-15 定)
+    for s in segs:
+        t = producer(store, "video", s["video_path"]) if s["video_path"] else None
+        n = steps_of(t) if t else None
+        if n is not None and n < H3_STEPS:
+            few.append(f"段落 {s['number']} 的视频只用了 {n} 步:{FEW_STEPS_NOTE}")
+    return render(request, "final.html", "final", episode_id=episode_id, ep=ep, segs=segs, few_steps=few,
                   problems=export.readiness(store, runtime.data_root, episode_id),
                   producer=export.saved_producer(store), exports=rows, label_text=media.LABEL_TEXT)
 

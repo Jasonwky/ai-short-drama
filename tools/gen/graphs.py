@@ -201,6 +201,17 @@ def with_images(wf: dict, names: dict[str, str]) -> dict:
     return wf
 
 
+def set_steps(wf: dict, n: int) -> dict:
+    """把视频的采样步数(BasicScheduler.steps)设成 n,返回新图。按节点类型找、不认节点号(预设可能动过);
+    找不到或不止一个就报错 —— 设不上不能当作设上了。"""
+    found = [nid for nid, node in wf.items() if node["class_type"] == "BasicScheduler"]
+    if len(found) != 1:
+        raise ValueError(f"图里有 {len(found)} 个 BasicScheduler,设不了步数(要恰好 1 个)")
+    wf = copy.deepcopy(wf)
+    wf[found[0]]["inputs"]["steps"] = n
+    return wf
+
+
 def steps(wf: dict) -> int | None:
     """H3 视频的采样步数(BasicScheduler.steps),估算耗时用;找不到返回 None(调用方用默认步数)。"""
     for n in wf.values():

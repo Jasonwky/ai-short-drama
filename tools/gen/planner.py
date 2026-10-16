@@ -24,7 +24,7 @@ from tools.drama.targets import KEY_WRITES
 from tools.drama.tasks import create_task
 from tools.gen import presets
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
-from tools.gen.workflows import FRAME_SIZE, H3_IMAGE_SLOTS, H3_MODEL, QWEN_MODEL, VIDEO_SIZE, build_h3
+from tools.gen.workflows import DRAFT_STEPS, FRAME_SIZE, H3_IMAGE_SLOTS, H3_MODEL, QWEN_MODEL, VIDEO_SIZE, build_h3
 
 # readiness 里属于「提交时」的检查项;规划阶段不看
 RUNTIME_KEYS = {"host_ready", "video_model_ready"}
@@ -172,7 +172,10 @@ def video_problems(store: Store, segment_id: int) -> list[str]:
     return []
 
 
-def plan_video(store: Store, segment_id: int, *, seed: int) -> int:
+def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = None) -> int:
+    """steps:None = 定稿(内置 20 步,或当前视频预设改过的步数;参数里不写这个键,与以前的任务一致);DRAFT_STEPS = 草稿档。"""
+    if steps not in (None, DRAFT_STEPS):
+        raise ValueError(f"步数档只有定稿和草稿({DRAFT_STEPS} 步),给的是 {steps}")
     problems = video_problems(store, segment_id)
     if problems:
         raise ValueError(";".join(problems))
@@ -200,7 +203,7 @@ def plan_video(store: Store, segment_id: int, *, seed: int) -> int:
         "workflow": "minimax_h3", "frames": MINIMAX_H3.frames_for(seg["duration_sec"]),
         "size": list(VIDEO_SIZE[_aspect(store, segment_id)]),
         "image_refs": image_refs, "anchors": anchors, "audio_ref": None,
-        "writes": "video_path", "expect_ext": ".mp4",
+        "writes": "video_path", "expect_ext": ".mp4", **({"steps": steps} if steps else {}),
     }
     params = presets.stamp(store, "video", params)
     try:            # 规划时就试拼一次(内置拼法叠上当前预设):拼不出就拒绝规划,不等到交给云机时才失败

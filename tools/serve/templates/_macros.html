@@ -1,5 +1,5 @@
 {# 任务历史:缩略图 / 播放器 + 状态 + 失败原因 + 「用这一版」 #}
-{% macro history(tasks, current, state_label, next_url) %}
+{% macro history(tasks, current, state_label, next_url, tags={}, tag_note="") %}
 <div class="history" {% if tasks | selectattr("state", "in", ["pending", "queued", "running", "waiting_host"]) | list %}data-inflight{% endif %}>
   {% for t in tasks | reverse %}
     <div class="ver {% if t.result_path and t.result_path == current %}current{% endif %} state-{{ t.state }}" data-task="{{ t.id }}">
@@ -15,6 +15,7 @@
       <div class="meta">
         <a href="/task/{{ t.id }}" data-task-link>#{{ t.id }}</a> · 种子 {{ t.seed }} · <b>{{ state_label[t.state] }}</b>
         {% if t.result_path and t.result_path == current %}<span class="tag">当前版</span>{% endif %}
+        {% if tags.get(t.id) %}<span class="tag warn" data-few-steps title="{{ tag_note }}">{{ tags.get(t.id) }}</span>{% endif %}
       </div>
       {% if t.result_path %}<a class="btn small" href="/trace/product?path={{ t.result_path | urlencode }}" data-trace-link>溯源</a>{% endif %}
       {% if t.error %}<div class="err" data-task-error>{{ t.error }}</div>{% endif %}

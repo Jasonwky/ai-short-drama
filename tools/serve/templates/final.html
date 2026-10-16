@@ -25,6 +25,7 @@
   <h2>导出</h2>
   <ul class="checklist" data-export-readiness>
     {% for p in problems %}<li class="bad">{{ p }}</li>{% else %}<li class="ok">每段都有视频、有台词的段落都有字幕,本机 ffmpeg 与字体就绪</li>{% endfor %}
+    {% for w in few_steps %}<li class="warn" data-few-steps>{{ w }}(不拦导出)</li>{% endfor %}
   </ul>
   <form method="post" action="/episode/{{ ep.id }}/export" data-export-form>
     <label>生成合成服务提供者编码(★必答,如统一社会信用代码;只能用英文字母、数字和符号,不含空格)</label>

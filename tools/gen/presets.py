@@ -170,8 +170,11 @@ def stamp(store: Store, category: str, params: dict) -> dict:
 
 
 def apply_params(wf: dict, params: dict) -> dict:
-    """dispatch 时:内置拼法叠上任务参数里那份改动(没有就原样)。"""
-    return graphs.apply(wf, params["preset_diff"]) if "preset_diff" in params else wf
+    """dispatch 时:内置拼法叠上任务参数里那份改动(没有就原样),再按参数里的步数档设步数 ——
+    草稿档压过预设里的步数(人当场选的比全局预设具体)。"""
+    if "preset_diff" in params:
+        wf = graphs.apply(wf, params["preset_diff"])
+    return graphs.set_steps(wf, params["steps"]) if "steps" in params else wf
 
 
 def video_steps(store: Store) -> int | None:

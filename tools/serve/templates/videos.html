@@ -2,7 +2,8 @@
 {% from "_macros.html" import history, checklist, fill_form %}
 {% block content %}
 <h1>视频 · 第 {{ ep.number }} 集</h1>
-<p class="hint">MiniMax H3 ref2va,20 步档(各段预计耗时按「主机」面板登记的卡估算)。台词取自段落描述,逐字进提示词;不喂参考音频(闸门 0-4)。</p>
+<p class="hint">MiniMax H3 ref2va,定稿 {{ full_steps }} 步、草稿 {{ draft_steps }} 步两档(各段预计耗时按「主机」面板登记的卡估算)。台词取自段落描述,逐字进提示词;不喂参考音频(闸门 0-4)。</p>
+<p class="hint" data-draft-note>草稿档 {{ draft_steps }} 步约省一半时间,用来快速看构图 / 动作:{{ few_note }}(2026-10-14 实测,1 个种子)。</p>
 <p class="hint" data-cut-note>{{ cut_note }}</p>
 {{ fill_form("videos", ep.id, seed, "补全本集缺的视频") }}
 {{ fill_form("subtitles", ep.id, seed, "补全本集缺的字幕") }}
@@ -20,11 +21,17 @@
         {% elif s.row.duration_sec %}<p class="hint" data-estimate>{{ est_note }}</p>{% endif %}
         <form method="post" action="/segment/{{ s.row.id }}/video">
           <label>种子</label><input type="number" name="seed" value="{{ seed + loop.index }}">
+          <label>档位</label>
+          <select name="steps" data-steps>
+            <option value="">定稿 · {{ full_steps }} 步({{ "当前预设" if full_from_preset else "默认" }}{% if s.est_min is not none %},约 {{ "%.0f" | format(s.est_min) }} 分钟{% endif %})</option>
+            <option value="{{ draft_steps }}">草稿 · {{ draft_steps }} 步(可能出结构错误{% if s.draft_min is not none %},约 {{ "%.0f" | format(s.draft_min) }} 分钟{% endif %})</option>
+          </select>
           <button class="btn primary" type="submit" data-generate-video>生成视频</button>
         </form>
+        {% if s.few_now %}<p class="status-bad" data-few-steps-now>当前视频只用了 {{ s.few_now }} 步:{{ few_note }}</p>{% endif %}
       </div>
     </div>
-    {{ history(s.tasks, s.row.video_path, state_label, "/episode/" ~ ep.id ~ "/videos") }}
+    {{ history(s.tasks, s.row.video_path, state_label, "/episode/" ~ ep.id ~ "/videos", s.tags, few_note) }}
     {% if s.keychecks %}
     <h3>关键帧钉住了吗</h3>
     {% for k in s.keychecks %}

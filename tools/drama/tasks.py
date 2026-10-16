@@ -37,6 +37,12 @@ def create_task(store: Store, *, kind: str, target_type: str, target_id: int, mo
              json.dumps(list(refs), ensure_ascii=False), now(), now())).lastrowid
 
 
+def producer(store: Store, kind: str, path: str) -> sqlite3.Row | None:
+    """产出这个文件的那条已完成任务(同一路径有几条时取最新的);没有 = None(如手工放的文件)。"""
+    return store.conn.execute("SELECT * FROM task WHERE kind = ? AND state = 'done' AND result_path = ?"
+                              " ORDER BY id DESC LIMIT 1", (kind, path)).fetchone()
+
+
 def record_local(store: Store, *, kind: str, target_type: str, target_id: int, model: str, params: dict,
                  prompt: str, refs: list[str], result_path: str, result_sha256: str) -> int:
     """控制面本地、确定性的生成(如从视频抽尾帧):不经云机,**创建即完成**。

@@ -88,6 +88,19 @@ def build_workflow(task: sqlite3.Row, names: dict[str, str]) -> dict:
     return presets.apply_params(wf, p)      # 规划时绑定的模板预设(没有就原样)
 
 
+# 少于定稿步数的视频:视频卡片、导出页都提醒(spike-results/2026-10-14-开卡调研批次-运镜关键帧步数.md)
+FEW_STEPS_NOTE = "画质与定稿肉眼相近,但实测出过道具重复这类结构错误;定稿前用 20 步重出"
+
+
+def steps_of(task: sqlite3.Row) -> int | None:
+    """这条视频任务交给云机的工作流是几步:拼出那份图再读 BasicScheduler.steps。改参重跑的自定义图、
+    预设改过的步数、草稿档三种来源一视同仁。不走 ComfyUI 视频工作流的任务(没有步数)返回 None。"""
+    p = json.loads(task["params_json"])
+    if p.get("workflow") not in ("minimax_h3", "custom"):
+        return None
+    return graphs.steps(build_workflow(task, {r: r for r in _uploads(p)}))
+
+
 def dispatch(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
              run: preflight.Runner) -> Outcome:
     task_id = task["id"]
