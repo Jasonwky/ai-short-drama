@@ -29,7 +29,7 @@ _AFFECTED = {
     "fourview": "SELECT segment_id FROM segment_character WHERE character_id = ?",
 }
 _VIDEO_ONLY = {"voice", "fourview"}
-_FRAME_FIELDS = ("first_frame_path", "last_frame_path", "key_frame_path")
+_FRAME_FIELDS = ("first_frame_path", "last_frame_path")          # 关键帧图在 segment_keyframe 表里,另算
 
 
 @dataclass(frozen=True)
@@ -67,7 +67,7 @@ def impact(store: Store, event: str, target_id: int, *, video_cap: Capability,
             est += b.video(video_cap, video_cap.frames_for(seg["duration_sec"]), steps) or 0.0
         if event in _VIDEO_ONLY:
             continue
-        n = sum(1 for f in _FRAME_FIELDS if seg[f])
+        n = sum(1 for f in _FRAME_FIELDS if seg[f]) + sum(1 for k in repo.keyframes(store, sid) if k["frame_path"])
         frames += n
         est += n * (b.item(image_cap) or 0.0)
     return Impact(tuple(ids), frames, videos, None if b.timing is None else est, event in _VIDEO_ONLY, b.note)
@@ -82,13 +82,13 @@ def one_video(store: Store, seg, video_cap: Capability) -> Impact:
                   est_note=b.note)
 
 
-def keyframe_edit(store: Store, seg, *, video_cap: Capability, image_cap: Capability, prompt_changed: bool) -> Impact:
-    """只改了关键帧(时刻 / 提示词):作废本段视频;提示词变了关键帧图也作废(调用方清 key_frame_path)。
-    首帧 / 尾帧不动 —— 否则第一次给已有首帧的段落填关键帧提示词,首帧会被冲掉。"""
+def keyframe_edit(store: Store, seg, *, video_cap: Capability, image_cap: Capability, images: int) -> Impact:
+    """只改了关键帧(加 / 删 / 改时刻 / 改提示词):作废本段视频;images = 改了提示词、已经有图的那几张(图也作废,调用方清)。
+    首帧 / 尾帧不动 —— 否则第一次给已有首帧的段落加关键帧,首帧会被冲掉。"""
     from tools.gen import estimate
     from tools.gen.presets import video_steps
     b = estimate.basis(store)
-    frames = 1 if prompt_changed and seg["key_frame_path"] else 0
+    frames = images
     videos = 1 if seg["video_path"] else 0
     est = 0.0
     if videos:
@@ -108,3 +108,4 @@ def apply(store: Store, imp: Impact) -> None:
         c.executemany("UPDATE segment SET first_frame_path = NULL, last_frame_path = NULL, key_frame_path = NULL,"
                       " video_path = NULL, subtitle_path = NULL WHERE id = ?",
                       [(i,) for i in imp.segment_ids])
+        c.executemany("UPDATE segment_keyframe SET frame_path = NULL WHERE segment_id = ?", [(i,) for i in imp.segment_ids])

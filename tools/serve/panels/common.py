@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 from tools.drama import repo
 from tools.drama.invalidation import Impact
-from tools.drama.readiness import segment_readiness
+from tools.drama.readiness import CUT_NOTE, segment_readiness
 from tools.drama.styles import STYLES
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.serve import rerun
@@ -21,6 +21,7 @@ from tools.serve.runtime import Runtime
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
 TEMPLATES.env.filters["fromjson"] = json.loads
 TEMPLATES.env.globals["comfy_link"] = rerun.history_link     # 历史版本上的「在 ComfyUI 中编辑」
+TEMPLATES.env.globals["cut_note"] = CUT_NOTE                  # 切镜不可控的说明(编辑页、视频面板)
 STATE_LABEL = {"pending": "待提交", "queued": "已提交", "running": "生成中", "waiting_host": "等云机",
                "done": "完成", "failed": "失败"}
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")

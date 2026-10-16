@@ -72,27 +72,29 @@ def test_apply_clears_output_pointers_only_after_confirm(store, sample):
     assert seg["video_prompt"]  # 提示词等创作内容不动
 
 
-def test_character_change_also_voids_the_keyframe(store, sample):
-    """关键帧图是用角色 / 场景 / 道具合成的:换了正面图,旧关键帧图不能再被钉进视频。"""
-    repo.update(store, "segment", sample["seg"], key_time_sec=4.0, key_image_prompt="p", key_frame_path="frames/k.png")
+def test_character_change_also_voids_every_keyframe(store, sample):
+    """关键帧图是用角色 / 场景 / 道具合成的:换了正面图,旧关键帧图不能再被钉进视频 —— 每一张都是。"""
+    k3 = repo.add_keyframe(store, sample["seg"], 3.0, "p", "frames/k3.png")
+    k6 = repo.add_keyframe(store, sample["seg"], 6.0, "q", "frames/k6.png")
     imp = impact(store, "character", sample["lin"], **CAPS)
-    assert (imp.videos, imp.frames) == (1, 2)                    # 首帧 + 关键帧
+    assert (imp.videos, imp.frames) == (1, 3)                    # 首帧 + 两张关键帧
     apply(store, imp)
     seg = repo.get(store, "segment", sample["seg"])
-    assert (seg["first_frame_path"], seg["key_frame_path"], seg["video_path"]) == (None, None, None)
-    assert seg["key_time_sec"] == 4.0 and seg["key_image_prompt"] == "p"      # 设定还在,只清产物
+    assert (seg["first_frame_path"], seg["video_path"]) == (None, None)
+    assert [(k["id"], k["time_sec"], k["image_prompt"], k["frame_path"]) for k in repo.keyframes(store, sample["seg"])] \
+        == [(k3, 3.0, "p", None), (k6, 6.0, "q", None)]          # 设定还在,只清产物
 
 
 def test_keyframe_only_edit_spares_the_first_frame(store, sample):
     from tools.drama.invalidation import keyframe_edit
-    repo.update(store, "segment", sample["seg"], key_time_sec=4.0, key_image_prompt="p", key_frame_path="frames/k.png")
+    repo.add_keyframe(store, sample["seg"], 4.0, "p", "frames/k.png")
     seg = repo.get(store, "segment", sample["seg"])
-    moved = keyframe_edit(store, seg, prompt_changed=False, **CAPS)       # 只改时刻:关键帧图仍有效
+    moved = keyframe_edit(store, seg, images=0, **CAPS)                   # 只改时刻:关键帧图仍有效
     assert (moved.videos, moved.frames, moved.videos_only) == (1, 0, True)
-    reprompted = keyframe_edit(store, seg, prompt_changed=True, **CAPS)   # 改提示词:关键帧图也作废
+    reprompted = keyframe_edit(store, seg, images=1, **CAPS)              # 改提示词:那张关键帧图也作废
     assert (reprompted.videos, reprompted.frames) == (1, 1) and "1 张参考帧" in reprompted.summary()
     repo.update(store, "segment", sample["seg"], video_path=None)
-    no_video = keyframe_edit(store, repo.get(store, "segment", sample["seg"]), prompt_changed=True, **CAPS)
+    no_video = keyframe_edit(store, repo.get(store, "segment", sample["seg"]), images=1, **CAPS)
     assert (no_video.videos, no_video.frames) == (0, 1) and no_video.summary().endswith("无法估时:还没登记云机")
     repo.update(store, "segment", sample["seg"], video_path="videos/s1.mp4")
     apply(store, reprompted)

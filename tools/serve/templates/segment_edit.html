@@ -15,11 +15,28 @@
       <label>尾帧图提示词(「首尾帧」「尾帧」模式用;同样用 @名字)</label>
       <textarea name="last_image_prompt">{{ seg.last_image_prompt }}</textarea>
       <fieldset data-keyframe-fields>
-        <legend>中间关键帧(可选)</legend>
-        <label>第几秒(留空 = 不用;{% if seg.duration_sec %}可填 {{ margin }}–{{ seg.duration_sec - margin }} 秒,本段实际 {{ frames }} 帧{% else %}先填时长{% endif %})</label>
-        <input type="number" step="0.1" name="key_time_sec" value="{{ seg.key_time_sec if seg.key_time_sec is not none else '' }}" data-key-time>
-        <label>关键帧图提示词(同样用 @名字;只改关键帧不会冲掉首帧 / 尾帧,只作废本段视频)</label>
-        <textarea name="key_image_prompt" data-key-prompt>{{ seg.key_image_prompt }}</textarea>
+        <legend>中间关键帧(可选,最多 {{ key_max }} 张)</legend>
+        <p class="hint" data-cut-note>{{ cut_note }}</p>
+        <p class="hint">{% if seg.duration_sec %}每张可填 {{ margin }}–{{ seg.duration_sec - margin }} 秒、彼此至少隔 {{ gap }} 秒,本段实际 {{ frames }} 帧{% else %}先填时长{% endif %};
+          图提示词同样用 @名字。只动关键帧不会冲掉首帧 / 尾帧,只作废本段视频(改了提示词的那张图也作废)。</p>
+        {% for k in keys %}
+          <div class="key-row" data-key-row="{{ k.id }}">
+            <input type="hidden" name="key_id" value="{{ k.id }}">
+            <label>关键帧 {{ loop.index }}:第几秒</label>
+            <input type="number" step="0.1" name="key_time" value="{{ k.time_sec }}" data-key-time>
+            <label>关键帧 {{ loop.index }}:图提示词</label>
+            <textarea name="key_prompt" data-key-prompt>{{ k.image_prompt }}</textarea>
+            <span><input type="checkbox" name="key_delete" value="{{ k.id }}" id="kd{{ k.id }}" data-key-delete><label for="kd{{ k.id }}" style="display:inline">删除这张</label></span>
+          </div>
+        {% endfor %}
+        {% set full = keys | length >= key_max %}
+        <div class="key-row" data-key-new {% if full %}data-full{% endif %}>
+          <input type="hidden" name="key_id" value="" {% if full %}disabled{% endif %}>
+          <label>加一张:第几秒{% if full %}(已有 {{ key_max }} 张,不能再加){% endif %}</label>
+          <input type="number" step="0.1" name="key_time" value="" data-key-time {% if full %}disabled{% endif %}>
+          <label>加一张:图提示词</label>
+          <textarea name="key_prompt" data-key-prompt {% if full %}disabled{% endif %}></textarea>
+        </div>
         {% if marks %}
           <div class="key-timeline" data-key-timeline>
             {% for label, idx, pct in marks %}<span class="mark" style="left: {{ pct }}%" title="第 {{ idx }} 帧">{{ label }}<br><small>第 {{ idx }} 帧</small></span>{% endfor %}
