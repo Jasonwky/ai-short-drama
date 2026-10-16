@@ -6,7 +6,8 @@ worker 写回只填空位(已有产物不覆盖),新版本留在 task 表里 —
 - 换角色/场景/道具的参考图 → 绑定了它的段落,参考帧和视频全部作废(`invalidation` 的同名事件);
   换角色正面图还会清掉它的四视图(四视图是按旧正面图出的);
 - 换角色四视图 → 绑定了它的段落只作废视频(四视图只进视频的参考图);
-- 换段落首帧/尾帧 → 只有本段视频作废(另一张参考帧不受影响,不清);
+- 换段落首帧/尾帧/某张关键帧 → 只有本段视频作废(别的参考帧不受影响,不清);关键帧写到那一张自己的行上(`targets.slot`),
+  那张已删除就不让挑;
 - 换段落视频 → 本段字幕作废(时间轴是对着旧视频算的),要对新视频重新对齐。
 `plan_pick` 只算不改;人看了代价确认后 `confirm_pick` 才落盘。
 """
@@ -15,7 +16,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from tools.drama import invalidation, repo
+from tools.drama import invalidation, repo, targets
 from tools.drama.db import Store
 from tools.drama.invalidation import Impact
 from tools.gen.capability import Capability
@@ -31,6 +32,7 @@ class Pick:
     field: str
     new_path: str
     impact: Impact
+    slot: tuple[str, int, str]      # 写到哪:(表, 行号, 字段)
     note: str = ""
 
     def summary(self) -> str:
@@ -43,7 +45,10 @@ def plan_pick(store: Store, task_id: int, *, video_cap: Capability, image_cap: C
         raise ValueError(f"task {task_id} 状态是 {task['state']},只有完成的任务能被选为当前版")
     field = json.loads(task["params_json"])["writes"]
     ttype, tid = task["target_type"], task["target_id"]
-    if repo.get(store, ttype, tid)[field] == task["result_path"]:
+    table, row_id, col = targets.slot(store, task)
+    if row_id is None:
+        raise ValueError("这张关键帧已经删除,不能再选它的版本")
+    if repo.get(store, table, row_id)[col] == task["result_path"]:
         raise ValueError("这一版已经是当前版")
 
     note = ""
@@ -61,7 +66,7 @@ def plan_pick(store: Store, task_id: int, *, video_cap: Capability, image_cap: C
             imp = Impact((), 0, 0, 0.0)
     else:
         imp = Impact((), 0, 0, 0.0)   # 换视频 / 字幕:不作废别的视频(换视频时字幕在 confirm 里清)
-    return Pick(task_id, ttype, tid, field, task["result_path"], imp, note)
+    return Pick(task_id, ttype, tid, field, task["result_path"], imp, (table, row_id, col), note)
 
 
 def confirm_pick(store: Store, pick: Pick) -> None:
@@ -74,4 +79,5 @@ def confirm_pick(store: Store, pick: Pick) -> None:
             c.execute("UPDATE segment SET video_path = NULL, subtitle_path = NULL WHERE id = ?", (pick.target_id,))
     elif pick.field == "video_path":
         repo.update(store, "segment", pick.target_id, subtitle_path=None)
-    repo.update(store, pick.target_type, pick.target_id, **{pick.field: pick.new_path})
+    table, row_id, col = pick.slot
+    repo.update(store, table, row_id, **{col: pick.new_path})

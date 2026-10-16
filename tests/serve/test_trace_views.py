@@ -94,6 +94,17 @@ def test_siblings_list_failed_and_replaced_attempts(store, two_segments):
     assert sib == {first: "旧版本", bad: "失败"}
 
 
+def test_siblings_of_a_keyframe_are_only_that_keyframe(store, two_segments):
+    """关键帧任务都挂在段落上:同一段另一张关键帧的尝试不算「同目标」。"""
+    seg = two_segments["seg1"]
+    k1, k2 = repo.add_keyframe(store, seg, 3.0), repo.add_keyframe(store, seg, 6.0)
+    ids = [create_task(store, kind="image", target_type="segment", target_id=seg, model="m",
+                       params={"writes": "key_frame_path", "keyframe_id": k}, seed=1, prompt="p", refs=[])
+           for k in (k1, k1, k2)]
+    sib = trace_views.siblings(store, repo.get(store, "task", ids[0]))
+    assert [x["id"] for x in sib] == [ids[1]] and sib[0]["note"] == "在途"
+
+
 def test_task_view_has_everything_for_one_task(store, two_segments):
     s, root = two_segments, two_segments["root"]
     tid = provenance.node(store, root, repo.get(store, "segment", s["seg1"])["video_path"])["task"]["id"]

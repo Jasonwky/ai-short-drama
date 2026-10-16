@@ -13,6 +13,7 @@ import sqlite3
 from pathlib import Path
 
 from tools.cut import provenance
+from tools.drama import targets
 from tools.drama.db import Store
 from tools.llm import voices
 from tools.serve import journal, trace
@@ -68,21 +69,21 @@ def llm_sources(store: Store, task: sqlite3.Row) -> list[dict]:
 
 
 def siblings(store: Store, task: sqlite3.Row) -> list[dict]:
-    """同一目标、同一写回字段的其它尝试:失败的、被换下的旧版本、在途的。"""
+    """同一写回位置的其它尝试:失败的、被换下的旧版本、在途的。关键帧按「哪一张」分(targets.slot),不按段落混在一起。"""
     writes = json.loads(task["params_json"]).get("writes")
-    table = task["target_type"]
-    current = store.conn.execute(f"SELECT {writes} FROM {table} WHERE id = ?", (task["target_id"],)).fetchone() \
-        if writes else None
+    mine = targets.slot(store, task) if writes else None
+    current = targets.current(store, task) if writes else None
     out = []
     for t in store.conn.execute("SELECT * FROM task WHERE target_type = ? AND target_id = ? AND id != ? ORDER BY id DESC",
-                                (table, task["target_id"], task["id"])):
-        if json.loads(t["params_json"]).get("writes") != writes:
+                                (task["target_type"], task["target_id"], task["id"])):
+        theirs = json.loads(t["params_json"]).get("writes")
+        if theirs != writes or (writes and targets.slot(store, t) != mine):
             continue
         if t["state"] == "failed":
             note = "失败"
         elif t["state"] != "done":
             note = "在途"
-        elif current is not None and t["result_path"] == current[0]:
+        elif current is not None and t["result_path"] == current:
             note = "当前版"
         else:
             note = "旧版本"

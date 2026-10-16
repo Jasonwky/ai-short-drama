@@ -13,7 +13,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from tools.drama import repo
+from tools.drama import repo, targets
 from tools.drama.db import Store
 from tools.drama.tasks import create_task
 from tools.gen import graph_checks, graphs
@@ -70,16 +70,21 @@ def plan_rerun(store: Store, data_root: Path, task_id: int, graph: dict, object_
     problems = graph_checks.check(graph, object_info=object_info, family=fam, data_root=Path(data_root), **context(src))
     problems += graphs.lock_problems(base, graph, fam)
     found = graphs.seeds(graph)
+    p = _params(src)
+    key = {}
+    if p["writes"] == targets.KEY_WRITES:      # 关键帧:新版本写回同一张(P12 时代的旧任务也解析成具体行号带上)
+        key["keyframe_id"] = targets.keyframe_id(store, src)
+        if key["keyframe_id"] is None:
+            problems.append("这张关键帧已经删除,不能再为它出新版本")
     if src["target_type"] == "character" and found:
         locked = locked_seed(store, "character", src["target_id"])
         if locked is not None and found[0][2] != locked:
             problems.append(f"种子已锁定为 {locked} —— 要换种子先在资产面板解锁")
     if problems:
         return None, problems
-    p = _params(src)
     refs = list(dict.fromkeys(graphs.load_images(graph).values()))
     params = {"workflow": "custom", "family": fam, "graph": graph, "from_task": task_id, "image_refs": refs,
-              "writes": p["writes"], "expect_ext": p["expect_ext"], "size": p.get("size"), "frames": p.get("frames")}
+              "writes": p["writes"], **key, "expect_ext": p["expect_ext"], "size": p.get("size"), "frames": p.get("frames")}
     tid = create_task(store, kind=src["kind"], target_type=src["target_type"], target_id=src["target_id"],
                       model=src["model"], params=params, seed=found[0][2], prompt=src["prompt"], refs=refs)
     return tid, []

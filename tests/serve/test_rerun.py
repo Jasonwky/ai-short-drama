@@ -10,7 +10,7 @@ from tools.drama import repo
 from tools.drama.tasks import set_task_state, tasks_for
 from tools.gen.align import plan_align
 from tools.gen.assets import lock_seed, plan_asset_image
-from tools.gen.planner import plan_first_frame
+from tools.gen.planner import plan_first_frame, plan_key_frame
 from tools.serve import rerun
 from tools.serve.dispatch import SUBMITTED, dispatch
 from tools.serve.fakes import OBJECT_INFO_MIN
@@ -57,6 +57,20 @@ def test_rerun_with_a_new_seed_and_sampler_becomes_a_new_version(store, sample, 
     assert sent["27"]["inputs"]["seed"] == 12345 and sent["27"]["inputs"]["sampler_name"] == "euler_ancestral"
     assert sent["18"]["inputs"]["image"].startswith("ai-short-drama/")             # 提交时参考图换成了上传名
     assert len(tasks_for(store, "segment", sample["seg"])) == 2                     # 旧版还在,新版并列
+
+
+def test_keyframe_rerun_writes_back_to_the_same_keyframe(store, sample, world):
+    """关键帧的新版本写回同一张;那一张删了就不让再出。"""
+    k = repo.add_keyframe(store, sample["seg"], 3.0, "@林小雨 在 @老宅庭院 转身,握着 @玉佩")
+    src = plan_key_frame(store, k, seed=3)
+    dispatch(store, world["comfy"], world["host"], repo.get(store, "task", src), data_root=world["root"], run=NO_SSH)
+    graph, _ = rerun.source_graph(world["root"], repo.get(store, "task", src))
+    graph["27"]["inputs"]["seed"] = 99
+    tid, problems = rerun.plan_rerun(store, world["root"], src, graph, OBJECT_INFO)
+    assert problems == [] and json.loads(repo.get(store, "task", tid)["params_json"])["keyframe_id"] == k
+    repo.delete_keyframe(store, k)
+    tid, problems = rerun.plan_rerun(store, world["root"], src, graph, OBJECT_INFO)
+    assert tid is None and problems == ["这张关键帧已经删除,不能再为它出新版本"]
 
 
 def test_console_fields_are_locked(store, world):
