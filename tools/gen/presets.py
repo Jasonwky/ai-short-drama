@@ -27,9 +27,13 @@ def _qwen(n: int, size, preset: str = "fast") -> dict:
     return build_qwen(prompt, [f"{_PH}ref{i + 1}.png" for i in range(n)], 1, preset=preset, size=size)
 
 
+# 视频锚点:首帧、尾帧,再加最多 3 张中间关键帧(specs/2026-10-15-多关键帧与草稿档-design.md §2.7)
+_PINS = [("first.png", 0), ("last.png", -1), ("key1.png", 48), ("key2.png", 96), ("key3.png", 144)]
+
+
 def _h3(n: int, anchors: int, size) -> dict:
     prompt = "".join(f"<Picture {i + 1}> 参考图 {i + 1}。" for i in range(n))
-    pins = [(f"{_PH}first.png", 0), (f"{_PH}last.png", -1)][:anchors]
+    pins = [(f"{_PH}{name}", idx) for name, idx in _PINS[:anchors]]
     return build_h3(prompt, [f"{_PH}ref{i + 1}.png" for i in range(n)], None, 192, 1, size=size, anchors=pins)
 
 
@@ -66,7 +70,7 @@ def trials(category: str) -> list[tuple[str, dict, dict]]:
     elif category == "video":
         for aspect, size in VIDEO_SIZE.items():
             out += [(f"{n} 张参考图 · {a} 个锚点 · {aspect}", _h3(n, a, size), {"size": size, "frames": 192})
-                    for n in (1, 2, 3) for a in (0, 1, 2)]
+                    for n in (1, 2, 3) for a in range(len(_PINS) + 1)]
     else:
         raise ValueError(f"未知的模板类别 {category}")
     return out

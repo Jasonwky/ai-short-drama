@@ -24,7 +24,7 @@ from tools.drama.targets import KEY_WRITES
 from tools.drama.tasks import create_task
 from tools.gen import presets
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
-from tools.gen.workflows import FRAME_SIZE, H3_IMAGE_SLOTS, H3_MODEL, QWEN_MODEL, VIDEO_SIZE
+from tools.gen.workflows import FRAME_SIZE, H3_IMAGE_SLOTS, H3_MODEL, QWEN_MODEL, VIDEO_SIZE, build_h3
 
 # readiness 里属于「提交时」的检查项;规划阶段不看
 RUNTIME_KEYS = {"host_ready", "video_model_ready"}
@@ -203,6 +203,13 @@ def plan_video(store: Store, segment_id: int, *, seed: int) -> int:
         "writes": "video_path", "expect_ext": ".mp4",
     }
     params = presets.stamp(store, "video", params)
+    try:            # 规划时就试拼一次(内置拼法叠上当前预设):拼不出就拒绝规划,不等到交给云机时才失败
+        presets.apply_params(build_h3(prompt, image_refs, None, params["frames"], seed, size=tuple(params["size"]),
+                                      anchors=[tuple(a) for a in anchors]), params)
+    except ValueError as e:
+        which = f"当前视频模板预设 v{params['preset_version']} " if "preset_diff" in params else "内置视频模板"
+        raise ValueError(f"{which}拼不出这一段的工作流({len(anchors)} 个锚点):{e}"
+                         + (" —— 到「工作流」面板换一版或回到内置" if "preset_diff" in params else "")) from e
     return create_task(store, kind="video", target_type="segment", target_id=segment_id, model=H3_MODEL,
                        params=params, seed=seed, prompt=prompt,
                        refs=list(dict.fromkeys([*image_refs, *(p for p, _ in anchors)])))

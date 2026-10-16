@@ -111,6 +111,9 @@ def apply(wf: dict, d: dict) -> dict:
             problems.append(f"预设要删的节点 {nid} 这次不存在")
         wf.pop(nid, None)
     for nid, node in d["add"].items():
+        if nid in wf:                    # diff 把新节点改名成 u1、u2……,正常撞不上;撞上就是改动坏了,不许顶掉锚点等节点
+            problems.append(f"预设要加的节点 {nid} 与已有节点重号")
+            continue
         wf[nid] = copy.deepcopy(node)
     for nid, inputs in d["set"].items():
         if nid not in wf:

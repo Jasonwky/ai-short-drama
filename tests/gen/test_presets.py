@@ -70,6 +70,25 @@ def test_video_steps_change_survives_every_slot_and_anchor_combination(store):
     assert presets.video_steps(store) is None
 
 
+def test_video_trials_cover_up_to_five_anchors():
+    """首尾 2 + 关键帧 3:保存前的试拼要试到 5 个锚点,否则多锚点的段落到 dispatch 才炸。"""
+    labels = [label for label, _, _ in presets.trials("video")]
+    assert "3 张参考图 · 5 个锚点 · 9:16" in labels and len(labels) == 3 * 6 * 2
+
+
+def test_planning_refuses_a_preset_that_does_not_fit(store, sample):
+    """规划时就试拼:当前视频预设叠不上这一段 → 拒绝规划并说原因,不建任务。"""
+    with store.write() as c:
+        pid = c.execute("INSERT INTO workflow_preset (category, version, diff_json, created_at) VALUES ('video', 1, ?, 'now')",
+                        (json.dumps({"set": {"99": {"x": 1}}, "unset": {}, "add": {}, "remove": []}),)).lastrowid
+    presets.activate(store, "video", pid)
+    with pytest.raises(ValueError) as e:
+        plan_video(store, sample["seg"], seed=1)
+    assert str(e.value) == ("当前视频模板预设 v1 拼不出这一段的工作流(1 个锚点):预设要改的节点 99 这次不存在"
+                            " —— 到「工作流」面板换一版或回到内置")
+    assert store.conn.execute("SELECT COUNT(*) FROM task WHERE kind = 'video'").fetchone()[0] == 0
+
+
 def test_versions_chain_and_activation_rules(store):
     def a(wf):
         wf["27"]["inputs"]["scheduler"] = "normal"

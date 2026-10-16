@@ -73,6 +73,13 @@ def test_apply_fails_loudly_when_it_cannot_land():
         graphs.apply(_qwen(), {"set": {}, "unset": {}, "add": {}, "remove": ["9"]})
 
 
+def test_added_node_never_overwrites_an_existing_one():
+    """加节点撞上已有编号(如锚点 41)直接报错,不静默顶掉。"""
+    wf = _h3()
+    with pytest.raises(ValueError, match="预设要加的节点 41 与已有节点重号"):
+        graphs.apply(wf, {"set": {}, "unset": {}, "add": {"41": {"class_type": "Note", "inputs": {}}}, "remove": []})
+
+
 def test_lock_allows_seed_but_not_prompt_size_or_anchors():
     src = _h3()
     edited = copy.deepcopy(src)
