@@ -80,3 +80,14 @@ def test_fill_last_frames_and_fourviews(client, store, sample):
     assert r.headers["location"] == f"/drama/{sample['drama']}/assets"
     [t] = tasks_for(store, "character", sample["lin"])
     assert t["seed"] == 7 and '"fourview_path"' in t["params_json"]
+
+
+def test_text_only_video_is_refused_with_the_measured_reason(client, store, sample):
+    """纯文字不做成可选的出片方式:实测场景和道具守不住(编辑页的下拉项写同一个原因)。"""
+    import pytest
+
+    from tools.gen.planner import plan_video
+    repo.update(store, "segment", sample["seg"], reference_mode="text_only")
+    with pytest.raises(ValueError, match="纯文字模式不支持出视频:实测场景和道具守不住"):
+        plan_video(store, sample["seg"], seed=1)
+    assert "纯文字(不支持:实测场景和道具守不住)" in client.get(f"/segment/{sample['seg']}/edit").text

@@ -60,6 +60,11 @@ VIDEO_MODES = {
 }
 
 
+# 纯文字(只给四视图、不给首帧):不做(用户 2026-10-15 定),原因写给人看
+TEXT_ONLY_REFUSED = ("纯文字模式不支持出视频:实测场景和道具守不住(黄昏院子 → 白天砖墙,大块雕花绿玉 → 小块浅色坠子;"
+                     "spike-results/2026-10-14-开卡调研批次-运镜关键帧步数.md)")
+
+
 def _frame_problems(store: Store, segment_id: int, field: str) -> list[str]:
     modes, prompt_field, label = FRAMES[field]
     seg = repo.get(store, "segment", segment_id)
@@ -167,6 +172,8 @@ def video_problems(store: Store, segment_id: int) -> list[str]:
     if blocking:
         return blocking
     seg = repo.get(store, "segment", segment_id)
+    if seg["reference_mode"] == "text_only":
+        return [TEXT_ONLY_REFUSED]
     if seg["reference_mode"] not in VIDEO_MODES:
         return [f"参考模式 {seg['reference_mode']} 的视频生成尚未实现(已实现:{'、'.join(VIDEO_MODES)})"]
     return []

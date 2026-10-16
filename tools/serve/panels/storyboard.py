@@ -20,7 +20,7 @@ from tools.serve.panels.common import confirm_page, needs_confirm, readiness, re
 router = APIRouter()
 CAPS = {"video_cap": MINIMAX_H3, "image_cap": QWEN_IMAGE_EDIT_2511}
 MODES = [("first", "首帧(钉住第一帧)"), ("first_last", "首尾帧(两头都钉住)"), ("last", "尾帧(钉住最后一帧)"),
-         ("text_only", "纯文字(视频生成未实现)")]
+         ("text_only", "纯文字(不支持:实测场景和道具守不住)")]
 TEXT_FIELDS = ("description", "image_prompt", "last_image_prompt", "video_prompt", "reference_mode")
 KEY_FORM = ("key_id", "key_time", "key_prompt")      # 每张关键帧一组(新加的那组行号为空);要删的勾 key_delete
 
