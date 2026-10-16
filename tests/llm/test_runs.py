@@ -55,6 +55,7 @@ def test_v2_database_gets_the_llm_run_table(tmp_path):
     s.conn.execute("DROP TABLE llm_run")
     s.conn.execute("DROP TABLE export")            # v4 的表:造 v2 库时一并删掉
     s.conn.execute("DROP TABLE setting")
+    s.conn.execute("DROP TABLE segment_keyframe")                               # v10 新增
     s.conn.execute("ALTER TABLE segment DROP COLUMN key_time_sec")                # v9 新增
     s.conn.execute("ALTER TABLE segment DROP COLUMN key_image_prompt")
     s.conn.execute("ALTER TABLE segment DROP COLUMN key_frame_path")

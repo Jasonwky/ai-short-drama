@@ -24,8 +24,10 @@ _COLUMNS: dict[str, set[str]] = {
                 "atmosphere", "layout", "image_prompt", "last_image_prompt", "video_prompt", "bgm_prompt", "sfx_prompt",
                 "reference_mode", "first_frame_path", "last_frame_path", "video_path", "subtitle_path",
                 "key_time_sec", "key_image_prompt", "key_frame_path"},
+    # segment_id 不在这里:关键帧建在哪段就属于哪段,不挪
+    "segment_keyframe": {"time_sec", "image_prompt", "frame_path"},
 }
-_READABLE = {"drama", "episode", "character", "scene", "prop", "segment", "task", "host"}
+_READABLE = {"drama", "episode", "character", "scene", "prop", "segment", "task", "host", "segment_keyframe"}
 
 
 def _check_cols(table: str, fields: dict) -> None:
@@ -101,6 +103,27 @@ def add_segment(store: Store, episode_id: int, number: int, scene_id: int | None
         c.execute(f"INSERT INTO segment (id, {', '.join(row)}) VALUES (?, {', '.join('?' * len(row))})",
                   (new_id, *row.values()))
     return new_id
+
+
+def add_keyframe(store: Store, segment_id: int, time_sec: float, image_prompt: str = "",
+                 frame_path: str | None = None) -> int:
+    """给段落加一张中间关键帧。张数上限、时刻范围由 readiness 判(超了给人话原因),这里不拦。"""
+    get(store, "segment", segment_id)
+    return _insert(store, "segment_keyframe", {"segment_id": segment_id, "time_sec": time_sec,
+                                               "image_prompt": image_prompt, "frame_path": frame_path})
+
+
+def keyframes(store: Store, segment_id: int) -> list[sqlite3.Row]:
+    """本段的关键帧,按时刻先后。"""
+    return store.conn.execute("SELECT * FROM segment_keyframe WHERE segment_id = ? ORDER BY time_sec, id",
+                              (segment_id,)).fetchall()
+
+
+def delete_keyframe(store: Store, keyframe_id: int) -> None:
+    """删一张关键帧。它的生成历史(task)与文件保留;编号不复用。"""
+    with store.write() as c:
+        if c.execute("DELETE FROM segment_keyframe WHERE id = ?", (keyframe_id,)).rowcount == 0:
+            raise KeyError(f"segment_keyframe {keyframe_id} 不存在")
 
 
 _HWM = "segment_id_hwm"

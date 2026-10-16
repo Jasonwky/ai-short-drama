@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -258,6 +258,20 @@ BEGIN SELECT RAISE(ABORT, '预设不可删 —— 旧任务还引用着它'); EN
 ]
 SCHEMA += "".join(f"{stmt};\n" for stmt in PRESET_DDL)
 
+# v10:一段多张中间关键帧(specs/2026-10-15-多关键帧与草稿档-design.md §二)。编号永不复用(AUTOINCREMENT):
+# 历史任务参数里的 keyframe_id 不能指到别的关键帧。legacy_v9 = 1:从 v9 段落列搬来的那张 —— P12 时代的任务没有 keyframe_id,只认它
+KEYFRAME_DDL = [
+    """CREATE TABLE segment_keyframe (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  segment_id INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+  time_sec REAL NOT NULL,
+  image_prompt TEXT NOT NULL DEFAULT '',
+  frame_path TEXT,
+  legacy_v9 INTEGER NOT NULL DEFAULT 0
+)""",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in KEYFRAME_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -280,6 +294,10 @@ MIGRATIONS: dict[int, list[str]] = {
     8: ["ALTER TABLE segment ADD COLUMN key_time_sec REAL",
         "ALTER TABLE segment ADD COLUMN key_image_prompt TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE segment ADD COLUMN key_frame_path TEXT"],
+    # v10:关键帧搬进 segment_keyframe(一段多张);v9 段落上设了的那张原样搬过去,标 legacy_v9
+    9: [*KEYFRAME_DDL,
+        "INSERT INTO segment_keyframe (segment_id, time_sec, image_prompt, frame_path, legacy_v9)"
+        " SELECT id, key_time_sec, key_image_prompt, key_frame_path, 1 FROM segment WHERE key_time_sec IS NOT NULL"],
 }
 
 
