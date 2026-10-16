@@ -13,6 +13,8 @@
   资产面板给角色点「生成四视图」→ 四视图出现;第 2 集「首尾帧」模式的段落点「生成尾帧」→ 尾帧出现;
   主机面板「刷新节点清单」→ 缓存信息出现;参考帧历史「在 ComfyUI 中编辑」→ 嵌入的画布里改种子 →「提交为新版本」;
   工作流面板改首帧模板(调度器)→ 确认页列出改动 → 保存 →「设为当前」先出确认页 → 当前变成 v1;
+  段落 1 加关键帧 → 生成关键帧图 → 重出视频看「关键帧钉住了吗」→ 选草稿档重出 → 卡片标「草稿 · 10 步」;
+  段落 2 加到 3 张关键帧 → 出「未经真机验证」警告、「加一张」置灰;
 - iframe 里的 ComfyUI 前端**不许访问外网**:页面上出现任何非本机请求即判失败(实测前端会去 api.comfy.org,垫片已改向);
 - 在**全新临时目录**里建演示工程、用**假后端**跑 —— 假产物碰不到真工程,页面顶部标着「假后端」;
 - **一律有头**(CLAUDE.md 硬约束,用户 2026-09-24 明确要求):人要看得见它点开了每个面板。
@@ -156,17 +158,26 @@ def _set_widget(name: str, value):
     return act
 
 
-def _set_keyframe(segment_id: int):
-    """在编辑段落页设关键帧(0.5 秒 = 第 12 帧:假片只有 24 帧)并保存;段落已有视频时会先出代价确认页。"""
+def _add_keyframe(page, time_sec: str) -> None:
+    """在编辑段落页的「加一张」里填时刻与提示词并保存;段落已有视频时会先出代价确认页。"""
+    page.fill("[data-key-new] [data-key-time]", time_sec)
+    page.fill("[data-key-new] [data-key-prompt]", "@林小雨 在 @老宅庭院 转身,背对镜头,握着 @玉佩")
+    page.locator("[data-save-segment]").click()
+    page.wait_for_load_state()
+    if page.locator("[data-confirm]").count():
+        page.locator("[data-confirm]").click()
+        page.wait_for_load_state()
+
+
+def _set_keyframes(segment_id: int, times: list[str]):
+    """从参考帧面板点进编辑段落页,逐张加关键帧(假片只有 24 帧:第 0.5 秒 = 第 12 帧才对比得出来)。
+    加满 3 张后「加一张」必须置灰。"""
     def act(page) -> None:
         page.locator(f'a[href="/segment/{segment_id}/edit"]').first.click()
-        page.fill("[data-key-time]", "0.5")
-        page.fill("[data-key-prompt]", "@林小雨 在 @老宅庭院 转身,背对镜头,握着 @玉佩")
-        page.locator("[data-save-segment]").click()
-        page.wait_for_load_state()
-        if page.locator("[data-confirm]").count():
-            page.locator("[data-confirm]").click()
-            page.wait_for_load_state()
+        for t in times:
+            _add_keyframe(page, t)
+        if len(times) == 3 and not page.locator("[data-key-new][data-full]").count():
+            raise RuntimeError("加满 3 张关键帧后「加一张」没有置灰")
     return act
 
 
@@ -266,10 +277,16 @@ def run(out_dir: Path) -> dict:
                     ("workflows", "设为当前(先出确认页)", {}, ['[data-preset-category="frame"] [data-activate]', "[data-confirm]"],
                      '[data-preset-category="frame"] [data-preset-version="1"] .tag', 20),
                     # 中间关键帧:排在所有现有链路之后(段落 1 设了关键帧,视频就要等关键帧图,不能挡前面的链路)
-                    ("frames", "编辑段落设关键帧(第 0.5 秒)", {}, [_set_keyframe(seg)], "[data-key-timeline]", 20),
+                    ("frames", "编辑段落设关键帧(第 0.5 秒)", {}, [_set_keyframes(seg, ["0.5"])], "[data-key-timeline]", 20),
                     ("frames", "生成关键帧", {}, [f"#seg-{seg} [data-generate-key-frame]"], f"#seg-{seg} [data-key-frame] img", 40),
                     ("videos", "重新生成视频 → 关键帧 vs 实际画面", {}, [f"#seg-{seg} [data-generate-video]"],
-                     f"#seg-{seg} [data-keycheck] [data-key-diff]", 60)), 1):
+                     f"#seg-{seg} [data-keycheck] [data-key-diff]", 60),
+                    # 草稿档:新版本留在历史里(当前版不被覆盖),卡片上标「草稿 · 10 步」
+                    ("videos", "选草稿档重出 → 卡片标「草稿 · 10 步」", {},
+                     [lambda pg: pg.locator(f"#seg-{seg} [data-steps]").select_option("10"), f"#seg-{seg} [data-generate-video]"],
+                     f"#seg-{seg} [data-few-steps]", 60),
+                    ("frames", "段落 2 加到 3 张关键帧 → 未经真机验证的警告、「加一张」置灰", {},
+                     [_set_keyframes(seg2, ["2", "4", "6"])], '[data-readiness] [data-check="keyframe_count"]', 20)), 1):
                 errors.clear()
                 key, _, ep_key = key.partition(":")               # 「面板:集」—— 默认第 1 集
                 p = next(x for x in REGISTRY if x.key == key)
