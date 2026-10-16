@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
-"""真链路验收:一个段落从无到有 —— 首帧(用一个**非内置的模板预设**)→ 中间关键帧图 → 角色四视图 → 视频(首帧钉在第 0 帧、
-关键帧钉在第 96 帧、四视图作参考)→ 对齐字幕,溯源字段逐项核对。预设那一步验证:叠上改动的工作流云机真能跑,且实际提交的就是叠过的那份。
-关键帧用调研 B 的设定(spike-results/2026-10-09-中间关键帧锚定实测.md:第 4 秒、转身背对镜头),出片后**用数据判钉没钉住**:
-视频第 96 帧与关键帧图的差 < KEY_THRESHOLD(调研 8.7–9.9,对照 54–65)。
+"""真链路验收:一个段落从无到有 —— 首帧(用一个**非内置的模板预设**)→ 两张中间关键帧图 → 角色四视图 → 视频(首帧钉在第 0 帧、
+关键帧钉在第 72 / 144 帧、四视图作参考)→ 对齐字幕 → 同种子再出一条**草稿档**(10 步),溯源字段逐项核对。
+预设那一步验证:叠上改动的工作流云机真能跑,且实际提交的就是叠过的那份。
+两张关键帧用多关键帧调研的设定(spike-results/2026-10-14-开卡调研批次-运镜关键帧步数.md:第 3 秒转身背对镜头、第 6 秒回到首帧构图),
+出片后**用数据判每张都钉住**:那一帧与关键帧图的差 < KEY_THRESHOLD(调研 9.6,对照 50 以上)。
+草稿档验:实际提交的是 10 步,耗时不超过定稿的 DRAFT_MAX_RATIO(调研 12:59 / 26:15 ≈ 0.49)。
 
 这是**验收夹具**,不是生产入口:P3 起同一条链路由控制台的环节面板驱动,
 那时本脚本只留作「绕开界面、单测执行层」的对照。
 
 - 在一个**全新的** data_root 里建库、拷素材,不碰任何已有数据;
-- 真链路要开卡:它会起隧道、做 LoRA 预检、占用 GPU 约 20 分钟(8 秒片 20 步),四视图约 30 秒,字幕对齐再约 30 秒;
+- 真链路要开卡:它会起隧道、做 LoRA 预检、占用 GPU 约 26 + 13 分钟(4080 SUPER:8 秒片 20 步 + 草稿 10 步),
+  四视图约 30 秒,字幕对齐再约 30 秒;
 - 任一任务失败即退出码 1,并打印失败原因。
 
 用法(AutoDL 端口每次开机会变):
@@ -27,15 +30,17 @@ import shutil
 import sys
 import time
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 from tools.drama import repo
 from tools.drama.db import Store
 from tools.gen.align import plan_align
-from tools.gen import presets
+from tools.gen import graphs, presets
 from tools.gen.assets import plan_fourview
 from tools.cut import keycheck
 from tools.gen.planner import plan_first_frame, plan_key_frame, plan_video
+from tools.gen.workflows import DRAFT_STEPS
 from tools.serve.dispatch import SUBMITTED
 from tools.serve.hosts import add_host, get_host
 from tools.serve.worker import POLL_SEC, Worker
@@ -60,12 +65,14 @@ def build_drama(store: Store, assets: dict[str, str]) -> int:
         video_prompt="@林小雨 在 @老宅庭院 低头看 @玉佩,然后抬眼说话,固定机位,环境声,无配乐")
     repo.bind_characters(store, seg, [lin])
     repo.bind_props(store, seg, [jade])
-    key = repo.add_keyframe(store, seg, 4.0, "@林小雨 在黄昏的 @老宅庭院 里转过身,背对镜头,手里握着 @玉佩,中景,竖构图")
-    return seg, lin, key
+    keys = [repo.add_keyframe(store, seg, 3.0, "@林小雨 在黄昏的 @老宅庭院 里转过身,背对镜头,手里握着 @玉佩,中景,竖构图"),
+            repo.add_keyframe(store, seg, 6.0, "@林小雨 站在黄昏的 @老宅庭院 里,双手捧着 @玉佩,中景,竖构图")]
+    return seg, lin, keys
 
 
 PRESET_SCHEDULER = "normal"      # 首帧模板预设:采样调度器 simple → normal(只改一处,验证叠加机制)
 KEY_THRESHOLD = 20               # 关键帧钉住的判据:72×128 灰度平均绝对差(调研钉中 8.7–9.9,对照 54–65)
+DRAFT_MAX_RATIO = 0.75           # 草稿档(10 步)耗时 / 定稿耗时的上限(调研 0.49;不到这个数 = 草稿档没省下时间)
 
 
 TUNNEL_WAIT_SEC = 60
@@ -113,6 +120,25 @@ def provenance(store: Store, task_id: int) -> dict:
     return {k: row[k] for k in row.keys()}
 
 
+def _seconds(task: dict) -> float | None:
+    if not task["started_at"]:                   # 两次轮询之间就跑完的,没看到 running:不编时间
+        return None
+    return (datetime.fromisoformat(task["finished_at"]) - datetime.fromisoformat(task["started_at"])).total_seconds()
+
+
+def _draft_check(data_root: Path, full: dict, draft: dict) -> dict:
+    """草稿档:实际提交的工作流是 10 步;耗时与定稿比(都从 worker 看到 running 起算)。"""
+    sent = json.loads((data_root / "outputs/tasks" / str(draft["id"]) / SUBMITTED).read_text(encoding="utf-8"))
+    steps = graphs.steps(sent["submitted"])
+    if steps != DRAFT_STEPS:
+        raise RuntimeError(f"草稿档实际提交的是 {steps} 步,不是 {DRAFT_STEPS} 步")
+    a, b = _seconds(full), _seconds(draft)
+    ratio = round(b / a, 3) if a and b is not None else None
+    if ratio is not None and ratio >= DRAFT_MAX_RATIO:
+        raise RuntimeError(f"草稿档没省下时间:耗时是定稿的 {ratio}(判据 < {DRAFT_MAX_RATIO})")
+    return {"task": draft["id"], "steps": steps, "seconds": b, "full_seconds": a, "ratio": ratio}
+
+
 def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, timeout_sec: float,
         make_worker: Callable[[Store, int, Path], Worker] = lambda s, h, root: Worker(s, h, data_root=root),
         sleep: Callable[[float], None] = time.sleep, check_key=keycheck.check) -> dict:
@@ -126,15 +152,17 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
         assets[kind] = dst.relative_to(data_root).as_posix()
 
     store = Store(data_root / "drama.db")
-    seg, lin, key = build_drama(store, assets)
+    seg, lin, keys = build_drama(store, assets)
     host_id = add_host(store, **host)
     worker = make_worker(store, host_id, data_root)
     try:
         report = {"segment": seg, "tasks": [], "preset": _use_frame_preset(store, worker, host_id, sleep)}
 
-        for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_key_frame(store, key, seed=seed),
-                     lambda: plan_fourview(store, lin, seed=seed + 2),
-                     lambda: plan_video(store, seg, seed=seed + 1), lambda: plan_align(store, seg)):
+        for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_key_frame(store, keys[0], seed=seed),
+                     lambda: plan_key_frame(store, keys[1], seed=seed + 3), lambda: plan_fourview(store, lin, seed=seed + 2),
+                     lambda: plan_video(store, seg, seed=seed + 1), lambda: plan_align(store, seg),
+                     # 草稿档:与定稿同种子、只差步数;当前视频已有,新版本只留在任务记录里
+                     lambda: plan_video(store, seg, seed=seed + 1, steps=DRAFT_STEPS)):
             tid = plan()
             state = run_until_final(worker, store, tid, timeout_sec=timeout_sec, sleep=sleep)
             if state == "failed":
@@ -155,6 +183,9 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
         missed = [f"第 {k.frame_idx} 帧与关键帧图差 {k.diff}" for k in kcs if k.diff >= KEY_THRESHOLD]
         if missed:
             raise RuntimeError(f"关键帧没钉住:{';'.join(missed)}(判据 < {KEY_THRESHOLD})")
+        if len(kcs) != len(keys):
+            raise RuntimeError(f"视频钉了 {len(kcs)} 张关键帧,段落设了 {len(keys)} 张")
+        report["draft"] = _draft_check(data_root, report["tasks"][4], report["tasks"][6])
         (data_root / "provenance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     finally:
         # 隧道是脱离进程起的,不收就一直留着(两次验收后残留);只停本进程起的,接管来的 stop 碰不到
