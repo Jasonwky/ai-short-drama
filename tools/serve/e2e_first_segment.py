@@ -147,12 +147,14 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
         submitted = json.loads((data_root / "outputs/tasks" / str(report["tasks"][0]["id"]) / SUBMITTED).read_text(encoding="utf-8"))
         if submitted["submitted"]["27"]["inputs"]["scheduler"] != PRESET_SCHEDULER:
             raise RuntimeError("首帧实际提交的工作流里没有叠上预设的改动")
-        kc = check_key(store, data_root, seg)
-        if kc is None or kc.diff is None:
-            raise RuntimeError(f"关键帧对比算不出来:{kc.problem if kc else '视频没有钉关键帧'}")
-        report["keycheck"] = {"frame_idx": kc.frame_idx, "diff": kc.diff, "threshold": KEY_THRESHOLD}
-        if kc.diff >= KEY_THRESHOLD:
-            raise RuntimeError(f"关键帧没钉住:第 {kc.frame_idx} 帧与关键帧图差 {kc.diff}(判据 < {KEY_THRESHOLD})")
+        kcs = check_key(store, data_root, seg)
+        unknown = [k.problem for k in kcs if k.diff is None]
+        if not kcs or unknown:
+            raise RuntimeError(f"关键帧对比算不出来:{';'.join(unknown) or '视频没有钉关键帧'}")
+        report["keycheck"] = [{"frame_idx": k.frame_idx, "diff": k.diff, "threshold": KEY_THRESHOLD} for k in kcs]
+        missed = [f"第 {k.frame_idx} 帧与关键帧图差 {k.diff}" for k in kcs if k.diff >= KEY_THRESHOLD]
+        if missed:
+            raise RuntimeError(f"关键帧没钉住:{';'.join(missed)}(判据 < {KEY_THRESHOLD})")
         (data_root / "provenance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     finally:
         # 隧道是脱离进程起的,不收就一直留着(两次验收后残留);只停本进程起的,接管来的 stop 碰不到

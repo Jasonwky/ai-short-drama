@@ -43,7 +43,7 @@ def _gpu(comfy):
 
 def _hit(store, root, seg):
     """假 GPU 出的图不是真 PNG,对比算不了;真比对在第 4 层真云机上跑。这里只验整链把结果接进报告、按阈值判。"""
-    return KeyCheck("k.png", 96, "f.png", 9.9, "", False)
+    return [KeyCheck("k.png", 96, "f.png", 9.9, "", False)]
 
 
 def test_full_chain_on_fake_gpu_writes_provenance(tmp_path, images):
@@ -55,7 +55,7 @@ def test_full_chain_on_fake_gpu_writes_provenance(tmp_path, images):
     assert (frame["seed"], key["seed"], fourview["seed"], video["seed"]) == (5, 5, 7, 6)
     # 中间关键帧:调研 B 的设定(第 4 秒、转身背对镜头),视频多钉一个锚点,报告里有对比结果
     assert json.loads(key["params_json"])["writes"] == "key_frame_path"
-    assert report["keycheck"] == {"frame_idx": 96, "diff": 9.9, "threshold": 20}
+    assert report["keycheck"] == [{"frame_idx": 96, "diff": 9.9, "threshold": 20}]
     assert report["first_frame_path"] == frame["result_path"] and report["video_path"] == video["result_path"]
     assert report["fourview_path"] == fourview["result_path"]
     assert json.loads(fourview["refs_json"]) == ["assets/character.png"]  # 四视图以正面图为输入
@@ -147,4 +147,4 @@ def test_keyframe_that_did_not_stick_fails_the_chain(tmp_path, images):
     comfy = FakeComfy()
     with pytest.raises(RuntimeError, match="关键帧没钉住:第 96 帧与关键帧图差 54.0"):
         run(tmp_path / "e2e", images, HOST, seed=5, timeout_sec=60, make_worker=_worker_on(comfy), sleep=_gpu(comfy),
-            check_key=lambda *a: KeyCheck("k.png", 96, "f.png", 54.0, "", False))
+            check_key=lambda *a: [KeyCheck("k.png", 96, "f.png", 54.0, "", False)])

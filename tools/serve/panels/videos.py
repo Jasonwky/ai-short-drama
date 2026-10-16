@@ -35,7 +35,7 @@ def page(request: Request, episode_id: int):
                      "tasks": [t for t in tasks if t["kind"] == "video"],
                      "align_tasks": [t for t in tasks if t["kind"] == "align"],
                      "align_problems": align_problems(store, s["id"]),
-                     "key": keycheck.check(store, runtime.data_root, s["id"]),
+                     "keychecks": keycheck.check(store, runtime.data_root, s["id"]),
                      "extra": aligner.extra_speech_for(store, runtime.data_root, s["id"]),
                      "cues": subtitles.parse_srt(sub.read_text(encoding="utf-8")) if sub and sub.is_file() else []})
     return render(request, "videos.html", "videos", episode_id=episode_id, ep=ep, segs=segs, seed=new_seed(),

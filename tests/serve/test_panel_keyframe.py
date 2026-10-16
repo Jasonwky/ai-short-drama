@@ -129,10 +129,10 @@ def test_videos_panel_compares_the_anchored_image_with_the_frame(client, runtime
                     refs=["frames/s1.png", "frames/k.png"])
     set_task_state(store, t, "queued", external_id="p")
     set_task_state(store, t, "done", result_path="videos/v.mp4", result_sha256="x")
-    repo.update(store, "segment", sample["seg"], video_path="videos/v.mp4", key_time_sec=0.5, key_image_prompt="p",
-                key_frame_path="frames/k.png")
+    repo.update(store, "segment", sample["seg"], video_path="videos/v.mp4")
+    k = repo.add_keyframe(store, sample["seg"], 0.5, "p", "frames/k.png")
     page = client.get(f"/episode/{sample['episode']}/videos").text
     assert "data-keycheck" in page and "视频第 12 帧的实际画面" in page and "data-key-diff" in page
-    assert "data-key-stale" not in page
-    repo.update(store, "segment", sample["seg"], key_time_sec=1.0)
+    assert "data-key-stale" not in page and "自己切 1–3 次镜头" in page                 # 切镜说明在视频面板顶部
+    repo.update(store, "segment_keyframe", k, time_sec=1.0)
     assert "data-key-stale" in client.get(f"/episode/{sample['episode']}/videos").text
