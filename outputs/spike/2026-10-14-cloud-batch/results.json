@@ -122,5 +122,29 @@
   "sampling": "16:36",
   "executed": "17:36",
   "note": "same structure as A/steps_10; frame 100 also shows duplicated jade (hand + necklace) like steps_10; A (20 steps) has single jade; face close-up quality comparable"
+ },
+ "ref_max": {
+  "frames": 192,
+  "cuts": [
+   [
+    38,
+    33.4
+   ],
+   [
+    78,
+    44.1
+   ],
+   [
+    126,
+    68.6
+   ]
+  ],
+  "first_vs_anchor": 10.4,
+  "last_vs_first_anchor": 75.6,
+  "s_per_step": 77.0,
+  "sampling": "25:40",
+  "executed": "27:17",
+  "run_date": "2026-10-18",
+  "note": "rerun after the 10-14 disconnect (ComfyUI freshly started, executed includes model load); same shot structure and cut frames as A; frames 20/60/100/160 side by side with A: composition, motion, sharpness and jade carving look the same, only tassel placement differs around frame 60; no visible gain"
  }
 }

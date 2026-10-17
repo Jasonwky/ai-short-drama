@@ -400,7 +400,36 @@
   }
  },
  "video_ref_max": {
-  "prompt_id": "a4191773-8354-42e3-b8d9-0f4f8cd03ec5",
-  "submitted_at": 1791918981.2713592
+  "prompt_id": "004a8a5d-685b-47fb-83e4-420c0dcc35bb",
+  "submitted_at": 1792254669.976419,
+  "file": "tmp\\cloudx\\video_ref_max\\h3_00029_.mp4",
+  "history_status": {
+   "status_str": "success",
+   "completed": true,
+   "messages": [
+    [
+     "execution_start",
+     {
+      "prompt_id": "004a8a5d-685b-47fb-83e4-420c0dcc35bb",
+      "timestamp": 1792254670540
+     }
+    ],
+    [
+     "execution_cached",
+     {
+      "nodes": [],
+      "prompt_id": "004a8a5d-685b-47fb-83e4-420c0dcc35bb",
+      "timestamp": 1792254670578
+     }
+    ],
+    [
+     "execution_success",
+     {
+      "prompt_id": "004a8a5d-685b-47fb-83e4-420c0dcc35bb",
+      "timestamp": 1792256307799
+     }
+    ]
+   ]
+  }
  }
 }
