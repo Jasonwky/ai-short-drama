@@ -87,14 +87,14 @@ def main(argv: list[str] | None = None) -> int:
         missing = sorted(set(REAL_ARGS) - set(given))
         layers.append({"layer": "功能整链(真云机)", "state": "FAIL", "reason": f"云机参数不全:缺 {missing}"})
     else:
-        print("第 4 层 功能整链(真云机,约 17 分钟)…", flush=True)
+        print("第 4 层 功能整链(真云机,约 45 分钟:定稿一条 + 草稿一条)…", flush=True)
         env = {**os.environ, "MSYS_NO_PATHCONV": "1"}
         rc = _run([*py, "-u", "-m", "tools.serve.e2e_first_segment", "--data-root", str(out / "e2e"),
                    "--ssh-host", a.real_ssh_host, "--ssh-port", str(a.real_ssh_port), "--key-ref", a.key_ref,
                    "--models-dir", a.models_dir, "--character", a.character, "--scene", a.scene, "--prop", a.prop],
                   out / "4_e2e.log", env=env)
         layers.append({"layer": "功能整链(真云机)", "state": "PASS" if rc == 0 else "FAIL",
-                       "log": str(out / "4_e2e.log"), "note": "覆盖首帧(用非内置模板预设)、中间关键帧图、角色四视图、视频(首帧 + 第 4 秒关键帧锚定、四视图参考;关键帧对比差值 < 20)、字幕对齐;标识 / 拼接走本机 ffmpeg,由单测与自测覆盖"})
+                       "log": str(out / "4_e2e.log"), "note": "覆盖首帧(用非内置模板预设)、中间关键帧图、角色四视图、视频(首帧 + 第 3、6 秒两张关键帧锚定、四视图参考;每张关键帧对比差值 < 20)、同种子 10 步草稿片(实际交出 10 步、耗时 < 定稿 0.75 倍)、字幕对齐;标识 / 拼接走本机 ffmpeg,由单测与自测覆盖"})
 
     result = {"verdict": verdict(layers), "layers": layers}
     (out / "report.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
