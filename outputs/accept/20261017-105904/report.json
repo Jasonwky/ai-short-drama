@@ -1,0 +1,27 @@
+{
+  "verdict": "PASS",
+  "layers": [
+    {
+      "layer": "单测",
+      "state": "PASS",
+      "log": "outputs\\accept\\20261017-105904\\1_pytest.log"
+    },
+    {
+      "layer": "真 LLM 契约",
+      "state": "PASS",
+      "log": "outputs\\accept\\20261017-105904\\2_real_llm.log"
+    },
+    {
+      "layer": "Playwright 有头自测",
+      "state": "PASS",
+      "log": "outputs\\accept\\20261017-105904\\3_selftest.log",
+      "screenshots": "outputs\\accept\\20261017-105904\\selftest"
+    },
+    {
+      "layer": "功能整链(真云机)",
+      "state": "PASS",
+      "log": "outputs\\accept\\20261017-105904\\4_e2e.log",
+      "note": "覆盖首帧(用非内置模板预设)、中间关键帧图、角色四视图、视频(首帧 + 第 4 秒关键帧锚定、四视图参考;关键帧对比差值 < 20)、字幕对齐;标识 / 拼接走本机 ffmpeg,由单测与自测覆盖"
+    }
+  ]
+}
