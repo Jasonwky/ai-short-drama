@@ -1,0 +1,52 @@
+{
+ "seed20261018_20": {
+  "frames": 192,
+  "cuts": [],
+  "first_vs_anchor": 10.0,
+  "last_vs_first_anchor": 73.4,
+  "executed_s": 1544,
+  "note": "prop duplication frames ~104-116 (one jade on necklace + one in hands)"
+ },
+ "seed20261018_10": {
+  "frames": 192,
+  "cuts": [],
+  "first_vs_anchor": 10.2,
+  "last_vs_first_anchor": 75.8,
+  "executed_s": 783,
+  "note": "single jade throughout"
+ },
+ "seed20261019_20": {
+  "frames": 192,
+  "cuts": [
+   [
+    6,
+    75.9
+   ]
+  ],
+  "first_vs_anchor": 10.1,
+  "last_vs_first_anchor": 40.8,
+  "executed_s": 1503,
+  "note": "prop duplication from ~frame 32 to the end (one in hand + one on necklace)"
+ },
+ "seed20261019_10": {
+  "frames": 192,
+  "cuts": [
+   [
+    10,
+    63.8
+   ]
+  ],
+  "first_vs_anchor": 10.8,
+  "last_vs_first_anchor": 42.1,
+  "executed_s": 781,
+  "note": "single jade throughout (tassel hangs below)"
+ },
+ "seed20261020_20": {
+  "frames": 192,
+  "cuts": [],
+  "first_vs_anchor": 10.1,
+  "last_vs_first_anchor": 79.8,
+  "executed_s": 1504,
+  "note": "single jade; burned-in subtitles from ~frame 128 ('这块玉佩' / '是我母亲留给我的'); a dissolve near frame 120"
+ }
+}
