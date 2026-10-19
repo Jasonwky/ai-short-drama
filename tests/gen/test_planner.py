@@ -23,14 +23,14 @@ def test_first_frame_task_is_fully_specified(store, sample):
     assert (p["size"], p["preset"], p["writes"], p["dropped"]) == ([928, 1664], "fast", "first_frame_path", [])
 
 
-def test_first_frame_records_assets_that_fell_out_of_slots(store, sample):
+def test_fourth_reference_goes_to_the_second_pass(store, sample):
     repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])
     repo.update(store, "segment", sample["seg"],
                 description="【镜头1】沈墨说：「你还留着它。」【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」",
                 image_prompt="@林小雨 把 @玉佩 递给 @沈墨,@老宅庭院 黄昏")
     row, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
-    assert p["dropped"] == ["玉佩"]
-    # 台词多的林小雨占 1 号,场景 2 号,沈墨 3 号;玉佩出槽,退化成纯文字
+    # 台词多的林小雨占 1 号,场景 2 号,沈墨 3 号;玉佩第一遍只写名字,第二遍换成白底图的样子(以前是出槽丢掉)
+    assert p["dropped"] == [] and p["second_pass"]["names"] == ["玉佩"]
     assert row["prompt"] == "Picture 1(林小雨) 把 玉佩 递给 Picture 3(沈墨),Picture 2(老宅庭院) 黄昏"
     assert p["image_refs"] == ["assets/lin.png", "assets/yard.png", "assets/shen.png"]
 
@@ -134,3 +134,34 @@ def test_last_frame_needs_a_mode_that_uses_it_and_a_prompt(store, sample):
     repo.update(store, "segment", sample["seg"], reference_mode="last")
     with pytest.raises(ValueError, match="缺少尾帧图提示词"):
         plan_last_frame(store, sample["seg"], seed=1)
+
+
+# ── 参考图超过 3 张:两遍合成 ─────────────────────────────
+
+def _crowd(store, sample):
+    """林小雨(有台词)+ 沈墨 + 王五 + 老宅庭院 + 玉佩 = 5 张参考图。"""
+    wang = repo.add_character(store, sample["drama"], "王五", turnaround_path="assets/wang.png")
+    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"], wang])
+    repo.update(store, "segment", sample["seg"],
+                image_prompt="@林小雨 把 @玉佩 递给 @沈墨,@王五 站在一旁,@老宅庭院 黄昏")
+
+
+def test_more_than_three_references_plan_a_second_pass(store, sample):
+    from tools.gen.planner import frame_passes
+    _crowd(store, sample)
+    row, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
+    assert p["image_refs"] == ["assets/lin.png", "assets/yard.png", "assets/shen.png"]
+    assert p["dropped"] == []
+    sp = p["second_pass"]
+    assert sp["image_refs"] == ["assets/jade.png", "assets/wang.png"] and sp["names"] == ["玉佩", "王五"]
+    assert "把画面中的王五换成 Picture 3(王五) 的长相、发型发饰和服装" in sp["prompt"]
+    # 第一遍:没进槽的照旧退化成名字(站位、动作按原提示词)
+    assert row["prompt"] == "Picture 1(林小雨) 把 玉佩 递给 Picture 3(沈墨),王五 站在一旁,Picture 2(老宅庭院) 黄昏"
+    assert json.loads(row["refs_json"]) == [*p["image_refs"], *sp["image_refs"]]
+    assert frame_passes(store, sample["seg"]) == 2
+
+
+def test_three_or_fewer_references_have_no_second_pass(store, sample):
+    from tools.gen.planner import frame_passes
+    _, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
+    assert "second_pass" not in p and frame_passes(store, sample["seg"]) == 1

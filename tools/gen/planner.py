@@ -22,7 +22,7 @@ from tools.drama.db import Store
 from tools.drama.readiness import key_frame_index, segment_readiness
 from tools.drama.targets import KEY_WRITES
 from tools.drama.tasks import create_task
-from tools.gen import presets
+from tools.gen import compose, presets
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.gen.workflows import DRAFT_STEPS, FRAME_SIZE, H3_IMAGE_SLOTS, H3_MODEL, QWEN_MODEL, VIDEO_SIZE, build_h3
 
@@ -36,14 +36,21 @@ def _aspect(store: Store, segment_id: int) -> str:
     return row[0]
 
 
-def _slot_refs(seg, assets) -> tuple[list[refs.Ref], list[refs.Ref]]:
+def _slot_refs(seg, assets) -> tuple[list[refs.Ref], list[refs.Ref], list[refs.Ref]]:
+    """参考帧的分槽:(第一遍, 第二遍, 仍放不下的)。超过 3 张才有第二遍(两遍合成)。"""
     chars, scene, props = assets["characters"], assets["scene"], assets["props"]
     spoken = rules.dialogue_by_speaker(seg["description"], [c["name"] for c in chars])
     weighted = [(refs.Ref("character", c["name"], c["turnaround_path"]),
                  sum(n for who, n in spoken.items() if who.startswith(c["name"]))) for c in chars]
     scene_ref = refs.Ref("scene", scene["name"], scene["image_path"]) if scene is not None else None
     prop_refs = [refs.Ref("prop", p["name"], p["image_path"]) for p in props]
-    return refs.allocate_slots(weighted, scene_ref, prop_refs, QWEN_IMAGE_EDIT_2511.max_ref_images)
+    return refs.allocate_passes(weighted, scene_ref, prop_refs, QWEN_IMAGE_EDIT_2511.max_ref_images)
+
+
+def frame_passes(store: Store, segment_id: int) -> int:
+    """这段的参考帧要合成几遍(1 或 2)—— 估时用:两遍按两张图算。"""
+    seg = repo.get(store, "segment", segment_id)
+    return 2 if _slot_refs(seg, repo.segment_assets(store, segment_id))[1] else 1
 
 
 # 参考帧字段 → 用它的参考模式、它的提示词字段、界面上的叫法。
@@ -107,16 +114,20 @@ def _plan_image(store: Store, segment_id: int, text: str, seed: int, writes: dic
     """按图提示词 text 合成一张参考帧(内容已核过)。writes:写回到哪(writes,关键帧另带 keyframe_id)。"""
     seg = repo.get(store, "segment", segment_id)
     assets = repo.segment_assets(store, segment_id)
-    kept, dropped = _slot_refs(seg, assets)
-    prompt = tags.expand(text, kept, dropped, "qwen")
+    kept, second, dropped = _slot_refs(seg, assets)
+    prompt = tags.expand(text, kept, second + dropped, "qwen")    # 第一遍:没进槽的退化成名字(站位、动作照原提示词)
     params = {
         "workflow": "qwen_image", "preset": "fast", "size": list(FRAME_SIZE[_aspect(store, segment_id)]),
         "image_refs": [r.path for r in kept], **writes, "expect_ext": ".png",
-        "dropped": [r.name for r in dropped],   # 出槽退化成文字的素材,溯源里要看得到
+        "dropped": [r.name for r in dropped],   # 两遍也放不下、退化成文字的素材,溯源里要看得到
     }
+    if second:                                  # 参考图超过 3 张:第二遍把名字换成定妆图的样子
+        params["second_pass"] = {"image_refs": [r.path for r in second], "names": [r.name for r in second],
+                                 "prompt": compose.second_pass_prompt(second)}
     params = presets.stamp(store, "frame", params)      # 绑定当前「首帧 / 尾帧」模板预设(没有 = 内置)
     return create_task(store, kind="image", target_type="segment", target_id=segment_id, model=QWEN_MODEL,
-                       params=params, seed=seed, prompt=prompt, refs=params["image_refs"])
+                       params=params, seed=seed, prompt=prompt,
+                       refs=params["image_refs"] + [r.path for r in second])
 
 
 def first_frame_problems(store: Store, segment_id: int) -> list[str]:

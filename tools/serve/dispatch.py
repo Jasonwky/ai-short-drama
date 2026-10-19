@@ -64,7 +64,8 @@ def pick_next(store: Store, host_id: int) -> sqlite3.Row | None:
 
 def _uploads(p: dict) -> list[str]:
     """要传到云机的图:参考图 + 锚点图,去重、保持顺序(首帧常常既是参考图又是锚点)。"""
-    return list(dict.fromkeys([*p["image_refs"], *(path for path, _ in p.get("anchors", []))]))
+    return list(dict.fromkeys([*p["image_refs"], *(path for path, _ in p.get("anchors", [])),
+                               *p.get("second_pass", {}).get("image_refs", [])]))
 
 
 SUBMITTED = "workflow.json"     # outputs/tasks/<id>/ 下:实际提交给云机的工作流(改参重跑从它打开)
@@ -77,7 +78,9 @@ def build_workflow(task: sqlite3.Row, names: dict[str, str]) -> dict:
         return graphs.with_images(p["graph"], names)
     image_names = [names[path] for path in p["image_refs"]]
     if p["workflow"] == "qwen_image":
-        wf = build_qwen(task["prompt"], image_names, task["seed"], preset=p["preset"], size=tuple(p["size"]))
+        sp = p.get("second_pass")
+        wf = build_qwen(task["prompt"], image_names, task["seed"], preset=p["preset"], size=tuple(p["size"]),
+                        second_pass=(sp["prompt"], [names[r] for r in sp["image_refs"]]) if sp else None)
     elif p["workflow"] == "minimax_h3":
         if p["audio_ref"] is not None:
             raise ValueError("参考音频尚未接入(闸门 0-4:喂参考音频会复读内容)")
