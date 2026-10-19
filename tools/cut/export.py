@@ -8,8 +8,8 @@
 两版都烧录字幕(各段对齐出的 SRT 按段落起点平移、拼成整集 `subtitles.srt`,随成片交付);
 有台词的段落没有字幕 = 前提不满足,不开工。
 
-两态:`begin` 当场核对前提(★必答的服务提供者编码、每段有视频、尺寸一致、有音轨、溯源成立),
-不满足就报原因不开工;`run` 在后台跑(一集 1–3 分钟),结束时整行锁定(触发器)。
+两态:`begin` 当场核对前提(★必答的服务提供者编码、每段有视频、尺寸一致、有音轨、溯源成立、
+查过的段落没有烧进画面的字幕),不满足就报原因不开工;`run` 在后台跑(一集 1–3 分钟),结束时整行锁定(触发器)。
 **自检不过 = 导出失败**:文件留着给人查原因,但状态是 failed,界面标「不可发布」。
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.cut import aigc, media, provenance, subtitles
+from tools.cut import aigc, media, provenance, subtitles, textscan
 from tools.drama import repo, rules
 from tools.drama.db import Store, now
 from tools.serve.dispatch import sha256_file
@@ -47,6 +47,15 @@ def _segments(store: Store, episode_id: int) -> list:
     return store.conn.execute("SELECT * FROM segment WHERE episode_id = ? ORDER BY number", (episode_id,)).fetchall()
 
 
+def _lines(seg) -> list[str]:
+    return [line for _, line in rules.dialogue_lines(seg["description"])]
+
+
+def _context(seg) -> str:
+    """烧字幕检测的比对范围:描述(含台词、动作)+ 视频提示词 —— 画面里出现这些字就是模型把提示词画进去了。"""
+    return f"{seg['description'] or ''}\n{seg['video_prompt'] or ''}"
+
+
 def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
     """面板上的轻量检查(不读视频内容):缺什么。空 = 可以点导出。"""
     segs = _segments(store, episode_id)
@@ -61,6 +70,10 @@ def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
                 problems.append(f"段落 {s['number']} 的字幕文件不在本机:{s['subtitle_path']}")
         elif rules.dialogue_lines(s["description"]):
             problems.append(f"段落 {s['number']} 有台词但还没有字幕(在「视频」面板点「对齐字幕」)")
+        if s["video_path"] and (Path(data_root) / s["video_path"]).is_file():
+            found = textscan.cached(data_root, s["video_path"], _lines(s), _context(s))       # 只读缓存:没查过的在导出时查
+            if found:
+                problems.append(textscan.problem(s["number"], found))
     try:
         media.require_ffmpeg()
     except ValueError as e:
@@ -132,6 +145,14 @@ def run(store: Store, data_root: Path, export_id: int) -> None:
                if v.get("subtitle_path") and sha256_file(root / v["subtitle_path"]) != v["subtitle_sha256"]]
     if changed:
         raise media.CutError(f"段落 {changed} 的字幕在点导出之后被换掉了 —— 请重新导出")
+    burned = []
+    for v in videos:                       # 烧字幕检测(OCR,每段约半分钟,结果缓存):命中就不导出
+        seg = repo.get(store, "segment", v["segment_id"])
+        found = textscan.check(root, v["video_path"], _lines(seg), _context(seg))
+        if found:
+            burned.append(textscan.problem(v["number"], found))
+    if burned:
+        raise media.CutError(";".join(burned))
     out = Path("outputs/exports") / row["produce_id"]
     first = media.probe(clips[0])
     label = media.Label.for_size(first.width, first.height)

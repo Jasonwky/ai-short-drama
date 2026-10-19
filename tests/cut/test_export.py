@@ -141,3 +141,27 @@ def test_subtitles_swapped_after_begin_fails_the_run(store, two_segments):
     (root / "outputs/tasks/a1/subtitles.srt").write_text("1\n00:00:00,000 --> 00:00:00,500\n别的\n\n", encoding="utf-8")
     with pytest.raises(media.CutError, match="字幕"):
         export.run(store, root, eid)
+
+
+def _reader_seeing(text):
+    class R:
+        def read(self, frame):
+            return [([(0, 1100), (700, 1100), (700, 1150), (0, 1150)], text, 0.9)] if text else []
+
+        def read_column(self, frame, box):
+            return ""
+    return R()
+
+
+def test_burned_in_subtitle_blocks_export(store, two_segments, monkeypatch):
+    # 实战第 6 段:H3 把台词画进了画面,导出再烧一遍就是两层字 —— 命中就不让导出(用户 2026-10-19 定)
+    from tools.cut import textscan
+    s, root = two_segments, two_segments["root"]
+    monkeypatch.setattr(textscan, "make_reader", lambda: _reader_seeing("这块玉佩是我母亲留给我的"))
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    with pytest.raises(media.CutError, match="段落 1 的画面里疑似烧进了字幕"):
+        export.run(store, root, eid)
+    # 结果已缓存:面板上的清单当场列出,导出按钮不可点
+    assert any("烧进了字幕" in p for p in export.readiness(store, root, s["episode"]))
+    with pytest.raises(ValueError, match="烧进了字幕"):
+        export.begin(store, root, s["episode"], PRODUCER)
