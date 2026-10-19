@@ -50,7 +50,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   参考模式(首帧 / 首尾帧 / 尾帧)在 `planner.VIDEO_MODES` 里定;中间关键帧是叠加在任何参考模式上的可选项,一段 0–3 张(`segment_keyframe` 表,编号永不复用),视频按时刻先后逐张多钉锚点,
   视频面板用 `cut/keycheck` 拿**视频任务参数里的锚点**与那一帧逐张比对(量法沿用 spike-results/2026-10-09-中间关键帧锚定实测.md)。
   关键帧任务挂在段落上、参数里记 `keyframe_id`,**写到哪一律经 `drama/targets.slot`**(P12 旧任务按 `legacy_v9` 那行认)。
-  视频有草稿档(参数 `steps: 10`);判「几步出的」只用 `serve/dispatch.steps_of`(读实际交出去的图),少于 20 步在视频卡片与成片面板提醒
+  视频有草稿档(参数 `steps: 10`);判「几步出的」只用 `serve/dispatch.steps_of`(读实际交出去的图),少于 20 步在视频卡片与成片面板提醒。
+  参考帧参考图超过 3 张(Qwen 只有 3 槽):放不下的写成名字,就绪清单提示用**框选局部替换**补 —— 自动「两遍合成」云机实测第二遍换不动人,已撤下
+  (spike-results/2026-10-20-P15两遍合成与局部替换云机实测.md)。局部替换是 `workflow="qwen_region"` 的图片任务(`planner.plan_region` + `workflows.build_qwen_region`:
+  裁框 → 放大到约 1 MP 编辑 → 缩回 → 羽化遮罩贴回,框外像素逐个不动),source 必须是当前帧;新版本进历史、人挑了才替换;不吃首帧模板预设、不能改参重跑;
+  提示词 `compose.region_prompt` 保持「神情」并拼角色的「造型」字段(只说「换成参考图的长相服装」时发饰、神情都会被换掉)
 - `tools/gen/planner.py` 只做**规划**(内容就绪即写出参数定死的 task);`tools/serve/` 负责**提交与推进**:
   worker 每轮「保隧道 → 按 external_id 推进在途 → 机器空闲才派下一条」。**接管不是单独流程** ——
   重启后在途任务照常推进,绝不重交。库里的素材/产物路径都相对 `data_root`。
