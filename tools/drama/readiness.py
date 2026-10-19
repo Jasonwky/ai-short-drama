@@ -147,7 +147,10 @@ def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, i
                      sum(n for who, n in spoken.items() if who.startswith(c["name"]))) for c in chars]
         scene_ref = refs.Ref("scene", scene["name"], scene["image_path"]) if scene is not None else None
         prop_refs = [refs.Ref("prop", p["name"], p["image_path"]) for p in props]
-        _, dropped = refs.allocate_slots(weighted, scene_ref, prop_refs, image_cap.max_ref_images)
+        first, second, dropped = refs.allocate_passes(weighted, scene_ref, prop_refs, image_cap.max_ref_images)
+        if second:
+            checks.append(Check("two_pass", True, f"多参考图 {len(first) + len(second)} 张:两遍合成,耗时约 2 倍"
+                                f"(第二遍换成参考图的样子:{'、'.join(r.name for r in second)})", warn=True))
         if dropped:
             msg = ";".join(f"{KIND_LABEL[r.kind]}「{r.name}」因槽位不足未作为参考图,仅以文字描述参与"
                            for r in dropped)
