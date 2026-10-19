@@ -24,7 +24,7 @@
           <label>档位</label>
           <select name="steps" data-steps>
             <option value="">定稿 · {{ full_steps }} 步({{ "当前预设" if full_from_preset else "默认" }}{% if s.est_min is not none %},约 {{ "%.0f" | format(s.est_min) }} 分钟{% endif %})</option>
-            <option value="{{ draft_steps }}">草稿 · {{ draft_steps }} 步(可能出结构错误{% if s.draft_min is not none %},约 {{ "%.0f" | format(s.draft_min) }} 分钟{% endif %})</option>
+            <option value="{{ draft_steps }}">草稿 · {{ draft_steps }} 步(约省一半时间{% if s.draft_min is not none %},约 {{ "%.0f" | format(s.draft_min) }} 分钟{% endif %})</option>
           </select>
           <button class="btn primary" type="submit" data-generate-video>生成视频</button>
         </form>

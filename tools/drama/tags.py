@@ -20,7 +20,8 @@ import re
 from tools.drama.refs import Ref
 
 _FORMAT = {"qwen": "Picture {}", "h3": "<Picture {}>"}
-_IMAGE_TAG = {"qwen": re.compile(r"(?<!<)\bPicture\s*(\d+)"), "h3": re.compile(r"<Picture\s+(\d+)>")}
+# qwen:前面不能是 `<`(那是 h3 写法)也不能紧贴拉丁字母 / 数字;不用 \b —— 汉字算 \w,「下Picture 1」会漏(实战第 5 段)
+_IMAGE_TAG = {"qwen": re.compile(r"(?<![<A-Za-z0-9_])Picture\s*(\d+)"), "h3": re.compile(r"<Picture\s+(\d+)>")}
 _AUDIO_TAG = re.compile(r"<Audio\s+(\d+)>")
 
 

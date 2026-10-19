@@ -86,7 +86,7 @@ def test_videos_panel_offers_two_tiers_and_tags_few_step_clips(client, store, sa
     add_host(store, label="a", ssh_host="h", ssh_port=1, ssh_user="root", key_ref="k", local_port=8188,
              vram_gb=24.0, models_dir="/m", gpu="RTX 4090")
     page = client.get(f"/episode/{sample['episode']}/videos").text
-    assert "定稿 · 20 步(默认,约 15 分钟)" in page and "草稿 · 10 步(可能出结构错误,约 7 分钟)" in page
+    assert "定稿 · 20 步(默认,约 15 分钟)" in page and "草稿 · 10 步(约省一半时间,约 7 分钟)" in page
     client.post(f"/segment/{sample['seg']}/video", data={"seed": "5", "steps": "10"})
     draft = store.conn.execute("SELECT id FROM task WHERE kind = 'video'").fetchone()[0]
     assert _params(store, draft)["steps"] == 10

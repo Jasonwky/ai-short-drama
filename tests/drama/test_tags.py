@@ -52,3 +52,9 @@ def test_attached_audio_must_be_referenced():
 
 def test_qwen_dialect_does_not_read_h3_tags():
     assert check_tags("<Picture 1>", n_images=1, dialect="qwen") == []
+
+
+def test_mention_glued_to_chinese_text_still_counts():
+    # 实战第 5 段:「烛光下@李福」—— 展开后「下Picture 1」,\b 在汉字与拉丁字母之间不成立,误报「从未引用第 1 张」
+    out = expand("烛光下@林小雨 跪在@老宅庭院", [LIN, YARD], [], "qwen")
+    assert check_tags(out, n_images=2, dialect="qwen") == []

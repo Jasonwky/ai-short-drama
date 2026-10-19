@@ -89,7 +89,8 @@ def build_workflow(task: sqlite3.Row, names: dict[str, str]) -> dict:
 
 
 # 少于定稿步数的视频:视频卡片、导出页都提醒(spike-results/2026-10-14-开卡调研批次-运镜关键帧步数.md)
-FEW_STEPS_NOTE = "画质与定稿肉眼相近,但实测出过道具重复这类结构错误;定稿前用 20 步重出"
+# 2026-10-18 多种子 + 2026-10-19 烧字幕对照:道具重复、烧字幕 20 步一样会出 —— 不暗示「20 步能避开」
+FEW_STEPS_NOTE = "约省一半时间,画质与定稿肉眼相近;道具重复、烧字幕这类问题两档都会出,哪档都要逐段看片"
 
 
 def steps_of(task: sqlite3.Row) -> int | None:
