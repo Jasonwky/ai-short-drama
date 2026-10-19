@@ -21,6 +21,33 @@ def test_segment_edit_rebinds_and_asks_before_invalidating(client, store, sample
     assert repo.get(store, "segment", seg)["first_frame_path"] is None
 
 
+def _unchanged_form(sample, **changes):
+    seg = sample["seg"]
+    form = {"description": "【镜头1】林小雨低头看着玉佩。【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」",
+            "duration_sec": "8", "image_prompt": "@林小雨 站在 @老宅庭院 里,手里拿着 @玉佩", "last_image_prompt": "",
+            "video_prompt": "@林小雨 在 @老宅庭院 低头看 @玉佩,然后抬眼说话", "reference_mode": "first",
+            "scene_id": str(sample["yard"]), "character_ids": [str(sample["lin"])], "prop_ids": [str(sample["jade"])]}
+    return seg, {**form, **changes}
+
+
+def test_video_only_edit_keeps_the_first_frame(client, store, sample):
+    # 实战第 6 段:只改视频提示词 / 时长,首帧也被清掉,白白重出一张图(还可能变样)
+    for changes in ({"video_prompt": "@林小雨 在 @老宅庭院 低头看 @玉佩,画面中没有任何文字"}, {"duration_sec": "9"}):
+        seg, form = _unchanged_form(sample, **changes)
+        repo.update(store, "segment", seg, first_frame_path="frames/s1.png", video_path="videos/s1.mp4")
+        r = client.post(f"/segment/{seg}/edit", data=form)
+        assert "1 条视频、0 张参考帧" in r.text
+        client.post(f"/segment/{seg}/edit", data={**form, "confirm": "1"})
+        row = repo.get(store, "segment", seg)
+        assert (row["first_frame_path"], row["video_path"]) == ("frames/s1.png", None)
+
+
+def test_frame_prompt_edit_still_clears_the_frame(client, store, sample):
+    seg, form = _unchanged_form(sample, image_prompt="@林小雨 站在 @老宅庭院 里")
+    client.post(f"/segment/{seg}/edit", data={**form, "confirm": "1"})
+    assert repo.get(store, "segment", seg)["first_frame_path"] is None
+
+
 def test_live_check_uses_the_same_rules(client):
     bad = client.post("/api/segment/check", data={"description": "【镜头1】只有一个镜头", "duration_sec": "3"}).json()
     assert bad["problems"]

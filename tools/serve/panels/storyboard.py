@@ -23,6 +23,7 @@ MODES = [("first", "首帧(钉住第一帧)"), ("first_last", "首尾帧(两头�
          ("text_only", "纯文字(不支持:实测场景和道具守不住)")]
 TEXT_FIELDS = ("description", "image_prompt", "last_image_prompt", "video_prompt", "reference_mode")
 KEY_FORM = ("key_id", "key_time", "key_prompt")      # 每张关键帧一组(新加的那组行号为空);要删的勾 key_delete
+VIDEO_ONLY_FIELDS = {"video_prompt", "duration_sec"}  # 只动这些:作废视频,参考帧保留(描述里的台词决定首帧槽位,不在此列)
 
 
 def _seconds(text: str, what: str = "时长") -> float | None:
@@ -144,6 +145,8 @@ async def save(request: Request, segment_id: int):
     if not fields_changed and not bindings_changed:   # 只动了关键帧:作废本段视频(改了提示词的连那几张图);首帧 / 尾帧不动
         imp = invalidation.keyframe_edit(store, seg, images=sum(1 for r in reprompted if existing[r[0]]["frame_path"]),
                                          **CAPS)
+    elif fields_changed <= VIDEO_ONLY_FIELDS and not bindings_changed and not keys_changed:
+        imp = invalidation.impact(store, "segment_video", segment_id, **CAPS)
     else:
         imp = invalidation.impact(store, "segment_prompt", segment_id, **CAPS)
     if needs_confirm(imp, form):

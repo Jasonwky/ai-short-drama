@@ -75,10 +75,19 @@ def test_blank_new_row_is_ignored(client, store, sample):
 
 def test_other_edits_still_void_every_frame(client, store, sample):
     repo.add_keyframe(store, sample["seg"], 4.0, KEY_PROMPT, "frames/k.png")
-    _save(client, store, sample, video_prompt="@林小雨 在 @老宅庭院 抬头看 @玉佩", confirm="1")
+    _save(client, store, sample, image_prompt="@林小雨 站在 @老宅庭院 里", confirm="1")
     seg = repo.get(store, "segment", sample["seg"])
     assert (seg["first_frame_path"], seg["video_path"]) == (None, None)
     assert _keys(store, sample) == [(4.0, KEY_PROMPT, None)]
+
+
+def test_video_prompt_edit_keeps_every_frame(client, store, sample):
+    # 视频提示词不进任何参考帧的生成:只作废视频(实战第 6 段改了视频提示词,首帧被白白清掉)
+    repo.add_keyframe(store, sample["seg"], 4.0, KEY_PROMPT, "frames/k.png")
+    _save(client, store, sample, video_prompt="@林小雨 在 @老宅庭院 抬头看 @玉佩", confirm="1")
+    seg = repo.get(store, "segment", sample["seg"])
+    assert (seg["first_frame_path"], seg["video_path"]) == ("frames/s1.png", None)
+    assert _keys(store, sample) == [(4.0, KEY_PROMPT, "frames/k.png")]
 
 
 def test_bad_keyframe_rows_are_refused_with_a_reason(client, store, sample):

@@ -27,8 +27,10 @@ _AFFECTED = {
     "voice": "SELECT segment_id FROM segment_character WHERE character_id = ?",
     # 四视图只进视频的参考图(首帧合成用正面图),换它只影响视频
     "fourview": "SELECT segment_id FROM segment_character WHERE character_id = ?",
+    # 只改了视频提示词 / 时长:参考帧是按图提示词和绑定出的,不受影响
+    "segment_video": "SELECT id FROM segment WHERE id = ?",
 }
-_VIDEO_ONLY = {"voice", "fourview"}
+_VIDEO_ONLY = {"voice", "fourview", "segment_video"}
 _FRAME_FIELDS = ("first_frame_path", "last_frame_path")          # 关键帧图在 segment_keyframe 表里,另算
 
 

@@ -128,7 +128,10 @@ def build(lines: list[str], chars: list[tuple[str, float, float]], envelope: lis
             problems.append(f"第 {n} 句时间不合理:{start:.2f}–{end:.2f}(上一句到 {prev_end:.2f})")
             continue
         if end > duration + 0.1:
-            problems.append(f"第 {n} 句结束 {end:.2f}s 超出片长 {duration:.2f}s")
+            # 实战(spike-results/2026-10-19-真实场景参考图调研.md):人物先做动作、开口太晚,句尾被片尾截断;
+            # 加长 1.5 s 重出后一次通过。只给建议,不改时长规则(1 例失败,定不出公式)
+            problems.append(f"第 {n} 句结束 {end:.2f}s 超出片长 {duration:.2f}s"
+                            "(台词可能被挤到片尾截断:把本段加长 1.5 秒左右后重出视频)")
             continue
         cues.append(Cue(a["line"], round(start, 2), round(end, 2)))
         prev_end = end

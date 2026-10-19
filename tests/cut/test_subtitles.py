@@ -81,6 +81,8 @@ def test_end_beyond_clip_is_a_problem():
     late = [(c, s, e + 1.0) for c, s, e in ANIME_CHARS]
     cues, problems = st.build(["这块玉佩，是我母亲留给我的。"], late, ANIME_ENV, 8.0)
     assert cues == [] and "超出片长" in problems[0]
+    # 实战第 6 段:人物先做动作、4.3 s 才开口,台词被片尾截断 —— 判卷要说出该怎么办,不只报数字
+    assert "加长" in problems[0]
 
 
 def test_onset_needs_a_rising_edge():
