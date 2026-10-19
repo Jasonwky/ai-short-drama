@@ -233,15 +233,14 @@ def test_video_anchors_move_with_the_bundle(store, project, tmp_path):
                                                             [f"{prefix}/outputs/tasks/8/k.png", 96]]
 
 
-def test_second_pass_and_region_paths_move_with_the_bundle(store, project, tmp_path):
-    """两遍合成的第二遍参考图、局部替换的原图与参考图,导入后同样加前缀(不改就指到别的剧的文件)。"""
+def test_region_paths_move_with_the_bundle(store, project, tmp_path):
+    """局部替换的原图与参考图,导入后同样加前缀(不改就指到别的剧的文件)。"""
     for rel in ("outputs/tasks/2/a.png", "outputs/tasks/3/b.png"):
         _file(project["root"], rel, rel.encode())
     two = create_task(store, kind="image", target_type="segment", target_id=project["seg"], model="m", seed=1,
                       params={"workflow": "qwen_image", "writes": "first_frame_path",
-                              "image_refs": ["outputs/tasks/2/a.png"],
-                              "second_pass": {"image_refs": ["outputs/tasks/3/b.png"], "names": ["乙"], "prompt": "p"}},
-                      prompt="p", refs=["outputs/tasks/2/a.png", "outputs/tasks/3/b.png"])
+                              "image_refs": ["outputs/tasks/2/a.png"]},
+                      prompt="p", refs=["outputs/tasks/2/a.png"])
     region = create_task(store, kind="image", target_type="segment", target_id=project["seg"], model="m", seed=2,
                          params={"workflow": "qwen_region", "writes": "first_frame_path", "image_refs": [],
                                  "source": "outputs/tasks/2/a.png", "ref": "outputs/tasks/3/b.png", "box": [0, 0, 128, 128]},
@@ -257,6 +256,5 @@ def test_second_pass_and_region_paths_move_with_the_bundle(store, project, tmp_p
     prefix = seg["first_frame_path"].split("/outputs/")[0]
     by_flow = {json.loads(r["params_json"]).get("workflow"): json.loads(r["params_json"])
                for r in tasks_for(dest, "segment", seg["id"]) if r["kind"] == "image"}
-    assert by_flow["qwen_image"]["second_pass"]["image_refs"] == [f"{prefix}/outputs/tasks/3/b.png"]
     assert (by_flow["qwen_region"]["source"], by_flow["qwen_region"]["ref"]) == (
         f"{prefix}/outputs/tasks/2/a.png", f"{prefix}/outputs/tasks/3/b.png")

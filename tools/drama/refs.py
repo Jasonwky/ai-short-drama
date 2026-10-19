@@ -58,14 +58,3 @@ def allocate_slots(characters: list[tuple[Ref, int]], scene: Ref | None, props: 
     chars = [r for r, _ in sorted(characters, key=lambda x: -x[1])]
     order = chars[:1] + ([scene] if scene else []) + chars[1:2] + list(props) + chars[2:]
     return order[:slots], order[slots:]
-
-
-def allocate_passes(characters: list[tuple[Ref, int]], scene: Ref | None, props: list[Ref],
-                    slots: int) -> tuple[list[Ref], list[Ref], list[Ref]]:
-    """两遍合成的分槽,返回 (第一遍, 第二遍, 仍放不下的)。优先级同 `allocate_slots`。
-
-    第一遍占满 slots;第二遍的 Picture 1 是第一遍出的图,所以只剩 slots - 1 个槽给新参考图
-    (`spike-results/2026-10-19-首帧多参考图实测.md`:两遍 3/3 三人认对,只写名字 0/3)。
-    """
-    first, rest = allocate_slots(characters, scene, props, slots)
-    return first, rest[:slots - 1], rest[slots - 1:]

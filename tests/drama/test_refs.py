@@ -38,21 +38,3 @@ def test_single_character_fits_everything():
     scene, prop = Ref("scene", "庭院", "y"), Ref("prop", "玉佩", "j")
     kept, dropped = allocate_slots([(_c("甲"), 5)], scene, [prop], slots=3)
     assert [r.name for r in kept] == ["甲", "庭院", "玉佩"] and dropped == []
-
-
-def test_two_passes_take_the_overflow_into_a_second_pass():
-    from tools.drama.refs import allocate_passes
-    chars = [(_c("甲"), 9), (_c("乙"), 5), (_c("丙"), 1)]
-    scene = Ref("scene", "正堂", "s.png")
-    first, second, dropped = allocate_passes(chars, scene, [], 3)
-    assert [r.name for r in first] == ["甲", "正堂", "乙"]
-    assert [r.name for r in second] == ["丙"] and dropped == []
-
-
-def test_two_passes_hold_at_most_five_and_keep_three_unchanged():
-    from tools.drama.refs import allocate_passes
-    chars = [(_c(n), 0) for n in "甲乙丙丁戊"]
-    first, second, dropped = allocate_passes(chars, Ref("scene", "正堂", "s.png"), [], 3)
-    assert [r.name for r in second] == ["丙", "丁"] and [r.name for r in dropped] == ["戊"]
-    first, second, dropped = allocate_passes(chars[:2], Ref("scene", "正堂", "s.png"), [], 3)
-    assert len(first) == 3 and second == [] and dropped == []

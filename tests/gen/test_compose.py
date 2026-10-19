@@ -8,19 +8,18 @@ from tools.gen import compose
 XIAO, YARD = Ref("character", "萧珩", "x.png"), Ref("scene", "正堂", "s.png")
 
 
-def test_second_pass_prompt_names_each_reference_and_passes_tag_check():
-    p = compose.second_pass_prompt([XIAO, YARD])
-    assert p.startswith("保持 Picture 1 的画面、构图、光线、动作和其他人物完全不变")
-    assert "把画面中的萧珩换成 Picture 2(萧珩) 的长相、发型发饰和服装" in p
-    assert "把画面中的正堂换成 Picture 3(正堂) 的样子" in p
-    assert check_tags(p, n_images=3, dialect="qwen") == []
-
-
-def test_region_prompt_for_character_and_note():
-    p = compose.region_prompt(XIAO, "神情冷峻")
-    assert "把其中的人物换成 Picture 2(萧珩) 的长相、发型发饰和服装。神情冷峻" in p
+def test_region_prompt_is_the_one_that_passed_on_the_cloud():
+    # spike-results/2026-10-20-P15两遍合成与局部替换云机实测.md 的「regionfix」:3/3 认对人、幞头回来
+    p = compose.region_prompt(Ref("character", "李福", "l.png"), "", "深褐色管事长袍,腰系黑色布带,头戴黑色幞头")
+    assert p == ("保持 Picture 1 的构图、姿态、动作、神情、光线和背景不变,把其中的人物换成 Picture 2(李福) 的长相、"
+                 "发型发饰和服装(深褐色管事长袍,腰系黑色布带,头戴黑色幞头)。")
     assert check_tags(p, n_images=2, dialect="qwen") == []
-    assert "换成 Picture 2(正堂) 的样子" in compose.region_prompt(YARD, "")
+
+
+def test_region_prompt_appends_the_note_and_handles_scenes():
+    assert compose.region_prompt(XIAO, " 保持惊恐的神情 ").endswith("的长相、发型发饰和服装。保持惊恐的神情")
+    assert compose.region_prompt(YARD, "") == ("保持 Picture 1 的构图、姿态、动作、神情、光线和背景不变,"
+                                               "把其中的正堂换成 Picture 2(正堂) 的样子。")
 
 
 def test_region_box_aligns_pads_and_clamps():

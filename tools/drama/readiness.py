@@ -82,6 +82,11 @@ def keys_problems(seg, keys, cap: Capability) -> list[str]:
     return problems
 
 
+# 参考图超过 3 张:自动两遍合成实测第二遍换不动人(spike-results/2026-10-20-P15两遍合成与局部替换云机实测.md),
+# 用户 2026-10-20 定改为提示人用局部替换补
+REGION_HINT = "出图后可在参考帧面板用「局部替换」框住它,换成参考图的样子"
+
+
 def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, image_cap: Capability,
                       host_ok: bool, host_msg: str, model_ok: bool, model_msg: str) -> list[Check]:
     seg = repo.get(store, "segment", segment_id)
@@ -147,13 +152,10 @@ def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, i
                      sum(n for who, n in spoken.items() if who.startswith(c["name"]))) for c in chars]
         scene_ref = refs.Ref("scene", scene["name"], scene["image_path"]) if scene is not None else None
         prop_refs = [refs.Ref("prop", p["name"], p["image_path"]) for p in props]
-        first, second, dropped = refs.allocate_passes(weighted, scene_ref, prop_refs, image_cap.max_ref_images)
-        if second:
-            checks.append(Check("two_pass", True, f"多参考图 {len(first) + len(second)} 张:两遍合成,耗时约 2 倍"
-                                f"(第二遍换成参考图的样子:{'、'.join(r.name for r in second)})", warn=True))
+        _, dropped = refs.allocate_slots(weighted, scene_ref, prop_refs, image_cap.max_ref_images)
         if dropped:
             msg = ";".join(f"{KIND_LABEL[r.kind]}「{r.name}」因槽位不足未作为参考图,仅以文字描述参与"
-                           for r in dropped)
+                           for r in dropped) + "。" + REGION_HINT
             checks.append(Check("slots", True, msg, warn=True))
         no_view = [c["name"] for c in chars if not c["fourview_path"]]
         if no_view:

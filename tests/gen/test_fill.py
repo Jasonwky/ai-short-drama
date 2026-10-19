@@ -158,12 +158,3 @@ def test_keyframes_are_listed_one_by_one(store, sample):
                          base_seed=9)
     p = json.loads(repo.get(store, "task", tid)["params_json"])
     assert (p["writes"], p["keyframe_id"], repo.get(store, "task", tid)["seed"]) == ("key_frame_path", want, 9)
-
-
-def test_two_pass_frames_are_estimated_twice(store, sample):
-    _host(store)
-    repo.update(store, "segment", sample["seg"], first_frame_path=None)
-    one = plan_fill(store, "frames", sample["episode"]).est_seconds()
-    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])
-    repo.update(store, "segment", sample["seg"], image_prompt="@林小雨 把 @玉佩 递给 @沈墨,@老宅庭院 黄昏")
-    assert plan_fill(store, "frames", sample["episode"]).est_seconds() == pytest.approx(2 * one)

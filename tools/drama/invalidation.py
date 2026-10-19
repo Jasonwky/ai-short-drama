@@ -71,8 +71,7 @@ def impact(store: Store, event: str, target_id: int, *, video_cap: Capability,
             continue
         n = sum(1 for f in _FRAME_FIELDS if seg[f]) + sum(1 for k in repo.keyframes(store, sid) if k["frame_path"])
         frames += n
-        from tools.gen.planner import frame_passes     # 延迟导入(gen 依赖 drama);两遍合成按两张图算
-        est += n * (b.item(image_cap) or 0.0) * frame_passes(store, sid)
+        est += n * (b.item(image_cap) or 0.0)
     return Impact(tuple(ids), frames, videos, None if b.timing is None else est, event in _VIDEO_ONLY, b.note)
 
 

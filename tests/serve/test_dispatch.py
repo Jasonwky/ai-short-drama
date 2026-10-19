@@ -143,21 +143,6 @@ def test_missing_anchor_image_fails_loudly(store, sample, host_id, data_root):
     assert out.state == "failed" and "gone.png" in out.message
 
 
-def test_second_pass_images_are_uploaded_and_chained(store, sample, host_id, data_root):
-    wang = repo.add_character(store, sample["drama"], "王五", turnaround_path="assets/wang.png")
-    (data_root / "assets/wang.png").write_bytes(b"wang")
-    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"], wang])
-    repo.update(store, "segment", sample["seg"], image_prompt="@林小雨 把 @玉佩 递给 @沈墨,@王五 旁观,@老宅庭院")
-    tid = plan_first_frame(store, sample["seg"], seed=7)
-    comfy = FakeComfy()
-    out = dispatch(store, comfy, get_host(store, host_id), _task(store, tid), data_root=data_root, run=_no_ssh)
-    assert out.state == "queued"
-    assert (data_root / "assets/wang.png").as_posix() in comfy.uploaded
-    wf = comfy.submitted[out.message]
-    assert wf["32"]["inputs"]["image1"] == ["28", 0] and wf["29"]["inputs"]["images"] == ["35", 0]
-    assert wf["31"]["inputs"]["image"].endswith("jade.png") and wf["36"]["inputs"]["image"].endswith("wang.png")
-
-
 def test_region_task_uploads_source_and_ref_and_builds_the_paste_back(store, sample, host_id, data_root):
     from tools.gen.planner import plan_region
     tid = plan_region(store, sample["seg"], "first_frame_path", source="frames/s1.png", size=(928, 1664),
@@ -169,3 +154,12 @@ def test_region_task_uploads_source_and_ref_and_builds_the_paste_back(store, sam
     wf = comfy.submitted[out.message]
     assert wf["40"]["inputs"]["image"].endswith("s1.png") and wf["18"]["inputs"]["image"].endswith("lin.png")
     assert (wf["41"]["inputs"]["x"], wf["41"]["inputs"]["y"]) == (64, 160) and wf["29"]["inputs"]["images"] == ["46", 0]
+
+
+def test_region_task_with_a_missing_source_fails_loudly(store, sample, host_id, data_root):
+    from tools.gen.planner import plan_region
+    tid = plan_region(store, sample["seg"], "first_frame_path", source="frames/s1.png", size=(928, 1664),
+                      box=[0, 0, 400, 400], asset=("character", sample["lin"]), note="", seed=1)
+    (data_root / "frames/s1.png").unlink()
+    out = dispatch(store, FakeComfy(), get_host(store, host_id), _task(store, tid), data_root=data_root, run=_no_ssh)
+    assert out.state == "failed" and "s1.png" in out.message

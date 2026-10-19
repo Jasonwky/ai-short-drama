@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""参考帧的「第二步」:两遍合成的第二遍、框选局部替换 —— 提示词与框坐标,纯函数。
+"""框选局部替换:人在参考帧上框一块,裁出来按素材参考图改,再贴回原图(框外像素不动)—— 提示词与框坐标,纯函数。
 
-两遍合成(参考图超过 3 张):第二遍拿第一遍的图当 Picture 1,把只写了名字的素材换成定妆图的样子。
-局部替换:人在图上框一块,裁出来按素材参考图改,再贴回原图(框外像素不动)。
-依据:`spike-results/2026-10-19-首帧多参考图实测.md`、`2026-10-19-多角色同框常规做法调研.md`。
+依据:`spike-results/2026-10-19-多角色同框常规做法调研.md`、`2026-10-20-P15两遍合成与局部替换云机实测.md`
+(只说「换成 Picture 2 的长相、发型发饰和服装」0/3:发饰压不过裁块里原有的、神情被换掉;
+保持项加「神情」+ 写出角色的造型文字后 3/3 认对人、发饰回来)。
 """
 from __future__ import annotations
 
@@ -18,21 +18,13 @@ MIN_SIDE = 128      # 框再小,放大到 1 MP 再缩回会糊
 WORK_PIXELS = 1024 * 1024
 
 
-def _change(ref: Ref, picture: int, subject: str) -> str:
+def region_prompt(ref: Ref, note: str, styling: str = "") -> str:
+    """styling:角色表的「造型」字段(只有角色有)。具体神情代码推不出,靠 note 由人写。"""
     if ref.kind == "character":
-        return f"把{subject}换成 Picture {picture}({ref.name}) 的长相、发型发饰和服装"
-    return f"把{subject}换成 Picture {picture}({ref.name}) 的样子"
-
-
-def second_pass_prompt(refs: list[Ref]) -> str:
-    changes = ";".join(_change(r, k, f"画面中的{r.name}") for k, r in enumerate(refs, 2))
-    return f"保持 Picture 1 的画面、构图、光线、动作和其他人物完全不变,只做以下修改:{changes}。"
-
-
-def region_prompt(ref: Ref, note: str) -> str:
-    subject = "其中的人物" if ref.kind == "character" else f"其中的{ref.name}"
-    return (f"保持 Picture 1 的构图、姿态、动作、光线和背景不变,{_change(ref, 2, subject)}。"
-            + note.strip())
+        change = f"把其中的人物换成 Picture 2({ref.name}) 的长相、发型发饰和服装" + (f"({styling})" if styling else "")
+    else:
+        change = f"把其中的{ref.name}换成 Picture 2({ref.name}) 的样子"
+    return f"保持 Picture 1 的构图、姿态、动作、神情、光线和背景不变,{change}。" + note.strip()
 
 
 def region_box(box: list[int], size: tuple[int, int]) -> tuple[int, int, int, int]:

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from tools.drama import repo
-from tools.drama.readiness import is_ready, segment_readiness
+from tools.drama.readiness import REGION_HINT, is_ready, segment_readiness
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 
 
@@ -50,25 +50,16 @@ def test_unimplemented_mode_is_reported_not_faked(store, sample):
     assert not c.ok and "尚未实现" in c.msg
 
 
-def test_fourth_reference_is_composed_in_a_second_pass(store, sample):
+def test_two_characters_push_prop_out_of_slots_as_warning(store, sample):
     repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])
     repo.update(store, "segment", sample["seg"],
                 description="【镜头1】沈墨说：「你还留着它。」【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」",
                 video_prompt="@林小雨 把 @玉佩 递给 @沈墨,@老宅庭院 黄昏")
     checks = _check(store, sample["seg"])
-    assert "slots" not in _by_key(checks)                 # 第二遍兜住了:不再说「仅以文字描述参与」
-    two = _by_key(checks)["two_pass"]
-    assert two.ok and two.warn
-    assert two.msg == "多参考图 4 张:两遍合成,耗时约 2 倍(第二遍换成参考图的样子:玉佩)"
-    assert is_ready(checks)
-
-
-def test_sixth_reference_still_falls_out_of_slots(store, sample):
-    extra = [repo.add_character(store, sample["drama"], n, turnaround_path=f"assets/{n}.png") for n in ("王五", "赵六")]
-    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"], *extra])
-    checks = _check(store, sample["seg"])
-    assert _by_key(checks)["slots"].msg == "角色「赵六」因槽位不足未作为参考图,仅以文字描述参与"
-    assert "两遍合成" in _by_key(checks)["two_pass"].msg
+    slots = _by_key(checks)["slots"]
+    assert slots.ok and slots.warn
+    assert slots.msg == ("道具「玉佩」因槽位不足未作为参考图,仅以文字描述参与。" + REGION_HINT)
+    assert is_ready(checks)  # 告警不阻塞,但必须让人看见
 
 
 def test_host_down_blocks(store, sample):

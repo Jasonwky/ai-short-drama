@@ -97,3 +97,18 @@ def test_deleted_keyframe_versions_cannot_be_picked(store, sample):
     repo.delete_keyframe(store, k)
     with pytest.raises(ValueError, match="这张关键帧已经删除"):
         plan_pick(store, t, **CAPS)
+
+
+def test_region_replace_version_is_picked_like_any_frame(store, sample):
+    """局部替换出的新版本:与普通首帧同一个写回位置,挑它才替换当前帧,照常让视频作废。"""
+    from tools.gen.planner import plan_region
+    t = plan_region(store, sample["seg"], "first_frame_path", source="frames/s1.png", size=(928, 1664),
+                    box=[0, 0, 400, 400], asset=("character", sample["lin"]), note="", seed=1)
+    set_task_state(store, t, "queued", external_id="x")
+    set_task_state(store, t, "done", result_path="outputs/tasks/9/region.png")
+    assert repo.get(store, "segment", sample["seg"])["first_frame_path"] == "frames/s1.png"     # 进历史,不自动替换
+    pick = plan_pick(store, t, **CAPS)
+    assert pick.impact.videos == 1
+    confirm_pick(store, pick)
+    seg = repo.get(store, "segment", sample["seg"])
+    assert seg["first_frame_path"] == "outputs/tasks/9/region.png" and seg["video_path"] is None

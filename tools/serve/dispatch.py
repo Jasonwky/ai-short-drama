@@ -65,8 +65,7 @@ def pick_next(store: Store, host_id: int) -> sqlite3.Row | None:
 def _uploads(p: dict) -> list[str]:
     """要传到云机的图:参考图 + 锚点图,去重、保持顺序(首帧常常既是参考图又是锚点)。"""
     return list(dict.fromkeys([*p["image_refs"], *(path for path, _ in p.get("anchors", [])),
-                               *p.get("second_pass", {}).get("image_refs", []),
-                               *(p[k] for k in ("source", "ref") if k in p)]))
+                               *(p[k] for k in ("source", "ref") if k in p)]))      # source / ref:局部替换
 
 
 SUBMITTED = "workflow.json"     # outputs/tasks/<id>/ 下:实际提交给云机的工作流(改参重跑从它打开)
@@ -79,9 +78,7 @@ def build_workflow(task: sqlite3.Row, names: dict[str, str]) -> dict:
         return graphs.with_images(p["graph"], names)
     image_names = [names[path] for path in p["image_refs"]]
     if p["workflow"] == "qwen_image":
-        sp = p.get("second_pass")
-        wf = build_qwen(task["prompt"], image_names, task["seed"], preset=p["preset"], size=tuple(p["size"]),
-                        second_pass=(sp["prompt"], [names[r] for r in sp["image_refs"]]) if sp else None)
+        wf = build_qwen(task["prompt"], image_names, task["seed"], preset=p["preset"], size=tuple(p["size"]))
     elif p["workflow"] == "qwen_region":
         # 不吃首帧模板预设:预设按首帧模板的节点号写,对不上这份图
         return build_qwen_region(task["prompt"], names[p["source"]], names[p["ref"]], tuple(p["box"]),

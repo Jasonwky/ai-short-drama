@@ -99,10 +99,3 @@ def test_keyframe_only_edit_spares_the_first_frame(store, sample):
     repo.update(store, "segment", sample["seg"], video_path="videos/s1.mp4")
     apply(store, reprompted)
     assert repo.get(store, "segment", sample["seg"])["first_frame_path"] == "frames/s1.png"
-
-
-def test_two_pass_frames_cost_twice(store, sample):
-    _host(store, "RTX 4090")
-    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])     # 4 张参考图 → 两遍
-    imp = impact(store, "character", sample["lin"], **CAPS)
-    assert imp.est_seconds == pytest.approx(20 * 44.4 + 2 * 25.3)
