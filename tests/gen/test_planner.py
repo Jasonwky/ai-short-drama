@@ -165,3 +165,41 @@ def test_three_or_fewer_references_have_no_second_pass(store, sample):
     from tools.gen.planner import frame_passes
     _, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
     assert "second_pass" not in p and frame_passes(store, sample["seg"]) == 1
+
+
+# ── 框选局部替换 ─────────────────────────────────────
+
+def test_region_replace_plans_a_new_version_of_the_same_frame(store, sample):
+    from tools.gen.planner import plan_region
+    tid = plan_region(store, sample["seg"], "first_frame_path", source="frames/s1.png", size=(928, 1664),
+                      box=[100, 200, 200, 300], asset=("character", sample["lin"]), note="神情冷峻", seed=3)
+    row, p = _task(store, tid)
+    assert (row["kind"], row["model"], row["seed"]) == ("image", QWEN_MODEL, 3)
+    assert p["workflow"] == "qwen_region" and p["writes"] == "first_frame_path"
+    assert (p["source"], p["ref"], p["box"], p["size"]) == ("frames/s1.png", "assets/lin.png", [64, 160, 272, 384],
+                                                            [928, 1664])
+    assert "换成 Picture 2(林小雨) 的长相、发型发饰和服装。神情冷峻" in row["prompt"]
+    assert json.loads(row["refs_json"]) == ["frames/s1.png", "assets/lin.png"]
+
+
+def test_region_replace_on_a_keyframe_writes_back_to_that_keyframe(store, sample):
+    from tools.drama import repo as r, targets
+    from tools.gen.planner import plan_region
+    kid = r.add_keyframe(store, sample["seg"], 4.0, "@林小雨 回头", "frames/k.png")
+    tid = plan_region(store, sample["seg"], f"key:{kid}", source="frames/k.png", size=(928, 1664),
+                      box=[0, 0, 400, 400], asset=("scene", sample["yard"]), note="", seed=1)
+    assert targets.slot(store, r.get(store, "task", tid))[1] == kid
+
+
+def test_region_replace_refuses_stale_frames_and_unbound_assets(store, sample):
+    from tools.gen.planner import plan_region
+    with pytest.raises(ValueError, match="框是在旧图上画的"):
+        plan_region(store, sample["seg"], "first_frame_path", source="frames/old.png", size=(928, 1664),
+                    box=[0, 0, 400, 400], asset=("character", sample["lin"]), note="", seed=1)
+    with pytest.raises(ValueError, match="不是本段绑定"):
+        plan_region(store, sample["seg"], "first_frame_path", source="frames/s1.png", size=(928, 1664),
+                    box=[0, 0, 400, 400], asset=("character", sample["shen"]), note="", seed=1)
+    repo.update(store, "segment", sample["seg"], last_frame_path=None)
+    with pytest.raises(ValueError, match="还没有图"):
+        plan_region(store, sample["seg"], "last_frame_path", source="", size=(928, 1664),
+                    box=[0, 0, 400, 400], asset=("character", sample["lin"]), note="", seed=1)

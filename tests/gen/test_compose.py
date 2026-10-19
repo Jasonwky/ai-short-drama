@@ -43,3 +43,10 @@ def test_region_work_size_is_about_one_megapixel_and_16_aligned():
     w, h = compose.work_size(272, 368)
     assert w % 16 == 0 and h % 16 == 0 and 0.85e6 < w * h < 1.15e6
     assert abs(w / h - 272 / 368) < 0.05
+
+
+def test_png_size_reads_the_header():
+    from tools.gen.assets import _png
+    assert compose.png_size(_png(96, 160, 150)) == (96, 160)
+    with pytest.raises(ValueError, match="不是 PNG"):
+        compose.png_size(b"GIF89a....")

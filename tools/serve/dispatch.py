@@ -25,7 +25,7 @@ from tools.drama.db import Store
 from tools.drama.tasks import set_task_state
 from tools.gen import graphs, preflight, presets
 from tools.gen.comfy_client import ComfyError, ComfyUnreachable
-from tools.gen.workflows import build_h3, build_qwen
+from tools.gen.workflows import build_h3, build_qwen, build_qwen_region
 from tools.serve.hosts import Host
 
 
@@ -65,7 +65,8 @@ def pick_next(store: Store, host_id: int) -> sqlite3.Row | None:
 def _uploads(p: dict) -> list[str]:
     """要传到云机的图:参考图 + 锚点图,去重、保持顺序(首帧常常既是参考图又是锚点)。"""
     return list(dict.fromkeys([*p["image_refs"], *(path for path, _ in p.get("anchors", [])),
-                               *p.get("second_pass", {}).get("image_refs", [])]))
+                               *p.get("second_pass", {}).get("image_refs", []),
+                               *(p[k] for k in ("source", "ref") if k in p)]))
 
 
 SUBMITTED = "workflow.json"     # outputs/tasks/<id>/ 下:实际提交给云机的工作流(改参重跑从它打开)
@@ -81,6 +82,10 @@ def build_workflow(task: sqlite3.Row, names: dict[str, str]) -> dict:
         sp = p.get("second_pass")
         wf = build_qwen(task["prompt"], image_names, task["seed"], preset=p["preset"], size=tuple(p["size"]),
                         second_pass=(sp["prompt"], [names[r] for r in sp["image_refs"]]) if sp else None)
+    elif p["workflow"] == "qwen_region":
+        # 不吃首帧模板预设:预设按首帧模板的节点号写,对不上这份图
+        return build_qwen_region(task["prompt"], names[p["source"]], names[p["ref"]], tuple(p["box"]),
+                                 tuple(p["size"]), task["seed"], preset=p["preset"])
     elif p["workflow"] == "minimax_h3":
         if p["audio_ref"] is not None:
             raise ValueError("参考音频尚未接入(闸门 0-4:喂参考音频会复读内容)")

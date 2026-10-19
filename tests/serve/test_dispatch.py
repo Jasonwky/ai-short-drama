@@ -156,3 +156,16 @@ def test_second_pass_images_are_uploaded_and_chained(store, sample, host_id, dat
     wf = comfy.submitted[out.message]
     assert wf["32"]["inputs"]["image1"] == ["28", 0] and wf["29"]["inputs"]["images"] == ["35", 0]
     assert wf["31"]["inputs"]["image"].endswith("jade.png") and wf["36"]["inputs"]["image"].endswith("wang.png")
+
+
+def test_region_task_uploads_source_and_ref_and_builds_the_paste_back(store, sample, host_id, data_root):
+    from tools.gen.planner import plan_region
+    tid = plan_region(store, sample["seg"], "first_frame_path", source="frames/s1.png", size=(928, 1664),
+                      box=[100, 200, 200, 300], asset=("character", sample["lin"]), note="", seed=3)
+    comfy = FakeComfy()
+    out = dispatch(store, comfy, get_host(store, host_id), _task(store, tid), data_root=data_root, run=_no_ssh)
+    assert out.state == "queued"
+    assert sorted(comfy.uploaded) == sorted((data_root / p).as_posix() for p in ("frames/s1.png", "assets/lin.png"))
+    wf = comfy.submitted[out.message]
+    assert wf["40"]["inputs"]["image"].endswith("s1.png") and wf["18"]["inputs"]["image"].endswith("lin.png")
+    assert (wf["41"]["inputs"]["x"], wf["41"]["inputs"]["y"]) == (64, 160) and wf["29"]["inputs"]["images"] == ["46", 0]

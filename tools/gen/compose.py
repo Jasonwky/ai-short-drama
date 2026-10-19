@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import math
+import struct
 
 from tools.drama.refs import Ref
 
@@ -52,3 +53,10 @@ def work_size(w: int, h: int) -> tuple[int, int]:
     """裁出的块放大 / 缩小到约 1 MP 再编辑(Qwen 的原生分辨率),宽高对齐 ALIGN、保持比例。"""
     k = math.sqrt(WORK_PIXELS / (w * h))
     return max(ALIGN, round(w * k / ALIGN) * ALIGN), max(ALIGN, round(h * k / ALIGN) * ALIGN)
+
+
+def png_size(data: bytes) -> tuple[int, int]:
+    """PNG 的宽高(读文件头,不解码)。参考帧都是 PNG;局部替换按原图像素换算框,要知道真实尺寸。"""
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        raise ValueError("不是 PNG 图片")
+    return struct.unpack(">II", data[16:24])

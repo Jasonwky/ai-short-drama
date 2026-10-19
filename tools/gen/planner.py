@@ -164,6 +164,48 @@ def plan_key_frame(store: Store, keyframe_id: int, *, seed: int) -> int:
                        {"writes": KEY_WRITES, "keyframe_id": keyframe_id})
 
 
+REGION_KINDS = {"character": ("character", "turnaround_path"), "scene": ("scene", "image_path"),
+                "prop": ("prop", "image_path")}
+
+
+def _frame_slot(store: Store, segment_id: int, slot: str) -> tuple[str | None, dict]:
+    """局部替换的写回位置:slot = first_frame_path / last_frame_path / key:<关键帧号> → (当前图, writes 参数)。"""
+    if slot in FRAMES:
+        return repo.get(store, "segment", segment_id)[slot], {"writes": slot}
+    kid = int(slot.removeprefix("key:"))
+    k = repo.get(store, "segment_keyframe", kid)
+    if k["segment_id"] != segment_id:
+        raise ValueError(f"关键帧 {kid} 不属于段落 {segment_id}")
+    return k["frame_path"], {"writes": KEY_WRITES, "keyframe_id": kid}
+
+
+def plan_region(store: Store, segment_id: int, slot: str, *, source: str, size: tuple[int, int], box: list[int],
+                asset: tuple[str, int], note: str, seed: int) -> int:
+    """框选局部替换:当前帧 source 里框住的一块,按 asset 的参考图改,贴回原图。新版本进历史,人挑了才替换当前帧。
+    size 是 source 的真实像素(面板读的);框是在旧图上画的(当前帧已换)就拒绝。"""
+    current, writes = _frame_slot(store, segment_id, slot)
+    if not current:
+        raise ValueError("这一格还没有图,先出图再做局部替换")
+    if source != current:
+        raise ValueError("框是在旧图上画的:这一格的图已经换了,刷新后重画")
+    kind, row_id = asset
+    table, field = REGION_KINDS[kind]
+    assets = repo.segment_assets(store, segment_id)
+    bound = {"character": [c["id"] for c in assets["characters"]], "prop": [p["id"] for p in assets["props"]],
+             "scene": [assets["scene"]["id"]] if assets["scene"] is not None else []}[kind]
+    row = repo.get(store, table, row_id)
+    if row_id not in bound:
+        raise ValueError(f"「{row['name']}」不是本段绑定的素材")
+    if not row[field]:
+        raise ValueError(f"「{row['name']}」还没有参考图")
+    ref = refs.Ref(kind, row["name"], row[field])
+    params = {"workflow": "qwen_region", "preset": "fast", "source": source, "ref": ref.path, "ref_name": ref.name,
+              "box": list(compose.region_box(box, size)), "size": list(size), "note": note, **writes,
+              "image_refs": [], "expect_ext": ".png"}
+    return create_task(store, kind="image", target_type="segment", target_id=segment_id, model=QWEN_MODEL,
+                       params=params, seed=seed, prompt=compose.region_prompt(ref, note), refs=[source, ref.path])
+
+
 def fourview_refs(store: Store, segment_id: int) -> tuple[list[refs.Ref], list[refs.Ref]]:
     """进 H3 参考图的角色四视图(台词多的优先),与因槽位不够没进去的。
     工作流有 3 个图槽,<Picture 1> 是参考帧,四视图最多 2 张。"""
