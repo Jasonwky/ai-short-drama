@@ -134,6 +134,15 @@ tr:last-child td { border-bottom: 0; }
 .ver .err { font-size: 11.5px; color: var(--bad); word-break: break-all; margin-top: 3px; }
 .current-media img, .current-media video { max-width: 240px; display: block; background: var(--ink); border: 1px solid var(--line); }
 
+/* ── 局部替换:在图上拖框 ───────────────────────────────── */
+.region { min-width: 200px; }
+.region summary { display: inline-block; list-style: none; }
+.region summary::-webkit-details-marker { display: none; }
+.region[open] { flex: 1; min-width: 320px; }
+.region-stage { position: relative; display: inline-block; cursor: crosshair; user-select: none; outline: 1px solid var(--line); }
+.region-stage img { max-width: 360px; display: block; }  /* 图不带边框:框的坐标按图本身算 */
+.region-box { position: absolute; border: 2px solid var(--acid); background: rgba(0, 0, 0, 0.15); pointer-events: none; }
+
 /* ── 小标签 / 状态字 ───────────────────────────────────── */
 .tag { font-family: var(--mono); font-size: 10.5px; font-weight: 700; padding: 1px 6px; margin-left: 4px;
        border: 1px solid var(--ok); color: var(--ok); white-space: nowrap; }

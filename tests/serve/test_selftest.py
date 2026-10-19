@@ -27,6 +27,20 @@ def test_demo_segment_only_lacks_its_first_frame(tmp_path):
     store.close()
 
 
+def test_demo_has_a_crowded_segment_ready_for_region_replace(tmp_path):
+    """第 2 集第 2 段:三角色 + 场景超出 Qwen 的 3 个图槽 → 槽位不足提示(用局部替换补);首帧已有且够大(框要 ≥ 128 像素)。"""
+    from tools.drama import repo
+    from tools.gen.compose import MIN_SIDE, png_size
+    store = Store(tmp_path / "d.db")
+    ids = seed_demo(store, tmp_path)
+    checks = segment_readiness(store, ids["segment4"], video_cap=MINIMAX_H3, image_cap=QWEN_IMAGE_EDIT_2511,
+                               host_ok=True, host_msg="", model_ok=True, model_msg="")
+    assert "局部替换" in {c.key: c for c in checks}["slots"].msg
+    frame = repo.get(store, "segment", ids["segment4"])["first_frame_path"]
+    assert min(png_size((tmp_path / frame).read_bytes())) >= 4 * MIN_SIDE
+    store.close()
+
+
 def test_there_is_no_headless_switch():
     # Playwright 测试一律有头(CLAUDE.md 硬约束)—— 开关本身就不存在,传了直接报参数错误
     with pytest.raises(SystemExit):

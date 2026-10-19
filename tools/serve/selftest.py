@@ -15,6 +15,7 @@
   工作流面板改首帧模板(调度器)→ 确认页列出改动 → 保存 →「设为当前」先出确认页 → 当前变成 v1;
   段落 1 加关键帧 → 生成关键帧图 → 重出视频看「关键帧钉住了吗」→ 选草稿档重出 → 卡片标「草稿 · 10 步」;
   段落 2 加到 3 张关键帧 → 出「未经真机验证」警告、「加一张」置灰;
+  第 2 集三角色 + 场景同框的段落 → 参考帧面板出「槽位不足,用局部替换补」提示;在它的首帧上拖框 → 选角色 →「生成替换版」→ 历史里多一版;
 - iframe 里的 ComfyUI 前端**不许访问外网**:页面上出现任何非本机请求即判失败(实测前端会去 api.comfy.org,垫片已改向);
 - 在**全新临时目录**里建演示工程、用**假后端**跑 —— 假产物碰不到真工程,页面顶部标着「假后端」;
 - **一律有头**(CLAUDE.md 硬约束,用户 2026-09-24 明确要求):人要看得见它点开了每个面板。
@@ -70,8 +71,9 @@ KEY_SELECTOR = {
 
 def seed_demo(store: Store, data_root: Path) -> dict:
     """一部写实风格的演示剧:一集、两个素材齐全的段落(第 2 段的首帧留给尾帧衔接)、一台假云机;
-    第 2 集一个「首尾帧」模式的段落(不影响第 1 集的导出链路)。"""
-    for rel in ("assets/lin.png", "assets/yard.png", "assets/jade.png"):
+    第 2 集一个「首尾帧」模式的段落,和一个三角色 + 场景同框、首帧已有的段落(槽位不足提示 + 局部替换)
+    —— 都放第 2 集,不影响第 1 集的导出链路。"""
+    for rel in ("assets/lin.png", "assets/yard.png", "assets/jade.png", "assets/shen.png", "assets/zhou.png"):
         (data_root / rel).parent.mkdir(parents=True, exist_ok=True)
         (data_root / rel).write_bytes(_png(96, 160, 150))
     d = repo.create_drama(store, "玉佩(自测)", "9:16", "realistic")
@@ -105,10 +107,22 @@ def seed_demo(store: Store, data_root: Path) -> dict:
         video_prompt="@林小雨 在 @老宅庭院 捧着 @玉佩,然后转身走远")
     repo.bind_characters(store, seg3, [lin])
     repo.bind_props(store, seg3, [jade])
+    shen = repo.add_character(store, d, "沈墨", turnaround_path="assets/shen.png", voice_desc="青年男声,沉稳",
+                              appearance="二十七八,短发,深色长衫")
+    zhou = repo.add_character(store, d, "周伯", turnaround_path="assets/zhou.png", voice_desc="老年男声,沙哑",
+                              appearance="六十来岁,花白头发,粗布褂子")
+    (data_root / "frames").mkdir(parents=True, exist_ok=True)
+    (data_root / "frames/demo_s4.png").write_bytes(_png(576, 1024, 120))   # 局部替换的框要 ≥ 128 像素,图不能太小
+    seg4 = repo.add_segment(
+        store, ep2, 2, scene_id=yard, duration_sec=8.0, reference_mode="first", first_frame_path="frames/demo_s4.png",
+        description="【镜头1】林小雨、沈墨、周伯站在庭院里。【镜头2】周伯说：「少爷回来了。」",
+        image_prompt="@林小雨 、@沈墨 和 @周伯 站在 @老宅庭院 里",
+        video_prompt="@林小雨 、@沈墨 和 @周伯 在 @老宅庭院 相见,@周伯 开口说话")
+    repo.bind_characters(store, seg4, [lin, shen, zhou])
     add_host(store, label="假云机", ssh_host="fake.local", ssh_port=1, ssh_user="root", key_ref="C:/fake/key",
              local_port=8188, vram_gb=24.0, models_dir="/fake/models", gpu="RTX 4090")
     return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2, "photo": photo, "lin": lin,
-            "episode2": ep2, "segment3": seg3}
+            "episode2": ep2, "segment3": seg3, "segment4": seg4, "zhou": zhou}
 
 
 def _free_port() -> int:
@@ -181,6 +195,20 @@ def _set_keyframes(segment_id: int, times: list[str]):
     return act
 
 
+def _drag_region(segment_id: int, shot: Path):
+    """在段落首帧的「局部替换」里真拖一个框(鼠标按下 → 拖 → 松开),截图留证;框换算后「生成替换版」必须可点。"""
+    def act(page) -> None:
+        bb = page.locator(f"#seg-{segment_id} [data-region-img]").bounding_box()
+        page.mouse.move(bb["x"] + bb["width"] * 0.2, bb["y"] + bb["height"] * 0.15)
+        page.mouse.down()
+        page.mouse.move(bb["x"] + bb["width"] * 0.75, bb["y"] + bb["height"] * 0.85, steps=12)
+        page.mouse.up()
+        page.screenshot(path=str(shot), full_page=True)
+        if page.locator(f"#seg-{segment_id} [data-region-submit]").is_disabled():
+            raise RuntimeError("拖完框「生成替换版」还是灰的:" + page.locator(f"#seg-{segment_id} [data-region-info]").inner_text())
+    return act
+
+
 def run(out_dir: Path) -> dict:
     from playwright.sync_api import sync_playwright
 
@@ -227,6 +255,7 @@ def run(out_dir: Path) -> dict:
                                          "problems": problems, "screenshot": str(shot)})
 
             seg, seg2, seg3, photo, lin = ids["segment"], ids["segment2"], ids["segment3"], ids["photo"], ids["lin"]
+            seg4, zhou = ids["segment4"], ids["zhou"]
             bundle_zip = lambda: next((work / "outputs" / "bundles").glob("*.zip"))   # noqa: E731 —— 上一条链路才产生
             for n, (key, label, fill, buttons, wait_sel, timeout) in enumerate((
                     ("frames", "生成首帧", {}, [f"#seg-{seg} [data-generate-frame]"], f"#seg-{seg} .current-media img", 40),
@@ -286,7 +315,14 @@ def run(out_dir: Path) -> dict:
                      [lambda pg: pg.locator(f"#seg-{seg} [data-steps]").select_option("10"), f"#seg-{seg} [data-generate-video]"],
                      f"#seg-{seg} [data-few-steps]", 60),
                     ("frames", "段落 2 加到 3 张关键帧 → 未经真机验证的警告、「加一张」置灰", {},
-                     [_set_keyframes(seg2, ["2", "4", "6"])], '[data-readiness] [data-check="keyframe_count"]', 20)), 1):
+                     [_set_keyframes(seg2, ["2", "4", "6"])], '[data-readiness] [data-check="keyframe_count"]', 20),
+                    ("frames:episode2", "三角色 + 场景同框 → 「槽位不足,用局部替换补」提示", {}, [],
+                     f'#seg-{seg4} [data-frame-notes] [data-check="slots"]', 20),
+                    ("frames:episode2", "局部替换:拖框 → 选角色 → 生成替换版 → 历史多一版", {},
+                     [f"#seg-{seg4} [data-region] summary", _drag_region(seg4, out_dir / "flow_region_box.png"),
+                      lambda pg: pg.locator(f"#seg-{seg4} [data-region-asset]").select_option(f"character:{zhou}"),
+                      f"#seg-{seg4} [data-region-submit]"],
+                     f"#seg-{seg4} .history .ver.state-done img", 40)), 1):
                 errors.clear()
                 key, _, ep_key = key.partition(":")               # 「面板:集」—— 默认第 1 集
                 p = next(x for x in REGISTRY if x.key == key)
