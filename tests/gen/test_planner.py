@@ -60,6 +60,15 @@ def test_video_task_carries_voice_description_not_reference_audio(store, sample)
     assert p["anchors"] == [["frames/s1.png", 0]]           # 首帧既是参考图,又钉在第 0 帧
 
 
+def test_video_prompt_names_speaker_even_when_glued_to_action(store, sample):
+    # 实战第 6 段:「说」前没有标点,整串动作描写曾被当成说话人写进提示词,H3 把它烧成了画面字幕
+    repo.update(store, "segment", sample["seg"],
+                description="【镜头1】林小雨低头凝视玉佩林小雨说：「这块玉佩，是我母亲留给我的。」【镜头2】她抬眼")
+    row, _ = _task(store, plan_video(store, sample["seg"], seed=7))
+    assert " 林小雨用普通话说:「这块玉佩，是我母亲留给我的。」 " in row["prompt"]
+    assert "凝视玉佩林小雨" not in row["prompt"]
+
+
 def test_video_needs_a_first_frame(store, sample):
     repo.update(store, "segment", sample["seg"], first_frame_path=None)
     with pytest.raises(ValueError, match="缺少首帧"):

@@ -45,17 +45,23 @@ def dialogue_chars(description: str) -> int:
     return speech + narration
 
 
-def dialogue_by_speaker(description: str) -> dict[str, int]:
-    """每个说话人的台词字数。说话人名取「说：」前面的那串字,调用方按已知角色名前缀匹配。"""
+def _speaker(raw: str, names) -> str:
+    """「说：」前那串字常连着动作描写(「声音冷冽如冰萧珩」);以已知角色名结尾就取最长的那个名字,否则照写。"""
+    return max((n for n in names if raw.endswith(n)), key=len, default=raw)
+
+
+def dialogue_by_speaker(description: str, names=()) -> dict[str, int]:
+    """每个说话人的台词字数。给了角色名就按名字认说话人(见 `_speaker`),调用方再按已知角色名前缀匹配。"""
     out: dict[str, int] = {}
-    for name, line in _SPEAKER.findall(description):
+    for raw, line in _SPEAKER.findall(description):
+        name = _speaker(raw, names)
         out[name] = out.get(name, 0) + count_chars(line)
     return out
 
 
-def dialogue_lines(description: str) -> list[tuple[str, str]]:
+def dialogue_lines(description: str, names=()) -> list[tuple[str, str]]:
     """按出现顺序的 (说话人, 台词原文)。旁白不在内 —— 它不在画面里说,由配音/字幕环节处理。"""
-    return _SPEAKER.findall(description)
+    return [(_speaker(raw, names), line) for raw, line in _SPEAKER.findall(description)]
 
 
 def min_duration_sec(description: str) -> float:

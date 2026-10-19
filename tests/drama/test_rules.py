@@ -27,6 +27,24 @@ def test_dialogue_lines_keep_order_and_exact_text():
     assert rules.dialogue_lines(d) == [("林小雨", "你来了。"), ("沈墨", "我来晚了。")]   # 旁白不在画面里说
 
 
+def test_speaker_glued_to_action_resolves_to_known_name():
+    # 实战《替嫁冲喜》第 6 段:「说」前面没有标点,整串动作描写被当成了说话人,进了视频提示词并被烧成画面字幕
+    d = "【镜头1】床上的萧珩猛地睁眼，眸光如刀，声音冷冽如冰萧珩说：「谁准你们动本王的王妃？」【镜头2】沈青禾一怔"
+    names = ["沈青禾", "萧珩"]
+    assert rules.dialogue_lines(d, names) == [("萧珩", "谁准你们动本王的王妃？")]
+    assert rules.dialogue_by_speaker(d, names) == {"萧珩": 10}
+
+
+def test_speaker_prefers_longest_known_name():
+    d = "【镜头1】低头小雨说：「嗯。」【镜头2】林小雨说：「好。」"
+    assert rules.dialogue_lines(d, ["小雨", "林小雨"]) == [("小雨", "嗯。"), ("林小雨", "好。")]
+
+
+def test_unknown_speaker_kept_as_written():
+    d = "【镜头1】路人甲说：「让开。」【镜头2】林小雨点头"
+    assert rules.dialogue_lines(d, ["林小雨"]) == [("路人甲", "让开。")]
+
+
 def test_min_duration():
     assert rules.min_duration_sec(DESC) == pytest.approx(12 / 4.5 + 2)
 

@@ -38,7 +38,7 @@ def _aspect(store: Store, segment_id: int) -> str:
 
 def _slot_refs(seg, assets) -> tuple[list[refs.Ref], list[refs.Ref]]:
     chars, scene, props = assets["characters"], assets["scene"], assets["props"]
-    spoken = rules.dialogue_by_speaker(seg["description"])
+    spoken = rules.dialogue_by_speaker(seg["description"], [c["name"] for c in chars])
     weighted = [(refs.Ref("character", c["name"], c["turnaround_path"]),
                  sum(n for who, n in spoken.items() if who.startswith(c["name"]))) for c in chars]
     scene_ref = refs.Ref("scene", scene["name"], scene["image_path"]) if scene is not None else None
@@ -157,10 +157,11 @@ def fourview_refs(store: Store, segment_id: int) -> tuple[list[refs.Ref], list[r
     """进 H3 参考图的角色四视图(台词多的优先),与因槽位不够没进去的。
     工作流有 3 个图槽,<Picture 1> 是参考帧,四视图最多 2 张。"""
     seg = repo.get(store, "segment", segment_id)
-    spoken = rules.dialogue_by_speaker(seg["description"])
+    chars = repo.segment_assets(store, segment_id)["characters"]
+    spoken = rules.dialogue_by_speaker(seg["description"], [c["name"] for c in chars])
     weighted = [(refs.Ref("character", c["name"], c["fourview_path"]),
                  sum(n for who, n in spoken.items() if who.startswith(c["name"])))
-                for c in repo.segment_assets(store, segment_id)["characters"] if c["fourview_path"]]
+                for c in chars if c["fourview_path"]]
     return refs.allocate_slots(weighted, None, [], H3_IMAGE_SLOTS - 1)
 
 
@@ -197,7 +198,9 @@ def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = 
     # @名字都退化为文字:四视图只在开头逐张说明是谁(与云机实测的写法一致),正文不写 <Picture N>
     body = tags.expand(seg["video_prompt"], [], everyone, "h3")
     # 台词逐字进提示词:模型不会从别处知道要说什么(P2 真链路漏了它,说出的是无意义音节)
-    lines = "".join(f"{who}用普通话说:「{line}」" for who, line in rules.dialogue_lines(seg["description"]))
+    # 说话人按本段角色名认:「说」前常连着动作描写,原样写进来会被 H3 烧成画面字幕(实战《替嫁冲喜》第 6 段)
+    names = [c["name"] for c in assets["characters"]]
+    lines = "".join(f"{who}用普通话说:「{line}」" for who, line in rules.dialogue_lines(seg["description"], names))
     voices = "".join(f"{c['name']}的声音:{c['voice_desc']}。" for c in assets["characters"] if c["voice_desc"])
     who = "".join(f"<Picture {k}> 是{r.name}的四视图(正面、左侧、背面、右侧)。" for k, r in enumerate(views, 2))
     prompt = f"<Picture 1> {intro}" + who + body + "".join(f" {part}" for part in (lines, voices) if part)

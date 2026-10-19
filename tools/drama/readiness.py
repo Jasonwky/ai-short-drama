@@ -142,7 +142,7 @@ def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, i
             checks.append(Check("keyframe_untested", True, "首尾帧 + 关键帧三个锚点同时用:此组合未经真机验证", warn=True))
 
     if needs_images:
-        spoken = rules.dialogue_by_speaker(seg["description"])
+        spoken = rules.dialogue_by_speaker(seg["description"], [c["name"] for c in chars])
         weighted = [(refs.Ref("character", c["name"], c["turnaround_path"]),
                      sum(n for who, n in spoken.items() if who.startswith(c["name"]))) for c in chars]
         scene_ref = refs.Ref("scene", scene["name"], scene["image_path"]) if scene is not None else None
