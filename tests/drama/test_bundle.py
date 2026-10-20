@@ -260,3 +260,23 @@ def test_second_pass_and_region_paths_move_with_the_bundle(store, project, tmp_p
     assert by_flow["qwen_image"]["second_pass"]["image_refs"] == [f"{prefix}/outputs/tasks/3/b.png"]
     assert (by_flow["qwen_region"]["source"], by_flow["qwen_region"]["ref"]) == (
         f"{prefix}/outputs/tasks/2/a.png", f"{prefix}/outputs/tasks/3/b.png")
+
+
+def test_music_cues_and_their_files_travel(store, project, tmp_path):
+    """v11 配乐:cue 跟着集走,音乐文件进包、路径加前缀、逐文件校验;文件不在本机就不导出。"""
+    _file(project["root"], "assets/music/abc.mp3", b"song")
+    repo.add_music_cue(store, project["episode"], path="assets/music/abc.mp3", sha256="s", license="曲库 #1",
+                       start_sec=1.0, end_sec=6.0, gain_db=-18.0)
+    rel = bundle.export_bundle(store, project["root"], project["drama"])
+    dest_root = tmp_path / "dst"
+    dest = Store(":memory:")
+    new = bundle.import_bundle(dest, dest_root, project["root"] / rel)
+    ep = dest.conn.execute("SELECT id FROM episode WHERE drama_id = ?", (new,)).fetchone()[0]
+    [cue] = repo.music_cues(dest, ep)
+    assert cue["path"].startswith("imports/") and cue["path"].endswith("/assets/music/abc.mp3")
+    assert (dest_root / cue["path"]).read_bytes() == b"song"
+    assert (cue["license"], cue["start_sec"], cue["end_sec"], cue["gain_db"]) == ("曲库 #1", 1.0, 6.0, -18.0)
+
+    (project["root"] / "assets/music/abc.mp3").unlink()
+    with pytest.raises(ValueError, match="文件不在本机:assets/music/abc.mp3"):
+        bundle.export_bundle(store, project["root"], project["drama"])

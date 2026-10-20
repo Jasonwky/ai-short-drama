@@ -2,7 +2,7 @@
 """工程导出 / 导入(设计 §九「工程导出/导入(含图片历史与帧绑定)」)。
 
 一部剧打成一个 zip:`manifest.json`(全部行 + 每个文件的 sha256)+ `files/<相对路径>`。
-- **带历史**:这部剧的全部 task(图片 / 视频的每一版)、段落与资产的绑定、LLM 记录(含审批锁定);
+- **带历史**:这部剧的全部 task(图片 / 视频的每一版)、段落与资产的绑定、LLM 记录(含审批锁定)、配乐 cue 与音乐文件;
 - **不带**:云机登记(私钥路径是本机的)、成片导出记录(那是发布产物,ProduceID 不能在两处重复);
 - **导出前拒绝**:有在途任务 / 在途 LLM(导出后永远收不回来)、被引用的文件不在本机 —— 列出原因,不导出残缺包。
 
@@ -29,7 +29,7 @@ FORMAT = 1
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
 PATH_FIELDS = {"character": ("turnaround_path", "fourview_path", "voice_ref_path"), "scene": ("image_path",), "prop": ("image_path",),
                "segment": ("first_frame_path", "last_frame_path", "video_path", "subtitle_path"),
-               "segment_keyframe": ("frame_path",)}
+               "segment_keyframe": ("frame_path",), "music_cue": ("path",)}
 # task.params_json 里存路径的键(video:字幕对齐的输入;source / ref:局部替换的原图与参考图)
 PARAM_PATH_KEYS = ("image_refs", "audio_ref", "video", "source", "ref")
 
@@ -63,6 +63,7 @@ def collect(store: Store, drama_id: int) -> dict:
     for link in ("segment_character", "segment_prop"):
         t[link] = _rows(store, f"SELECT * FROM {link} WHERE segment_id IN ({_in(segs)}) ORDER BY segment_id, position", ())
     t["segment_keyframe"] = _rows(store, f"SELECT * FROM segment_keyframe WHERE segment_id IN ({_in(segs)}) ORDER BY id", ())
+    t["music_cue"] = _rows(store, f"SELECT * FROM music_cue WHERE episode_id IN ({_in(eps)}) ORDER BY id", ())
     owned = {"segment": segs, **{k: [r["id"] for r in t[k]] for k in ("character", "scene", "prop")}}
     t["task"] = _rows(store, " UNION ".join(
         f"SELECT * FROM task WHERE target_type = '{k}' AND target_id IN ({_in(v)})" for k, v in owned.items())
@@ -190,6 +191,8 @@ def _insert(store: Store, m: dict, prefix: str, root: Path) -> int:
         for r in t["segment_keyframe"]:                 # legacy_v9 原样带过去:P12 时代的任务还靠它认
             ids["segment_keyframe"][r["id"]] = insert(c, "segment_keyframe", r, segment_id=ids["segment"][r["segment_id"]],
                                                       frame_path=mv(r["frame_path"]))
+        for r in t["music_cue"]:
+            insert(c, "music_cue", r, episode_id=ids["episode"][r["episode_id"]], path=mv(r["path"]))
         for link, col, table in (("segment_character", "character_id", "character"), ("segment_prop", "prop_id", "prop")):
             for r in t[link]:
                 c.execute(f"INSERT INTO {link} (segment_id, {col}, position) VALUES (?, ?, ?)",

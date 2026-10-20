@@ -8,6 +8,13 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v11(s):
+    """退回 v10:删掉 v11 新增的配乐表与导出记录上的配乐快照列(先删引用它的触发器)。"""
+    s.conn.execute("DROP TABLE music_cue")
+    s.conn.execute("DROP TRIGGER export_music_immutable")
+    s.conn.execute("ALTER TABLE export DROP COLUMN music_json")
+
+
 def _make_v1(path):
     """造一个 v1 结构的库:建最新结构,再删掉 v2 新增的列、把版本号改回 1。"""
     s = Store(path)
@@ -23,6 +30,7 @@ def _make_v1(path):
     s.conn.execute("DROP TABLE workflow_preset")
     s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")        # v6 新增
     s.conn.execute("ALTER TABLE segment DROP COLUMN last_image_prompt")
+    s.conn.execute("DROP TABLE music_cue")                                    # v11 新增
     s.conn.execute("UPDATE meta SET value = '1' WHERE key = 'schema_version'")
     s.close()
     return d
@@ -73,6 +81,7 @@ def test_v4_llm_run_is_rebuilt_to_allow_scene_and_prop_targets(tmp_path):
     s.conn.execute("DROP TABLE workflow_preset")
     s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")        # v6 新增
     s.conn.execute("ALTER TABLE segment DROP COLUMN last_image_prompt")
+    _drop_v11(s)
     s.conn.execute("UPDATE meta SET value = '4' WHERE key = 'schema_version'")
     s.close()
 
@@ -97,6 +106,7 @@ def test_v5_database_gains_fourview_and_last_frame_prompt(tmp_path):
     s.conn.execute("DROP TABLE workflow_preset")
     s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")
     s.conn.execute("ALTER TABLE segment DROP COLUMN last_image_prompt")
+    _drop_v11(s)
     s.conn.execute("UPDATE meta SET value = '5' WHERE key = 'schema_version'")
     s.close()
 
@@ -122,6 +132,7 @@ def test_v6_database_gains_preset_tables_and_presets_are_immutable(tmp_path):
     s.conn.execute("ALTER TABLE host DROP COLUMN gpu")
     s.conn.execute("DROP TABLE workflow_preset_active")
     s.conn.execute("DROP TABLE workflow_preset")
+    _drop_v11(s)
     s.conn.execute("UPDATE meta SET value = '6' WHERE key = 'schema_version'")
     s.close()
 
@@ -147,6 +158,7 @@ def test_v7_hosts_gain_an_unregistered_gpu(tmp_path):
                    vram_gb=24.0, models_dir="/m")
     s.conn.execute("DROP TABLE segment_keyframe")                               # v10 新增
     s.conn.execute("ALTER TABLE host DROP COLUMN gpu")
+    _drop_v11(s)
     s.conn.execute("UPDATE meta SET value = '7' WHERE key = 'schema_version'")
     s.close()
 
@@ -165,6 +177,7 @@ def test_v8_segments_pass_through_v9_without_keyframes(tmp_path):
     d = repo.create_drama(s, "玉佩", "9:16")
     seg = repo.add_segment(s, repo.add_episode(s, d, 1, "script"), 1, duration_sec=8.0)
     s.conn.execute("DROP TABLE segment_keyframe")
+    _drop_v11(s)
     s.conn.execute("UPDATE meta SET value = '8' WHERE key = 'schema_version'")
     s.close()
 
@@ -187,6 +200,7 @@ def test_v9_keyframe_moves_into_its_own_table(tmp_path):
     s.conn.execute("ALTER TABLE segment ADD COLUMN key_frame_path TEXT")
     s.conn.execute("UPDATE segment SET key_time_sec = 4.0, key_image_prompt = '@林小雨 转身', key_frame_path = 'k.png'"
                    " WHERE id = ?", (seg,))
+    _drop_v11(s)
     s.conn.execute("UPDATE meta SET value = '9' WHERE key = 'schema_version'")
     s.close()
 
@@ -195,4 +209,35 @@ def test_v9_keyframe_moves_into_its_own_table(tmp_path):
     assert (k["time_sec"], k["image_prompt"], k["frame_path"], k["legacy_v9"]) == (4.0, "@林小雨 转身", "k.png", 1)
     assert repo.keyframes(s, plain) == []
     assert not {"key_time_sec", "key_image_prompt", "key_frame_path"} & _cols(s, "segment")   # 旧列删掉了
+    s.close()
+
+
+def test_v10_database_gains_music_cues(tmp_path):
+    """v11:配乐(整集多段)。旧导出记录的配乐快照为空列表;许可说明空串在库这一层也拒。"""
+    import json
+    import sqlite3
+
+    import pytest
+
+    from tools.drama.db import now
+
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "玉佩", "9:16")
+    ep = repo.add_episode(s, d, 1, "script")
+    s.conn.execute("INSERT INTO export (episode_id, produce_id, content_producer, inputs_json, created_at)"
+                   " VALUES (?, 'P1', 'X', '[]', ?)", (ep, now()))
+    _drop_v11(s)
+    s.conn.execute("UPDATE meta SET value = '10' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    assert json.loads(s.conn.execute("SELECT music_json FROM export").fetchone()[0]) == []
+    cid = repo.add_music_cue(s, ep, path="assets/music/a.mp3", sha256="0" * 64, license="曲库 #1", start_sec=0,
+                             end_sec=5)
+    assert repo.music_cues(s, ep)[0]["id"] == cid and repo.music_cues(s, ep)[0]["gain_db"] == -14
+    with pytest.raises(sqlite3.IntegrityError):
+        s.conn.execute("UPDATE music_cue SET license = '  ' WHERE id = ?", (cid,))
+    with pytest.raises(sqlite3.IntegrityError, match="身份字段不可变"):
+        s.conn.execute("UPDATE export SET music_json = '[1]'")
     s.close()
