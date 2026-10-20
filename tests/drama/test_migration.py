@@ -8,8 +8,14 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v12(s):
+    """退回 v11:删掉 v12 新增的白屏放行表(触发器随表一起删)。"""
+    s.conn.execute("DROP TABLE blank_override")
+
+
 def _drop_v11(s):
-    """退回 v10:删掉 v11 新增的配乐表与导出记录上的配乐快照列(先删引用它的触发器)。"""
+    """退回 v10:删掉 v11 新增的配乐表与导出记录上的配乐快照列(先删引用它的触发器);v12 的也一并退掉。"""
+    _drop_v12(s)
     s.conn.execute("DROP TABLE music_cue")
     s.conn.execute("DROP TRIGGER export_music_immutable")
     s.conn.execute("ALTER TABLE export DROP COLUMN music_json")
@@ -31,6 +37,7 @@ def _make_v1(path):
     s.conn.execute("ALTER TABLE character DROP COLUMN fourview_path")        # v6 新增
     s.conn.execute("ALTER TABLE segment DROP COLUMN last_image_prompt")
     s.conn.execute("DROP TABLE music_cue")                                    # v11 新增
+    _drop_v12(s)
     s.conn.execute("UPDATE meta SET value = '1' WHERE key = 'schema_version'")
     s.close()
     return d
@@ -240,4 +247,31 @@ def test_v10_database_gains_music_cues(tmp_path):
         s.conn.execute("UPDATE music_cue SET license = '  ' WHERE id = ?", (cid,))
     with pytest.raises(sqlite3.IntegrityError, match="身份字段不可变"):
         s.conn.execute("UPDATE export SET music_json = '[1]'")
+    s.close()
+
+
+def test_v11_database_gains_locked_blank_overrides(tmp_path):
+    """v12:白屏人工放行。理由空串在库这一层也拒;放行记录一经写下不可改。"""
+    import sqlite3
+
+    import pytest
+
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "玉佩", "9:16")
+    seg = repo.add_segment(s, repo.add_episode(s, d, 1, "script"), 1, video_path="v.mp4")
+    _drop_v12(s)
+    s.conn.execute("UPDATE meta SET value = '11' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    oid = repo.add_blank_override(s, seg, video_path="v.mp4", sha256="a" * 64, spans=[[0.5, 1.5]], reason="雪景")
+    assert repo.get(s, "blank_override", oid)["reason"] == "雪景"
+    with pytest.raises(sqlite3.IntegrityError, match="不可改"):
+        s.conn.execute("UPDATE blank_override SET reason = '别的' WHERE id = ?", (oid,))
+    with pytest.raises(sqlite3.IntegrityError):
+        s.conn.execute("INSERT INTO blank_override (segment_id, video_path, sha256, spans_json, reason, created_at)"
+                       " VALUES (?, 'v.mp4', 'b', '[]', '  ', 'now')", (seg,))
+    with pytest.raises(ValueError, match="★必填"):
+        repo.add_blank_override(s, seg, video_path="v.mp4", sha256="a" * 64, spans=[[0.5, 1.5]], reason=" ")
     s.close()

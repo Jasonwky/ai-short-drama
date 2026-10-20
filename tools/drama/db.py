@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -294,6 +294,24 @@ BEGIN SELECT RAISE(ABORT, '导出记录的身份字段不可变 —— 配乐快
 ]
 SCHEMA += "".join(f"{stmt};\n" for stmt in MUSIC_DDL)
 
+# v12:白屏人工放行(用户 2026-10-20 定)。白屏检测命中、人看过确认不是白屏(雪景等本来就白)时,填理由放行 ——
+# 只对这条视频的 sha256 有效:重出 / 挑别的版本哈希就变了,自动失效、重新拦。理由★必填(空串在库这一层也拒);
+# 一经写下不可改。段落被删时随之删除 —— 用过它的导出已把放行快照进 inputs_json
+BLANK_OVERRIDE_DDL = [
+    """CREATE TABLE blank_override (
+  id INTEGER PRIMARY KEY,
+  segment_id INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+  video_path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  spans_json TEXT NOT NULL,
+  reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+  created_at TEXT NOT NULL
+)""",
+    """CREATE TRIGGER blank_override_immutable BEFORE UPDATE ON blank_override
+BEGIN SELECT RAISE(ABORT, '白屏放行记录一经写下不可改 —— 它只对当时那条视频有效'); END""",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in BLANK_OVERRIDE_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -326,6 +344,8 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE segment DROP COLUMN key_frame_path"],
     # v11:配乐 cue;导出记录加配乐快照
     10: MUSIC_DDL,
+    # v12:白屏人工放行
+    11: BLANK_OVERRIDE_DDL,
 }
 
 

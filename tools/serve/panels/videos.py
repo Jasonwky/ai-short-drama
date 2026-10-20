@@ -4,6 +4,8 @@
 两档:定稿(20 步,或当前视频预设改过的步数)、草稿(10 步,约省一半时间)。少于 20 步出的视频(草稿档、预设、
 改参重跑改的都算 —— `dispatch.steps_of` 读实际交出去的图)在卡片上标出来。
 
+白屏检测命中的视频卡片上可以「确认不是白屏(放行)」:理由★必填,只对这条视频的 sha256 有效,换了视频自动失效。
+
 字幕也在这里:对着当前视频对齐台词(云机 whisper),逐句显示当前字幕的起止时间;判卷不过的原因写在对齐记录上。
 """
 from __future__ import annotations
@@ -26,6 +28,12 @@ from tools.serve.dispatch import FEW_STEPS_NOTE, steps_of
 from tools.serve.panels.common import new_seed, readiness, render, rt
 
 router = APIRouter()
+
+
+def _override(store, root, seg) -> dict | None:
+    """这段当前视频的白屏放行(按 sha256 对),带上溯源报告里那一行。"""
+    o = blankscan.override_for(store, root, seg)
+    return None if o is None else {**o, "note": blankscan.override_note(seg["number"], blankscan.snapshot(o))}
 
 
 @router.get("/episode/{episode_id}/videos")
@@ -54,6 +62,7 @@ def page(request: Request, episode_id: int):
                      "draft_min": None if draft is None else draft / 60, "tags": tags,
                      "few_now": few.get(cur["id"]) if cur else None,
                      "blank": blankscan.problem(s["number"], blank) if blank else None,
+                     "blank_override": _override(store, runtime.data_root, s) if blank else None,
                      "tasks": videos,
                      "align_tasks": [t for t in tasks if t["kind"] == "align"],
                      "align_problems": align_problems(store, s["id"]),
@@ -70,6 +79,15 @@ def generate(request: Request, segment_id: int, seed: int = Form(...), steps: st
     store = rt(request).store
     plan_video(store, segment_id, seed=seed, steps=int(steps) if steps.strip() else None)
     ep_id = repo.get(store, "segment", segment_id)["episode_id"]
+    return RedirectResponse(f"/episode/{ep_id}/videos#seg-{segment_id}", status_code=303)
+
+
+@router.post("/segment/{segment_id}/blank-override")
+def blank_override(request: Request, segment_id: int, reason: str = Form("")):
+    """白屏命中、人看过确认不是白屏:填理由放行(★必填),只对这条视频的 sha256 有效。"""
+    runtime = rt(request)
+    blankscan.confirm(runtime.store, runtime.data_root, segment_id, reason)
+    ep_id = repo.get(runtime.store, "segment", segment_id)["episode_id"]
     return RedirectResponse(f"/episode/{ep_id}/videos#seg-{segment_id}", status_code=303)
 
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from tools.cut import blankscan
 from tools.cut.music import NOTE as MUSIC_NOTE
 from tools.drama import repo
 from tools.drama.db import Store
@@ -71,7 +72,8 @@ def build(store: Store, data_root: Path, episode_id: int, *, produce_id: str, pr
         sub = v.get("subtitle_path")
         segs.append({"number": v["number"], "duration_sec": seg["duration_sec"], "description": seg["description"],
                      "video": node(store, Path(data_root), v["video_path"]),
-                     "subtitles": node(store, Path(data_root), sub) if sub else None})
+                     "subtitles": node(store, Path(data_root), sub) if sub else None,
+                     "blank_override": v.get("blank_override")})      # 白屏检测命中、人工确认放行的(早于 v12 的导出没有)
     return {"produce_id": produce_id, "content_producer": producer, "drama": drama["title"],
             "aspect_ratio": drama["aspect_ratio"], "episode": ep["number"], "license": LICENSE_NOTE,
             "models": sorted(_models([n for s in segs for n in (s["video"], s["subtitles"]) if n])), "segments": segs,
@@ -147,6 +149,8 @@ def to_markdown(report: dict) -> str:
         if s.get("subtitles"):
             lines.append("字幕:")
             emit(s["subtitles"], 0)
+        if s.get("blank_override"):
+            lines.append(blankscan.override_note(s["number"], s["blank_override"]))
         lines.append("")
     if report.get("music"):
         lines += ["## 配乐", ""]
