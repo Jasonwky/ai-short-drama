@@ -13,7 +13,7 @@ import json
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from tools.cut import keycheck, subtitles
+from tools.cut import blankscan, keycheck, subtitles
 from tools.drama import repo
 from tools.drama.tasks import producer, tasks_for
 from tools.gen.capability import MINIMAX_H3
@@ -48,9 +48,12 @@ def page(request: Request, episode_id: int):
                 for t in videos if t["id"] in few}
         cur = producer(store, "video", s["video_path"]) if s["video_path"] else None
         sub = runtime.data_root / s["subtitle_path"] if s["subtitle_path"] else None
+        blank = (blankscan.cached(runtime.data_root, s["video_path"])          # 只读缓存:导出时才查,渲染不现算
+                 if s["video_path"] and (runtime.data_root / s["video_path"]).is_file() else None)
         segs.append({"row": s, "checks": readiness(runtime, s["id"]), "est_min": None if est is None else est / 60,
                      "draft_min": None if draft is None else draft / 60, "tags": tags,
                      "few_now": few.get(cur["id"]) if cur else None,
+                     "blank": blankscan.problem(s["number"], blank) if blank else None,
                      "tasks": videos,
                      "align_tasks": [t for t in tasks if t["kind"] == "align"],
                      "align_problems": align_problems(store, s["id"]),

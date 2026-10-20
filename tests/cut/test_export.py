@@ -165,3 +165,17 @@ def test_burned_in_subtitle_blocks_export(store, two_segments, monkeypatch):
     assert any("烧进了字幕" in p for p in export.readiness(store, root, s["episode"]))
     with pytest.raises(ValueError, match="烧进了字幕"):
         export.begin(store, root, s["episode"], PRODUCER)
+
+
+def test_blank_screen_blocks_export(store, two_segments, monkeypatch):
+    # 实战第 2 段第三轮:中段约 4 秒人物站在白底前 —— 命中就不让导出(用户 2026-10-20 定)
+    from tools.cut import blankscan
+    s, root = two_segments, two_segments["root"]
+    monkeypatch.setattr(blankscan, "detect", lambda path: [blankscan.Span(0.2, 0.9)] if "v2" in str(path) else [])
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    with pytest.raises(media.CutError, match="段落 2 第 0.2–0.9 秒画面"):
+        export.run(store, root, eid)
+    # 结果已缓存:面板上的清单当场列出,导出按钮不可点
+    assert any("段落 2 第 0.2–0.9 秒" in p for p in export.readiness(store, root, s["episode"]))
+    with pytest.raises(ValueError, match="重出这段再导"):
+        export.begin(store, root, s["episode"], PRODUCER)

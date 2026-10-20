@@ -28,6 +28,7 @@
           </select>
           <button class="btn primary" type="submit" data-generate-video>生成视频</button>
         </form>
+        {% if s.blank %}<p class="status-bad" data-blank-screen>{{ s.blank }}<span class="hint">(导出时查的白屏,命中不许导出)</span></p>{% endif %}
         {% if s.few_now %}<p class="status-bad" data-few-steps-now>当前视频只用了 {{ s.few_now }} 步:{{ few_note }}</p>{% endif %}
       </div>
     </div>
