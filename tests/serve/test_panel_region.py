@@ -60,3 +60,12 @@ def test_frames_page_offers_region_replace_with_bound_assets_only(client, store,
     assert f'value="character:{sample["shen"]}"' not in page        # 没绑定的不列
     repo.update(store, "segment", sample["seg"], first_frame_path=None, video_path=None)
     assert "data-region" not in client.get(f"/episode/{sample['episode']}/frames").text   # 没图就没有局部替换
+
+
+def test_region_options_carry_the_prompt_text_about_each_character(client, runtime, store, sample):
+    """选角色时补充说明默认填图提示词里写这个人的那段(console.js 读 data-note);场景 / 道具不填。"""
+    repo.update(store, "segment", sample["seg"], image_prompt="@林小雨 惊恐地回头,站在 @老宅庭院 里,手里拿着 @玉佩")
+    _frame(runtime)
+    html = client.get(f"/episode/{sample['episode']}/frames").text
+    assert f'value="character:{sample["lin"]}" data-note="惊恐地回头,站在"' in html
+    assert f'value="scene:{sample["yard"]}" data-note=""' in html

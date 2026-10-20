@@ -54,6 +54,13 @@ document.addEventListener("DOMContentLoaded", () => {
       rect.hidden = false;
       return [x, y, w, h];
     };
+    // 补充说明默认填图提示词里写这个角色的那段(选项的 data-note);人改过就不再覆盖
+    const asset = box.querySelector("[data-region-asset]");
+    const note = field("note");
+    const prefill = () => { if (!note.dataset.edited) note.value = asset.selectedOptions[0]?.dataset.note || ""; };
+    note.addEventListener("input", () => { note.dataset.edited = "1"; });
+    asset.addEventListener("change", prefill);
+    prefill();
     img.addEventListener("mousedown", (e) => { e.preventDefault(); start = at(e); });
     window.addEventListener("mousemove", (e) => { if (start) draw(start, at(e)); });
     window.addEventListener("mouseup", (e) => {
