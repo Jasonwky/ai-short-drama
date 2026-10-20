@@ -36,21 +36,6 @@ def region_prompt(ref: Ref, note: str, styling: str = "") -> str:
     return f"保持 Picture 1 的构图、姿态、动作、神情、光线和背景不变,{change}。" + note.strip()
 
 
-def region_note(text: str, name: str, names: list[str]) -> str:
-    """局部替换的默认补充说明:这一格的图提示词里写这个人的那段 —— `@名字` 之后到下一个 `@` 之前(没提到 = 空)。
-    默认提示词会把神情抹平,写出神情才保得住(spike-results/2026-10-20-P15两遍合成与局部替换云机实测.md)。"""
-    by_len = sorted(set(names), key=len, reverse=True)
-    i = 0
-    while (j := text.find("@", i)) >= 0:
-        rest = text[j + 1:]
-        hit = next((n for n in by_len if rest.startswith(n)), None)      # 取最长的已知名字(@林小雨 不是 @林小)
-        if hit == name:
-            end = text.find("@", j + 1 + len(name))
-            return text[j + 1 + len(name):end if end >= 0 else len(text)].strip("，,;；。、 ")
-        i = j + 1
-    return ""
-
-
 def region_box(box: list[int], size: tuple[int, int]) -> tuple[int, int, int, int]:
     """人画的框 [x, y, w, h](原图像素)→ 外扩 PAD、对齐 ALIGN、夹在图内的框。"""
     x, y, w, h = (int(v) for v in box)

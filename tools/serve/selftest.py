@@ -200,15 +200,6 @@ def _set_keyframes(segment_id: int, times: list[str]):
     return act
 
 
-def _expect_note(seg: int, want: str):
-    """局部替换选了角色后,补充说明框应自动填上图提示词里写这个人的那段(console.js 读选项的 data-note)。"""
-    def check(pg):
-        got = pg.locator(f"#seg-{seg} [data-region-note]").input_value()
-        if got != want:
-            raise AssertionError(f"补充说明应自动填「{want}」,实际是「{got}」")
-    return check
-
-
 def _drag_region(segment_id: int, shot: Path):
     """在段落首帧的「局部替换」里真拖一个框(鼠标按下 → 拖 → 松开),截图留证;框换算后「生成替换版」必须可点。"""
     def act(page) -> None:
@@ -391,7 +382,6 @@ def run(out_dir: Path) -> dict:
                     ("frames:episode2", "局部替换:拖框 → 选角色 → 生成替换版 → 历史多一版", {},
                      [f"#seg-{seg4} [data-region] summary", _drag_region(seg4, out_dir / "flow_region_box.png"),
                       lambda pg: pg.locator(f"#seg-{seg4} [data-region-asset]").select_option(f"character:{zhou}"),
-                      _expect_note(seg4, "站在"),          # 补充说明自动填了图提示词里写周伯的那段
                       f"#seg-{seg4} [data-region-submit]"],
                      f"#seg-{seg4} .history .ver.state-done img", 40),
                     # 白屏检测:排最后(换掉了第 2 集首尾帧段落的视频)

@@ -62,10 +62,10 @@ def test_frames_page_offers_region_replace_with_bound_assets_only(client, store,
     assert "data-region" not in client.get(f"/episode/{sample['episode']}/frames").text   # 没图就没有局部替换
 
 
-def test_region_options_carry_the_prompt_text_about_each_character(client, runtime, store, sample):
-    """选角色时补充说明默认填图提示词里写这个人的那段(console.js 读 data-note);场景 / 道具不填。"""
+def test_region_note_is_not_prefilled_but_teaches_to_write_the_expression(client, runtime, store, sample):
+    """补充说明不预填(照搬图提示词实测 0/3),占位提示教人写神情和发饰(手写 3/3)。"""
     repo.update(store, "segment", sample["seg"], image_prompt="@林小雨 惊恐地回头,站在 @老宅庭院 里,手里拿着 @玉佩")
     _frame(runtime)
     html = client.get(f"/episode/{sample['episode']}/frames").text
-    assert f'value="character:{sample["lin"]}" data-note="惊恐地回头,站在"' in html
-    assert f'value="scene:{sample["yard"]}" data-note=""' in html
+    assert "data-note" not in html and "惊恐地回头,站在" not in html.split("data-region", 1)[1]
+    assert 'placeholder="写出此刻的神情和要保住的发饰,如:保持惊恐的神情,头戴黑色幞头"' in html

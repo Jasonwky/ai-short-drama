@@ -27,16 +27,14 @@ router = APIRouter()
 FRAME_NOTES = ("two_pass", "slots")      # 就绪清单里与出参考帧有关的提醒(两遍合成;槽位不足 → 怎么补)
 
 
-def region_assets(store, segment_id: int, text: str) -> list[tuple[str, str, str]]:
-    """局部替换可选的素材:本段绑定且有参考图的,(值形如 character:3, 显示名, 默认补充说明)。
-    默认补充说明只给角色:这一格的图提示词 text 里写这个人的那段(compose.region_note)。"""
+def region_assets(store, segment_id: int) -> list[tuple[str, str]]:
+    """局部替换可选的素材:本段绑定且有参考图的,(值形如 character:3, 显示名)。
+    补充说明不预填:照搬图提示词里写这个人的那段会把背景句、「脸色煞白」之类一起带进去,长相反而换不过来
+    (spike-results/2026-10-20-局部替换预填说明云机实测.md);只靠占位提示教人写神情。"""
     a = repo.segment_assets(store, segment_id)
     rows = ([("character", c) for c in a["characters"]] + ([("scene", a["scene"])] if a["scene"] is not None else [])
             + [("prop", p) for p in a["props"]])
-    names = [r["name"] for _, r in rows]
-    return [(f"{k}:{r['id']}", f"{KIND_LABEL[k]} · {r['name']}",
-             compose.region_note(text, r["name"], names) if k == "character" else "")
-            for k, r in rows if r[REGION_KINDS[k][1]]]
+    return [(f"{k}:{r['id']}", f"{KIND_LABEL[k]} · {r['name']}") for k, r in rows if r[REGION_KINDS[k][1]]]
 
 
 @router.get("/episode/{episode_id}/frames")
@@ -51,14 +49,14 @@ def page(request: Request, episode_id: int):
         by_field = {f: [t for t in images if json.loads(t["params_json"]).get("writes") == f]
                     for f in (*FRAMES, targets.KEY_WRITES)}
         keys = [{"row": k, "tasks": [t for t in by_field[targets.KEY_WRITES] if targets.slot(store, t)[1] == k["id"]],
-                 "region_assets": region_assets(store, s["id"], k["image_prompt"])}
+                 "region_assets": region_assets(store, s["id"])}
                 for k in repo.keyframes(store, s["id"])]
         segs.append({"row": s, "prev": rows[i - 1] if i else None, "tasks": by_field["first_frame_path"],
                      "last_tasks": by_field["last_frame_path"], "keyframes": keys,
                      "uses_first": s["reference_mode"] in FRAMES["first_frame_path"][0],
                      "uses_last": s["reference_mode"] in FRAMES["last_frame_path"][0],
-                     "region_first": region_assets(store, s["id"], s["image_prompt"]),
-                     "region_last": region_assets(store, s["id"], s["last_image_prompt"]),
+                     "region_first": region_assets(store, s["id"]),
+                     "region_last": region_assets(store, s["id"]),
                      "notes": [c for c in readiness(runtime, s["id"]) if c.key in FRAME_NOTES]})
     return render(request, "frames.html", "frames", episode_id=episode_id, ep=ep, segs=segs, seed=new_seed())
 

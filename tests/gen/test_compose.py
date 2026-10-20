@@ -60,15 +60,3 @@ def test_second_pass_prompt_is_the_one_that_passed_on_the_cloud():
     two = compose.second_pass_prompt(["@沈青禾 站在床边", "@玉佩 放在桌上"], [qing, Ref("prop", "玉佩", "j.png")])
     assert two.endswith("加入:Picture 2(沈青禾) 站在床边;Picture 3(玉佩) 放在桌上。")
     assert check_tags(two, n_images=3, dialect="qwen") == []
-
-
-def test_region_note_takes_what_the_frame_prompt_says_about_that_person():
-    seg5 = ("夜晚的靖王府正堂内，几盏铜烛台的暖光，@李福 头戴黑色幞头、身穿深褐色长袍，脸色煞白跪倒在地，惊恐地抬头，"
-            "背后能看到正堂的匾额、对联和彩绘天花，@靖王府正堂")
-    assert compose.region_note(seg5, "李福", ["李福", "靖王府正堂"]) == (
-        "头戴黑色幞头、身穿深褐色长袍，脸色煞白跪倒在地，惊恐地抬头，背后能看到正堂的匾额、对联和彩绘天花")
-    # 到下一个 @ 为止;前缀相同的名字取最长的(@林小雨 不是 @林小)
-    text = "@林小 招手，@林小雨 回头一笑，@沈墨 站着"
-    assert compose.region_note(text, "林小雨", ["林小", "林小雨", "沈墨"]) == "回头一笑"
-    assert compose.region_note(text, "林小", ["林小", "林小雨", "沈墨"]) == "招手"
-    assert compose.region_note(text, "王五", ["林小", "林小雨", "沈墨"]) == ""
