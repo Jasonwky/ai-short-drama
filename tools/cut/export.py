@@ -8,8 +8,10 @@
 两版都烧录字幕(各段对齐出的 SRT 按段落起点平移、拼成整集 `subtitles.srt`,随成片交付);
 有台词的段落没有字幕 = 前提不满足,不开工。
 
+配乐(人上传的有许可的音乐,cut/music.py)两版都按包络混入;begin 时快照进导出记录,之后改 cue 不影响这次导出。
+
 两态:`begin` 当场核对前提(★必答的服务提供者编码、每段有视频、尺寸一致、有音轨、溯源成立、
-查过的段落没有烧进画面的字幕),不满足就报原因不开工;`run` 在后台跑(一集 1–3 分钟),结束时整行锁定(触发器)。
+查过的段落没有烧进画面的字幕、配乐文件与哈希对得上且不超出成片),不满足就报原因不开工;`run` 在后台跑(一集 1–3 分钟),结束时整行锁定(触发器)。
 **自检不过 = 导出失败**:文件留着给人查原因,但状态是 failed,界面标「不可发布」。
 """
 from __future__ import annotations
@@ -17,7 +19,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.cut import aigc, media, provenance, subtitles, textscan
+from tools.cut import aigc, media, music, provenance, subtitles, textscan
 from tools.drama import repo, rules
 from tools.drama.db import Store, now
 from tools.serve.dispatch import sha256_file
@@ -78,6 +80,11 @@ def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
         media.require_ffmpeg()
     except ValueError as e:
         problems.append(str(e))
+    else:
+        videos = [Path(data_root) / s["video_path"] for s in segs if s["video_path"]]
+        total = (sum(media.probe(v).duration for v in videos)
+                 if segs and len(videos) == len(segs) and all(v.is_file() for v in videos) else None)
+        problems += music.problems(data_root, repo.music_cues(store, episode_id), total)
     if not media.FONT.is_file():
         problems.append(f"找不到显式标识用的字体 {media.FONT}(Noto Sans SC,SIL OFL)")
     return problems
@@ -99,17 +106,18 @@ def begin(store: Store, data_root: Path, episode_id: int, producer: str) -> int:
                "sha256": sha256_file(root / s["video_path"]), "subtitle_path": s["subtitle_path"],
                "subtitle_sha256": sha256_file(root / s["subtitle_path"]) if s["subtitle_path"] else None}
               for s in segs]
+    cues = music.snapshot(store, episode_id)
     problems += provenance.problems(provenance.build(store, root, episode_id, produce_id="", producer=producer,
-                                                     videos=videos))
+                                                     videos=videos, music=cues))
     if problems:
         raise ValueError(";".join(problems))
     with store.write() as c:
         c.execute("INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                   (SETTING, producer))
-        return c.execute("INSERT INTO export (episode_id, produce_id, content_producer, inputs_json, created_at)"
-                         " VALUES (?, ?, ?, ?, ?)",
+        return c.execute("INSERT INTO export (episode_id, produce_id, content_producer, inputs_json, music_json,"
+                         " created_at) VALUES (?, ?, ?, ?, ?, ?)",
                          (episode_id, aigc.new_produce_id(), producer, json.dumps(videos, ensure_ascii=False),
-                          now())).lastrowid
+                          json.dumps(cues, ensure_ascii=False), now())).lastrowid
 
 
 def _finish(store: Store, export_id: int, state: str, **fields) -> None:
@@ -145,6 +153,10 @@ def run(store: Store, data_root: Path, export_id: int) -> None:
                if v.get("subtitle_path") and sha256_file(root / v["subtitle_path"]) != v["subtitle_sha256"]]
     if changed:
         raise media.CutError(f"段落 {changed} 的字幕在点导出之后被换掉了 —— 请重新导出")
+    cues = json.loads(row["music_json"])
+    changed = [c["id"] for c in cues if not (root / c["path"]).is_file() or sha256_file(root / c["path"]) != c["sha256"]]
+    if changed:
+        raise media.CutError(f"配乐 {changed} 的文件在点导出之后被换掉了 —— 请重新导出")
     burned = []
     for v in videos:                       # 烧字幕检测(OCR,每段约半分钟,结果缓存):命中就不导出
         seg = repo.get(store, "segment", v["segment_id"])
@@ -163,14 +175,15 @@ def run(store: Store, data_root: Path, export_id: int) -> None:
         srt_path = root / out / "subtitles.srt"
         srt_path.parent.mkdir(parents=True, exist_ok=True)
         srt_path.write_text(srt, encoding="utf-8")
+    mix = music.mixes(root, cues, music.speech_of([(c, o) for c, o, _ in _parts(root, videos)]))
     for key, lab in (("plain", None), ("labeled", label)):
         raw = root / out / f"{key}.raw.mp4"
-        media.encode_episode(clips, raw, lab, subtitles=srt_path)
+        media.encode_episode(clips, raw, lab, subtitles=srt_path, music=mix)
         tag = aigc.build(row["content_producer"], row["produce_id"], media.stream_sha256(raw))
         media.write_tags(raw, root / rel[key], {aigc.TAG: tag, "comment": COMMENT})
         raw.unlink()
     report = provenance.build(store, root, row["episode_id"], produce_id=row["produce_id"],
-                              producer=row["content_producer"], videos=videos)
+                              producer=row["content_producer"], videos=videos, music=cues)
     report_rel = (out / "provenance.json").as_posix()
     (root / report_rel).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     (root / out / "provenance.md").write_text(provenance.to_markdown(report), encoding="utf-8")
@@ -259,13 +272,18 @@ def check(store: Store, root: Path, row, labeled_rel: str, plain_rel: str, repor
     videos = json.loads(row["inputs_json"])
     ok, detail = _subtitle_check(root, videos, root / plain_rel, report_rel)
     add("字幕", ok, detail)
+    cues = json.loads(row["music_json"])
+    parts = _parts(root, videos)
+    ok, detail = music.readback(root, [p for _, _, p in parts], cues, music.speech_of([(c, o) for c, o, _ in parts]),
+                                root / plain_rel)
+    add("配乐", ok, detail)
     want = sum(media.probe(root / v["video_path"]).duration for v in videos)
     got = media.probe(root / labeled_rel).duration
     tol = 0.1 * len(videos) + 0.1
     add("时长 = 各段之和", abs(got - want) <= tol, f"成片 {got:.2f}s,各段合计 {want:.2f}s(容差 {tol:.1f}s)")
     saved = json.loads((root / report_rel).read_text(encoding="utf-8"))
     fresh = provenance.build(store, root, row["episode_id"], produce_id=row["produce_id"],
-                             producer=row["content_producer"], videos=videos)
+                             producer=row["content_producer"], videos=videos, music=cues)
     probs = provenance.problems(saved)
     same = saved == fresh
     add("溯源报告与 task 表一致", same and not probs,

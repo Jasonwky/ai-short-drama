@@ -42,7 +42,7 @@ def test_export_runs_in_background_and_shows_checks(client, runtime, store, samp
     page = client.get(f"/episode/{sample['episode']}/final").text
     row = export.list_for(store, sample["episode"])[0]
     assert row["state"] == "done", row["error"]
-    assert 'data-export-state="done"' in page and "自检通过,可发布" in page and page.count(">PASS<") == 8
+    assert 'data-export-state="done"' in page and "自检通过,可发布" in page and page.count(">PASS<") == 9
     assert f'value="{PRODUCER}"' in page                                       # 记住了,下次预填
     assert f'src="/media/{row["labeled_path"]}"' in page
     assert client.get(f"/media/{row['report_path'][:-5]}.md").status_code == 200
