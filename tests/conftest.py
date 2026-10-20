@@ -20,3 +20,10 @@ def _blank_text_reader(monkeypatch):
         def read_column(self, frame, box):
             return ""
     monkeypatch.setattr(textscan, "make_reader", Blank)
+
+
+@pytest.fixture(autouse=True)
+def _no_blank_screen(monkeypatch):
+    """白屏检测默认换成「没白屏」:别的测试不为它跑 ffmpeg;要测检测本身 / 命中的测试自己再换。"""
+    from tools.cut import blankscan
+    monkeypatch.setattr(blankscan, "detect", lambda path: [])

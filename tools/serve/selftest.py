@@ -16,6 +16,7 @@
   段落 1 加关键帧 → 生成关键帧图 → 重出视频看「关键帧钉住了吗」→ 选草稿档重出 → 卡片标「草稿 · 10 步」;
   段落 2 加到 3 张关键帧 → 出「未经真机验证」警告、「加一张」置灰;
   第 2 集三角色 + 场景同框的段落 → 参考帧面板出「两遍合成」提示;在它的首帧上拖框 → 选角色 →「生成替换版」→ 历史里多一版;
+  第 2 集首尾帧段落换上一条现造的白屏片、跑导出前的白屏检查 → 视频卡片出白屏提示;
 - iframe 里的 ComfyUI 前端**不许访问外网**:页面上出现任何非本机请求即判失败(实测前端会去 api.comfy.org,垫片已改向);
 - 在**全新临时目录**里建演示工程、用**假后端**跑 —— 假产物碰不到真工程,页面顶部标着「假后端」;
 - **一律有头**(CLAUDE.md 硬约束,用户 2026-09-24 明确要求):人要看得见它点开了每个面板。
@@ -218,6 +219,24 @@ def _drag_region(segment_id: int, shot: Path):
     return act
 
 
+def _blank_video(store: Store, root: Path, segment_id: int):
+    """假后端出不了白屏片:本机 ffmpeg 现造一条「1 秒正常 + 1 秒纯白」的片子当这段的当前视频,
+    再跑导出开工前那一道白屏检查(写缓存)—— 视频卡片只读缓存,命中就该出提示。"""
+    def act(page) -> None:
+        import subprocess
+        from tools.cut import blankscan
+        rel = f"outputs/selftest_blank/{segment_id}.mp4"
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=384x672:rate=24:d=1",
+                        "-f", "lavfi", "-i", "color=white:size=384x672:rate=24:d=1", "-filter_complex",
+                        "[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p[v]", "-map", "[v]", str(root / rel)], check=True)
+        repo.update(store, "segment", segment_id, video_path=rel)
+        if not blankscan.check(root, rel):
+            raise RuntimeError("现造的白屏片没被白屏检测查出来")
+        page.reload()
+    return act
+
+
 def run(out_dir: Path) -> dict:
     from playwright.sync_api import sync_playwright
 
@@ -332,7 +351,10 @@ def run(out_dir: Path) -> dict:
                       lambda pg: pg.locator(f"#seg-{seg4} [data-region-asset]").select_option(f"character:{zhou}"),
                       _expect_note(seg4, "站在"),          # 补充说明自动填了图提示词里写周伯的那段
                       f"#seg-{seg4} [data-region-submit]"],
-                     f"#seg-{seg4} .history .ver.state-done img", 40)), 1):
+                     f"#seg-{seg4} .history .ver.state-done img", 40),
+                    # 白屏检测:排最后(换掉了第 2 集首尾帧段落的视频)
+                    ("videos:episode2", "白屏片过导出前检查 → 视频卡片出白屏提示", {}, [_blank_video(store, work, seg3)],
+                     f"#seg-{seg3} [data-blank-screen]", 20)), 1):
                 errors.clear()
                 key, _, ep_key = key.partition(":")               # 「面板:集」—— 默认第 1 集
                 p = next(x for x in REGISTRY if x.key == key)

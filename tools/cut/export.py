@@ -9,7 +9,7 @@
 有台词的段落没有字幕 = 前提不满足,不开工。
 
 两态:`begin` 当场核对前提(★必答的服务提供者编码、每段有视频、尺寸一致、有音轨、溯源成立、
-查过的段落没有烧进画面的字幕),不满足就报原因不开工;`run` 在后台跑(一集 1–3 分钟),结束时整行锁定(触发器)。
+查过的段落没有烧进画面的字幕、没有白屏),不满足就报原因不开工;`run` 在后台跑(一集 1–3 分钟),结束时整行锁定(触发器)。
 **自检不过 = 导出失败**:文件留着给人查原因,但状态是 failed,界面标「不可发布」。
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.cut import aigc, media, provenance, subtitles, textscan
+from tools.cut import aigc, blankscan, media, provenance, subtitles, textscan
 from tools.drama import repo, rules
 from tools.drama.db import Store, now
 from tools.serve.dispatch import sha256_file
@@ -74,6 +74,9 @@ def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
             found = textscan.cached(data_root, s["video_path"], _lines(s), _context(s))       # 只读缓存:没查过的在导出时查
             if found:
                 problems.append(textscan.problem(s["number"], found))
+            blank = blankscan.cached(data_root, s["video_path"])                                # 同上:只读缓存
+            if blank:
+                problems.append(blankscan.problem(s["number"], blank))
     try:
         media.require_ffmpeg()
     except ValueError as e:
@@ -146,7 +149,10 @@ def run(store: Store, data_root: Path, export_id: int) -> None:
     if changed:
         raise media.CutError(f"段落 {changed} 的字幕在点导出之后被换掉了 —— 请重新导出")
     burned = []
-    for v in videos:                       # 烧字幕检测(OCR,每段约半分钟,结果缓存):命中就不导出
+    for v in videos:                       # 白屏检测(ffmpeg,每段一两秒)+ 烧字幕检测(OCR,每段约半分钟),结果都缓存:命中就不导出
+        blank = blankscan.check(root, v["video_path"])
+        if blank:
+            burned.append(blankscan.problem(v["number"], blank))
         seg = repo.get(store, "segment", v["segment_id"])
         found = textscan.check(root, v["video_path"], _lines(seg), _context(seg))
         if found:
