@@ -1,5 +1,30 @@
 {% extends "base.html" %}
-{% from "_macros.html" import history, fill_form, key_limits %}
+{% from "_macros.html" import history, fill_form, key_limits, checklist %}
+{# 局部替换:在图上拖框(console.js 按原图像素换算)→ 选本段绑定的素材 → 生成替换版(新版本进历史) #}
+{% macro region_form(seg_id, slot, path, assets, seed) %}
+<details class="region" data-region>
+  <summary class="btn small">局部替换</summary>
+  <p class="hint">在图上按住鼠标拖一个框:框住整个人;宽高至少 128 像素(按原图像素算)。框会对齐并外扩一圈作羽化余量。</p>
+  <div class="region-stage" data-region-stage>
+    <img src="/media/{{ path }}" alt="框选" draggable="false" data-region-img>
+    <div class="region-box" data-region-box hidden></div>
+  </div>
+  <p class="hint" data-region-info>还没画框</p>
+  <form method="post" action="/segment/{{ seg_id }}/region">
+    <input type="hidden" name="slot" value="{{ slot }}">
+    <input type="hidden" name="source" value="{{ path }}">
+    {% for f in ("x", "y", "w", "h") %}<input type="hidden" name="{{ f }}" data-region-{{ f }}>{% endfor %}
+    <label>换成</label>
+    <select name="asset" data-region-asset>
+      {% for value, label in assets %}<option value="{{ value }}">{{ label }}</option>
+      {% else %}<option value="" disabled selected>本段没有带参考图的素材</option>{% endfor %}
+    </select>
+    <label>补充说明(可空)</label><input type="text" name="note" placeholder="写出此刻的神情、动作,如:保持惊恐的神情">
+    <label>种子</label><input type="number" name="seed" value="{{ seed }}">
+    <button class="btn primary" type="submit" data-region-submit disabled>生成替换版</button>
+  </form>
+</details>
+{% endmacro %}
 {% block content %}
 <h1>参考帧 · 第 {{ ep.number }} 集</h1>
 <p class="hint">首帧 / 尾帧由本段绑定的角色 / 场景 / 道具参考图合成,尺寸取剧的画幅;段落的参考模式决定要哪几张(首帧、首尾帧、尾帧),
@@ -11,6 +36,7 @@
   <section class="card" id="seg-{{ s.row.id }}" data-segment="{{ s.row.id }}">
     <h2>段落 {{ s.row.number }} <a class="btn small" href="/segment/{{ s.row.id }}/edit">编辑段落</a>
       <span class="tag">参考模式 {{ s.row.reference_mode }}</span></h2>
+    {% if s.notes %}<div data-frame-notes>{{ checklist(s.notes) }}</div>{% endif %}
     {% if s.uses_first %}
     <h3>首帧</h3>
     <p class="hint">{{ s.row.image_prompt or "(还没写首帧图提示词)" }}</p>
@@ -19,6 +45,7 @@
         {% if s.row.first_frame_path %}<img src="/media/{{ s.row.first_frame_path }}" alt="首帧">
         {% else %}<p class="empty">还没有首帧</p>{% endif %}
       </div>
+      {% if s.row.first_frame_path %}{{ region_form(s.row.id, "first_frame_path", s.row.first_frame_path, s.region_assets, seed + 300 + loop.index) }}{% endif %}
       <form method="post" action="/segment/{{ s.row.id }}/frame">
         <label>种子</label><input type="number" name="seed" value="{{ seed + loop.index }}">
         <button class="btn primary" type="submit" data-generate-frame>生成首帧</button>
@@ -39,6 +66,7 @@
         {% if s.row.last_frame_path %}<img src="/media/{{ s.row.last_frame_path }}" alt="尾帧">
         {% else %}<p class="empty">还没有尾帧</p>{% endif %}
       </div>
+      {% if s.row.last_frame_path %}{{ region_form(s.row.id, "last_frame_path", s.row.last_frame_path, s.region_assets, seed + 400 + loop.index) }}{% endif %}
       <form method="post" action="/segment/{{ s.row.id }}/lastframe">
         <label>种子</label><input type="number" name="seed" value="{{ seed + 100 + loop.index }}">
         <button class="btn primary" type="submit" data-generate-last-frame>生成尾帧</button>
@@ -64,6 +92,7 @@
           </form>
           {% if loop.first %}{{ key_limits() }}{% endif %}
         </div>
+        {% if k.row.frame_path %}{{ region_form(s.row.id, "key:" ~ k.row.id, k.row.frame_path, s.region_assets, seed + 500 + 10 * seg_no + loop.index) }}{% endif %}
       </div>
       {{ history(k.tasks, k.row.frame_path, state_label, "/episode/" ~ ep.id ~ "/frames") }}
     </div>

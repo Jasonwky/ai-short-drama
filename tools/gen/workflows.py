@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 
 from tools.drama.tags import check_tags
+from tools.gen import compose
 
 WORKFLOW_DIR = Path(__file__).parent / "workflows"
 QWEN_TEMPLATE = WORKFLOW_DIR / "qwen_image_edit_2511_gguf_api.json"
@@ -80,6 +81,35 @@ def build_qwen(prompt: str, image_names: list[str], seed: int, *, preset: str = 
         wf["27"]["inputs"]["latent_image"] = ["30", 0]
         wf.pop("25")
         wf.pop("26")
+    return wf
+
+
+def build_qwen_region(prompt: str, source_name: str, ref_name: str, box: tuple[int, int, int, int],
+                      size: tuple[int, int], seed: int, *, preset: str = "fast") -> dict:
+    """框选局部替换:裁出 box → 放大到约 1 MP 按参考图编辑 → 缩回 box 大小 → 带羽化遮罩贴回原图。
+    框外像素不动;贴着图边的那几条边不羽化(不然图边会留一圈旧像素)。box 已由 `compose.region_box` 对齐过。"""
+    x, y, w, h = box
+    width, height = size
+    ww, wh = compose.work_size(w, h)
+    # 先按两张图拼(标签校验照常:Picture 1 = 裁出的块,Picture 2 = 参考图),再把 image1 接到裁块上
+    wf = build_qwen(prompt, [ref_name, ref_name], seed, preset=preset, size=(ww, wh))
+    wf.pop("19")
+    wf["21"]["inputs"]["image2"] = ["18", 0]
+    wf["40"] = {"class_type": "LoadImage", "inputs": {"image": source_name}}
+    wf["41"] = {"class_type": "ImageCrop", "inputs": {"image": ["40", 0], "width": w, "height": h, "x": x, "y": y}}
+    wf["42"] = {"class_type": "ImageScale", "inputs": {"image": ["41", 0], "upscale_method": "lanczos",
+                                                       "width": ww, "height": wh, "crop": "disabled"}}
+    wf["21"]["inputs"]["image1"] = ["42", 0]
+    wf["43"] = {"class_type": "ImageScale", "inputs": {"image": ["28", 0], "upscale_method": "lanczos",
+                                                       "width": w, "height": h, "crop": "disabled"}}
+    wf["44"] = {"class_type": "SolidMask", "inputs": {"value": 1.0, "width": w, "height": h}}
+    pad = compose.PAD
+    wf["45"] = {"class_type": "FeatherMask", "inputs": {
+        "mask": ["44", 0], "left": pad if x > 0 else 0, "top": pad if y > 0 else 0,
+        "right": pad if x + w < width else 0, "bottom": pad if y + h < height else 0}}
+    wf["46"] = {"class_type": "ImageCompositeMasked", "inputs": {
+        "destination": ["40", 0], "source": ["43", 0], "x": x, "y": y, "resize_source": False, "mask": ["45", 0]}}
+    wf["29"]["inputs"]["images"] = ["46", 0]
     return wf
 
 

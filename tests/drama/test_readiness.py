@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from tools.drama import repo
-from tools.drama.readiness import is_ready, segment_readiness
+from tools.drama.readiness import REGION_HINT, is_ready, segment_readiness
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 
 
@@ -58,7 +58,7 @@ def test_two_characters_push_prop_out_of_slots_as_warning(store, sample):
     checks = _check(store, sample["seg"])
     slots = _by_key(checks)["slots"]
     assert slots.ok and slots.warn
-    assert slots.msg == "道具「玉佩」因槽位不足未作为参考图,仅以文字描述参与"
+    assert slots.msg == ("道具「玉佩」因槽位不足未作为参考图,仅以文字描述参与。" + REGION_HINT)
     assert is_ready(checks)  # 告警不阻塞,但必须让人看见
 
 

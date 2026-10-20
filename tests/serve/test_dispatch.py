@@ -141,3 +141,25 @@ def test_missing_anchor_image_fails_loudly(store, sample, host_id, data_root):
                               "audio_ref": None, "writes": "video_path", "expect_ext": ".mp4"})
     out = dispatch(store, FakeComfy(), get_host(store, host_id), _task(store, tid), data_root=data_root, run=_no_ssh)
     assert out.state == "failed" and "gone.png" in out.message
+
+
+def test_region_task_uploads_source_and_ref_and_builds_the_paste_back(store, sample, host_id, data_root):
+    from tools.gen.planner import plan_region
+    tid = plan_region(store, sample["seg"], "first_frame_path", source="frames/s1.png", size=(928, 1664),
+                      box=[100, 200, 200, 300], asset=("character", sample["lin"]), note="", seed=3)
+    comfy = FakeComfy()
+    out = dispatch(store, comfy, get_host(store, host_id), _task(store, tid), data_root=data_root, run=_no_ssh)
+    assert out.state == "queued"
+    assert sorted(comfy.uploaded) == sorted((data_root / p).as_posix() for p in ("frames/s1.png", "assets/lin.png"))
+    wf = comfy.submitted[out.message]
+    assert wf["40"]["inputs"]["image"].endswith("s1.png") and wf["18"]["inputs"]["image"].endswith("lin.png")
+    assert (wf["41"]["inputs"]["x"], wf["41"]["inputs"]["y"]) == (64, 160) and wf["29"]["inputs"]["images"] == ["46", 0]
+
+
+def test_region_task_with_a_missing_source_fails_loudly(store, sample, host_id, data_root):
+    from tools.gen.planner import plan_region
+    tid = plan_region(store, sample["seg"], "first_frame_path", source="frames/s1.png", size=(928, 1664),
+                      box=[0, 0, 400, 400], asset=("character", sample["lin"]), note="", seed=1)
+    (data_root / "frames/s1.png").unlink()
+    out = dispatch(store, FakeComfy(), get_host(store, host_id), _task(store, tid), data_root=data_root, run=_no_ssh)
+    assert out.state == "failed" and "s1.png" in out.message

@@ -231,3 +231,30 @@ def test_video_anchors_move_with_the_bundle(store, project, tmp_path):
     [video] = [r for r in tasks_for(dest, "segment", seg["id"]) if r["kind"] == "video"]
     assert json.loads(video["params_json"])["anchors"] == [[f"{prefix}/outputs/tasks/2/a.png", 0],
                                                             [f"{prefix}/outputs/tasks/8/k.png", 96]]
+
+
+def test_region_paths_move_with_the_bundle(store, project, tmp_path):
+    """局部替换的原图与参考图,导入后同样加前缀(不改就指到别的剧的文件)。"""
+    for rel in ("outputs/tasks/2/a.png", "outputs/tasks/3/b.png"):
+        _file(project["root"], rel, rel.encode())
+    two = create_task(store, kind="image", target_type="segment", target_id=project["seg"], model="m", seed=1,
+                      params={"workflow": "qwen_image", "writes": "first_frame_path",
+                              "image_refs": ["outputs/tasks/2/a.png"]},
+                      prompt="p", refs=["outputs/tasks/2/a.png"])
+    region = create_task(store, kind="image", target_type="segment", target_id=project["seg"], model="m", seed=2,
+                         params={"workflow": "qwen_region", "writes": "first_frame_path", "image_refs": [],
+                                 "source": "outputs/tasks/2/a.png", "ref": "outputs/tasks/3/b.png", "box": [0, 0, 128, 128]},
+                         prompt="p", refs=["outputs/tasks/2/a.png", "outputs/tasks/3/b.png"])
+    for t, rel in ((two, "outputs/tasks/2/a.png"), (region, "outputs/tasks/3/b.png")):
+        set_task_state(store, t, "queued", external_id=f"p{t}")
+        set_task_state(store, t, "done", result_path=rel, result_sha256="x")
+    dest = Store(":memory:")
+    new = bundle.import_bundle(dest, tmp_path / "dst", project["root"] / bundle.export_bundle(store, project["root"],
+                                                                                              project["drama"]))
+    [seg] = dest.conn.execute("SELECT s.* FROM segment s JOIN episode e ON e.id = s.episode_id WHERE e.drama_id = ?",
+                              (new,)).fetchall()
+    prefix = seg["first_frame_path"].split("/outputs/")[0]
+    by_flow = {json.loads(r["params_json"]).get("workflow"): json.loads(r["params_json"])
+               for r in tasks_for(dest, "segment", seg["id"]) if r["kind"] == "image"}
+    assert (by_flow["qwen_region"]["source"], by_flow["qwen_region"]["ref"]) == (
+        f"{prefix}/outputs/tasks/2/a.png", f"{prefix}/outputs/tasks/3/b.png")

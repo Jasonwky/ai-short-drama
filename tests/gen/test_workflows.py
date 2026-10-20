@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import pytest
 
-from tools.gen.workflows import H3_MODEL, QWEN_MODEL, build_h3, build_qwen
+from tools.gen.workflows import H3_MODEL, QWEN_MODEL, build_h3, build_qwen, build_qwen_region
 
 
 def _dangling(wf):
@@ -52,6 +52,33 @@ def test_qwen_rejects_bad_tags_and_bad_sizes():
         build_qwen("Picture 1", ["a.png"], 1, size=(900, 1600))
     with pytest.raises(ValueError, match="1–3 张"):
         build_qwen("x", ["a", "b", "c", "d"], 1)
+
+
+def test_region_crops_edits_and_pastes_back():
+    wf = build_qwen_region("保持 Picture 1 不变,把其中的人物换成 Picture 2(丙)。", "frame.png", "ref.png",
+                           (64, 160, 272, 384), (928, 1664), 5)
+    assert _dangling(wf) == []
+    crop = wf["41"]["inputs"]
+    assert (crop["x"], crop["y"], crop["width"], crop["height"]) == (64, 160, 272, 384)
+    assert wf["40"]["inputs"]["image"] == "frame.png" and wf["18"]["inputs"]["image"] == "ref.png"
+    enc = wf["21"]["inputs"]
+    assert enc["image1"] == ["42", 0] and enc["image2"] == ["18", 0] and "image3" not in enc
+    w, h = wf["30"]["inputs"]["width"], wf["30"]["inputs"]["height"]
+    assert w % 16 == 0 and h % 16 == 0 and wf["27"]["inputs"]["latent_image"] == ["30", 0]
+    back = wf["43"]["inputs"]
+    assert (back["width"], back["height"]) == (272, 384) and back["image"] == ["28", 0]
+    paste = wf["46"]["inputs"]
+    assert paste["destination"] == ["40", 0] and paste["source"] == ["43", 0] and (paste["x"], paste["y"]) == (64, 160)
+    assert paste["mask"] == ["45", 0] and wf["29"]["inputs"]["images"] == ["46", 0]
+    assert "19" not in wf and "20" not in wf and "25" not in wf
+    feather = wf["45"]["inputs"]
+    assert (feather["left"], feather["top"], feather["right"], feather["bottom"]) == (32, 32, 32, 32)
+
+
+def test_region_does_not_feather_the_sides_on_the_image_border():
+    wf = build_qwen_region("保持 Picture 1 不变,换成 Picture 2(丙)。", "f.png", "r.png", (0, 0, 240, 240), (928, 1664), 5)
+    f = wf["45"]["inputs"]
+    assert (f["left"], f["top"], f["right"], f["bottom"]) == (0, 0, 32, 32)
 
 
 # ── H3 ────────────────────────────────────────────────

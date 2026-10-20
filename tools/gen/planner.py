@@ -22,7 +22,7 @@ from tools.drama.db import Store
 from tools.drama.readiness import key_frame_index, segment_readiness
 from tools.drama.targets import KEY_WRITES
 from tools.drama.tasks import create_task
-from tools.gen import presets
+from tools.gen import compose, presets
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.gen.workflows import DRAFT_STEPS, FRAME_SIZE, H3_IMAGE_SLOTS, H3_MODEL, QWEN_MODEL, VIDEO_SIZE, build_h3
 
@@ -112,7 +112,7 @@ def _plan_image(store: Store, segment_id: int, text: str, seed: int, writes: dic
     params = {
         "workflow": "qwen_image", "preset": "fast", "size": list(FRAME_SIZE[_aspect(store, segment_id)]),
         "image_refs": [r.path for r in kept], **writes, "expect_ext": ".png",
-        "dropped": [r.name for r in dropped],   # 出槽退化成文字的素材,溯源里要看得到
+        "dropped": [r.name for r in dropped],   # 出槽退化成文字的素材,溯源里要看得到(就绪清单提示用局部替换补)
     }
     params = presets.stamp(store, "frame", params)      # 绑定当前「首帧 / 尾帧」模板预设(没有 = 内置)
     return create_task(store, kind="image", target_type="segment", target_id=segment_id, model=QWEN_MODEL,
@@ -151,6 +151,52 @@ def plan_key_frame(store: Store, keyframe_id: int, *, seed: int) -> int:
     k = repo.get(store, "segment_keyframe", keyframe_id)
     return _plan_image(store, k["segment_id"], k["image_prompt"], seed,
                        {"writes": KEY_WRITES, "keyframe_id": keyframe_id})
+
+
+REGION_KINDS = {"character": ("character", "turnaround_path"), "scene": ("scene", "image_path"),
+                "prop": ("prop", "image_path")}
+
+
+def _frame_slot(store: Store, segment_id: int, slot: str) -> tuple[str | None, dict]:
+    """局部替换的写回位置:slot = first_frame_path / last_frame_path / key:<关键帧号> → (当前图, writes 参数)。"""
+    if slot in FRAMES:
+        return repo.get(store, "segment", segment_id)[slot], {"writes": slot}
+    kid = int(slot.removeprefix("key:"))
+    k = repo.get(store, "segment_keyframe", kid)
+    if k["segment_id"] != segment_id:
+        raise ValueError(f"关键帧 {kid} 不属于段落 {segment_id}")
+    return k["frame_path"], {"writes": KEY_WRITES, "keyframe_id": kid}
+
+
+def plan_region(store: Store, segment_id: int, slot: str, *, source: str, size: tuple[int, int], box: list[int],
+                asset: tuple[str, int], note: str, seed: int) -> int:
+    """框选局部替换:当前帧 source 里框住的一块,按 asset 的参考图改,贴回原图。新版本进历史,人挑了才替换当前帧。
+    size 是 source 的真实像素(面板读的);框是在旧图上画的(当前帧已换)就拒绝。"""
+    current, writes = _frame_slot(store, segment_id, slot)
+    if not current:
+        raise ValueError("这一格还没有图,先出图再做局部替换")
+    if source != current:
+        raise ValueError("框是在旧图上画的:这一格的图已经换了,刷新后重画")
+    kind, row_id = asset
+    table, field = REGION_KINDS[kind]
+    assets = repo.segment_assets(store, segment_id)
+    bound = {"character": [c["id"] for c in assets["characters"]], "prop": [p["id"] for p in assets["props"]],
+             "scene": [assets["scene"]["id"]] if assets["scene"] is not None else []}[kind]
+    row = repo.get(store, table, row_id)
+    if row_id not in bound:
+        raise ValueError(f"「{row['name']}」不是本段绑定的素材")
+    if not row[field]:
+        raise ValueError(f"「{row['name']}」还没有参考图")
+    ref = refs.Ref(kind, row["name"], row[field])
+    prompt = compose.region_prompt(ref, note, row["styling"] if kind == "character" else "")
+    problems = tags.check_tags(prompt, 2, dialect="qwen")
+    if problems:                                # 补充说明里写了 Picture N 之类,规划时就拒(不等到云机)
+        raise ValueError(";".join(problems))
+    params = {"workflow": "qwen_region", "preset": "fast", "source": source, "ref": ref.path, "ref_name": ref.name,
+              "box": list(compose.region_box(box, size)), "size": list(size), "note": note, **writes,
+              "image_refs": [], "expect_ext": ".png"}
+    return create_task(store, kind="image", target_type="segment", target_id=segment_id, model=QWEN_MODEL,
+                       params=params, seed=seed, prompt=prompt, refs=[source, ref.path])
 
 
 def fourview_refs(store: Store, segment_id: int) -> tuple[list[refs.Ref], list[refs.Ref]]:
