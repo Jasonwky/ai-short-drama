@@ -143,7 +143,8 @@ def _walk(node: dict):
 
 
 def export_view(store: Store, root: Path, export_id: int) -> dict:
-    """导出时的溯源报告 + 之后换过的:①逐段比报告里的视频 / 字幕路径与段落当前的;②每个节点比报告记的 sha256 与现在的文件。"""
+    """导出时的溯源报告 + 之后换过的:①逐段比报告里的视频 / 字幕路径与段落当前的;②每个节点比报告记的 sha256 与现在的文件;
+    ③配乐(人工提供)的文件也比 sha256。"""
     row = store.conn.execute("SELECT * FROM export WHERE id = ?", (export_id,)).fetchone()
     if row is None:
         raise KeyError(f"export {export_id} 不存在")
@@ -166,4 +167,10 @@ def export_view(store: Store, root: Path, export_id: int) -> dict:
             f = Path(root) / n["path"]
             if n["sha256"] and (not f.is_file() or provenance.cached_sha256(f) != n["sha256"]):
                 changed.append(f"{n['path']} " + ("不在本机了" if not f.is_file() else "的内容与导出时不同"))
+    for m in report.get("music", []):        # 早于配乐(v11)的报告没有这一项
+        f = Path(root) / m["path"]
+        if not f.is_file():
+            changed.append(f"配乐 {m['path']} 不在本机了")
+        elif provenance.cached_sha256(f) != m["sha256"]:
+            changed.append(f"配乐 {m['path']} 的内容与导出时不同")
     return {"row": row, "report": report, "changed": list(dict.fromkeys(changed))}

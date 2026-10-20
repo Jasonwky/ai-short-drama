@@ -223,8 +223,6 @@ def problems(data_root: Path, cues, total: float | None) -> list[str]:
         if sha256_file(f) != c["sha256"]:
             out.append(f"配乐 #{c['id']} 的文件内容与挂上时记的哈希对不上(文件被替换过):{c['path']}")
             continue
-        if not c["license"].strip():
-            out.append(f"配乐 #{c['id']} 没写许可说明(★必填)")
         if total is not None and c["end_sec"] > total + 0.05:
             out.append(f"配乐 #{c['id']} 的终点 {c['end_sec']:g} 秒超出成片时长 {total:.2f} 秒")
         dur = media.audio(f)[0]

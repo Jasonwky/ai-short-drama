@@ -30,6 +30,16 @@
       {% if s.subtitles %}<p class="hint">字幕:</p>{{ node(s.subtitles) }}{% endif %}
     </section>
   {% endfor %}
+  {% if v.report.music %}
+    <section class="card" data-export-music>
+      <h2>配乐</h2>
+      {% for m in v.report.music %}
+        <p><code>{{ m.path }}</code> · sha256 <code>{{ (m.sha256 or "缺失")[:16] }}</code> · {{ m.source }}
+          · {{ m.start_sec }}–{{ m.end_sec }} 秒 · 音量 {{ m.gain_db }} dB(台词再压 {{ m.duck_db }} dB)</p>
+        <p class="hint">许可:{{ m.license }}</p>
+      {% endfor %}
+    </section>
+  {% endif %}
   <p><a href="/media/{{ v.row.report_path }}" target="_blank">溯源报告原文(JSON)</a></p>
 {% endif %}
 {% endblock %}

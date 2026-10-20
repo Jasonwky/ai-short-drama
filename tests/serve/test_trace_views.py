@@ -146,3 +146,31 @@ def test_export_shows_the_snapshot_and_what_changed_since(store, two_segments):
     assert "outputs/tasks/f1/frame.png 的内容与导出时不同" in changed
     assert trace_views.export_for_path(store, "outputs/exports/x/plain.mp4") == eid
     assert trace_views.export_for_path(store, "outputs/tasks/v9/clip.mp4") is None
+
+
+
+def _with_music(root, eid):
+    """给导出 eid 的溯源报告补一条配乐(与 provenance._music 同形),返回音乐文件。"""
+    song = root / "assets/music/song.wav"
+    song.parent.mkdir(parents=True, exist_ok=True)
+    song.write_bytes(b"song")
+    rep = root / "outputs/exports/x/provenance.json"
+    report = json.loads(rep.read_text(encoding="utf-8"))
+    sha = provenance.cached_sha256(song)
+    report["music"] = [{"path": "assets/music/song.wav", "sha256": sha, "recorded_sha256": sha, "license": "自购曲库 #42",
+                        "start_sec": 1.0, "end_sec": 9.0, "gain_db": -14.0, "duck_db": -10.0, "fade_in": 1.0,
+                        "fade_out": 1.0, "source": "人工提供,非 AI 生成"}]
+    rep.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    return song
+
+
+def test_export_snapshot_flags_a_swapped_or_missing_music_track(store, two_segments):
+    """配乐是人工提供的:文件之后被换 / 删了,成片快照要标出来。"""
+    s, root = two_segments, two_segments["root"]
+    eid = _export(store, root, s)
+    song = _with_music(root, eid)
+    assert trace_views.export_view(store, root, eid)["changed"] == []
+    song.write_bytes(b"other song")
+    assert "配乐 assets/music/song.wav 的内容与导出时不同" in trace_views.export_view(store, root, eid)["changed"]
+    song.unlink()
+    assert "配乐 assets/music/song.wav 不在本机了" in trace_views.export_view(store, root, eid)["changed"]
