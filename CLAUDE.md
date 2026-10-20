@@ -81,7 +81,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   溯源报告 + **8 项读回自检(含字幕),不过 = 导出失败**。元数据按 GB 45438-2025 **附录 E**(不是附录 F 的示例,它拼错了键名)。
   尾帧衔接记成 `tasks.record_local` 的创建即完成 task,溯源链靠它。
   **烧字幕检测** `cut/textscan.py`:`run` 开工前逐段 OCR(EasyOCR,本机 CPU,结果按视频 sha256 缓存在 `<视频>.textscan.json`),
-  画面里的字与台词 / 描述 / 视频提示词对得上就**拦导出**(匾额对联不算);单测里 OCR 被 `tests/conftest.py` 换成看不见字的假读者
+  画面里的字与台词 / 描述 / 视频提示词对得上就**拦导出**(匾额对联不算);单测里 OCR 被 `tests/conftest.py` 换成看不见字的假读者。
+  **白屏检测** `cut/blankscan.py`:近白像素(亮度 ≥ 200)占画面 ≥ 35% 连续 ≥ 0.5 秒就**拦导出**(实战是四视图白底带进视频,不是整屏白;
+  标定 spike-results/2026-10-20-白屏检测标定.md),同样按 sha256 缓存、单测里被 conftest 换成「没白屏」。
+  **配乐** `cut/music.py` + `music_cue` 表(库结构 v11):人上传**有许可**的音乐(license ★必填,不做 AI 生成配乐 —— 许可证红线),
+  整集时间轴上多段,台词区间按字幕自动压低;`begin` 把配乐快照进 `export.music_json`(不可改),两版都混;读回自检第 9 项「配乐」对成片**实测**
+  cue 内有音乐、cue 外与原音轨一致(阈值 spike-results/2026-10-20-配乐读回自检阈值标定.md)
 - `tools/gate0/` 是闸门 0 的**实验脚本**,不是产品代码;正式逻辑以 `tools/drama/` 为准
 
 已有调研:`docs/superpowers/spike-results/2026-09-22-AI短剧成熟工作流调研.md`。
