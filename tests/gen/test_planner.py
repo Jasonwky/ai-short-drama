@@ -30,9 +30,9 @@ def test_first_frame_records_assets_that_fell_out_of_slots(store, sample):
                 image_prompt="@林小雨 把 @玉佩 递给 @沈墨,@老宅庭院 黄昏")
     row, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
     assert p["dropped"] == ["玉佩"]
-    # 台词多的林小雨占 1 号,场景 2 号,沈墨 3 号;玉佩出槽,退化成纯文字
-    assert row["prompt"] == "Picture 1(林小雨) 把 玉佩 递给 Picture 3(沈墨),Picture 2(老宅庭院) 黄昏"
-    assert p["image_refs"] == ["assets/lin.png", "assets/yard.png", "assets/shen.png"]
+    # 进槽的是林小雨(台词多)、场景、沈墨;玉佩出槽,退化成纯文字。编号按提示词里出场的先后
+    assert row["prompt"] == "Picture 1(林小雨) 把 玉佩 递给 Picture 2(沈墨),Picture 3(老宅庭院) 黄昏"
+    assert p["image_refs"] == ["assets/lin.png", "assets/shen.png", "assets/yard.png"]
 
 
 def test_first_frame_refuses_incomplete_content(store, sample):
@@ -149,9 +149,9 @@ def test_more_than_three_references_leave_a_spot_then_add(store, sample):
     from tools.gen.planner import frame_passes
     _crowd(store, sample, "@林小雨 把 @玉佩 递给 @沈墨,@王五 站在一旁,@老宅庭院 黄昏")
     row, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
-    assert p["image_refs"] == ["assets/lin.png", "assets/yard.png", "assets/shen.png"]
+    assert p["image_refs"] == ["assets/lin.png", "assets/shen.png", "assets/yard.png"]
     # 王五单独一句:第一遍拿掉、留位,第二遍加入;玉佩和别人同句:拿不出来,照旧写成名字
-    assert row["prompt"] == "Picture 1(林小雨) 把 玉佩 递给 Picture 3(沈墨),画面中给另一个人留出位置,Picture 2(老宅庭院) 黄昏"
+    assert row["prompt"] == "Picture 1(林小雨) 把 玉佩 递给 Picture 2(沈墨),画面中给另一个人留出位置,Picture 3(老宅庭院) 黄昏"
     sp = p["second_pass"]
     assert (sp["image_refs"], sp["names"], p["dropped"]) == (["assets/wang.png"], ["王五"], ["玉佩"])
     assert sp["prompt"] == "保持 Picture 1 的画面、构图、光线和已有人物完全不变,在画面中加入:Picture 2(王五) 站在一旁。"
@@ -164,6 +164,17 @@ def test_nothing_to_add_means_one_pass_as_before(store, sample):
     _crowd(store, sample, "@林小雨 把 @玉佩 递给 @沈墨,@王五 和 @沈墨 对视,@老宅庭院 黄昏")
     _, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
     assert "second_pass" not in p and p["dropped"] == ["玉佩", "王五"] and frame_passes(store, sample["seg"]) == 1
+
+
+def test_pictures_are_numbered_in_the_order_the_prompt_mentions_them(store, sample):
+    """云机实测:先写的人不是 Picture 1 时 3/3 把两人的动作对调(萧珩坐主位 ↔ 李福跪地),按出场先后编号后 3/3 对
+    (spike-results/2026-10-20-多人同框留位加人实测.md)。沈墨先写,即使林小雨台词多、先进槽,也是沈墨当 Picture 1。"""
+    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])
+    repo.bind_props(store, sample["seg"], [])
+    repo.update(store, "segment", sample["seg"], image_prompt="@沈墨 端坐主位,@林小雨 跪在地上,@老宅庭院 夜")
+    row, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
+    assert row["prompt"] == "Picture 1(沈墨) 端坐主位,Picture 2(林小雨) 跪在地上,Picture 3(老宅庭院) 夜"
+    assert p["image_refs"] == ["assets/shen.png", "assets/lin.png", "assets/yard.png"] and p["dropped"] == []
 
 
 # ── 框选局部替换 ─────────────────────────────────────

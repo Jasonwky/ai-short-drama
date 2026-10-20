@@ -57,6 +57,8 @@ def _passes(seg, assets, text: str) -> tuple[list[refs.Ref], str, list[str], lis
     第二遍「留位加人」只收提示词里能整句拿出来的素材(`refs.split_for_add`),其余照旧退化成名字。"""
     kept, later, dropped = _slot_refs(seg, assets)
     first_text, moved, added = refs.split_for_add(text, later, _bound_names(assets))
+    order = refs.find_mentions(first_text, _bound_names(assets))[0]
+    kept = sorted(kept, key=lambda r: order.index(r.name) if r.name in order else len(order))   # 先写的人当 Picture 1
     return kept, first_text, moved, added, [r for r in later if r not in added] + dropped
 
 
