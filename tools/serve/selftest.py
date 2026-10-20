@@ -238,6 +238,7 @@ def _blank_video(store: Store, root: Path, segment_id: int):
         if not blankscan.check(root, rel):
             raise RuntimeError("现造的白屏片没被白屏检测查出来")
         page.reload()
+    return act
 
 
 def _music_cue(shot: Path):
