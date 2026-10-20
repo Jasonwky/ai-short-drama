@@ -51,8 +51,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   视频面板用 `cut/keycheck` 拿**视频任务参数里的锚点**与那一帧逐张比对(量法沿用 spike-results/2026-10-09-中间关键帧锚定实测.md)。
   关键帧任务挂在段落上、参数里记 `keyframe_id`,**写到哪一律经 `drama/targets.slot`**(P12 旧任务按 `legacy_v9` 那行认)。
   视频有草稿档(参数 `steps: 10`);判「几步出的」只用 `serve/dispatch.steps_of`(读实际交出去的图),少于 20 步在视频卡片与成片面板提醒。
-  参考帧参考图超过 3 张(Qwen 只有 3 槽):放不下的写成名字,就绪清单提示用**框选局部替换**补 —— 自动「两遍合成」云机实测第二遍换不动人,已撤下
-  (spike-results/2026-10-20-P15两遍合成与局部替换云机实测.md)。局部替换是 `workflow="qwen_region"` 的图片任务(`planner.plan_region` + `workflows.build_qwen_region`:
+  参考帧参考图超过 3 张(Qwen 只有 3 槽):**第一遍留位、第二遍加入** —— `refs.split_for_add` 把只 @ 了放不下素材的分句从第一遍拿掉、换成留位句,
+  第二遍 `compose.second_pass_prompt`「在画面中加入」(同一份工作流两个采样器,`build_qwen(second_pass=)`;「把已画好的人换掉」实测换不动,不要回到那种写法)。
+  和别人同句的拿不出来,照旧写成名字,就绪清单教人「单独写一句」或用局部替换补。参考图**按提示词里出场先后编号**(先写的人 = Picture 1,
+  否则模型会把两人动作对调)(spike-results/2026-10-20-多人同框留位加人实测.md)。局部替换是 `workflow="qwen_region"` 的图片任务(`planner.plan_region` + `workflows.build_qwen_region`:
   裁框 → 放大到约 1 MP 编辑 → 缩回 → 羽化遮罩贴回,框外像素逐个不动),source 必须是当前帧;新版本进历史、人挑了才替换;不吃首帧模板预设、不能改参重跑;
   提示词 `compose.region_prompt` 保持「神情」并拼角色的「造型」字段(只说「换成参考图的长相服装」时发饰、神情都会被换掉)
 - `tools/gen/planner.py` 只做**规划**(内容就绪即写出参数定死的 task);`tools/serve/` 负责**提交与推进**:
