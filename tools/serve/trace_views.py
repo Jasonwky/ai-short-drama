@@ -12,7 +12,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from tools.cut import provenance
+from tools.cut import blankscan, provenance
 from tools.drama import targets
 from tools.drama.db import Store
 from tools.llm import voices
@@ -150,7 +150,7 @@ def export_view(store: Store, root: Path, export_id: int) -> dict:
         raise KeyError(f"export {export_id} 不存在")
     rep = Path(root) / row["report_path"] if row["report_path"] else None
     if rep is None or not rep.is_file():
-        return {"row": row, "report": None, "changed": []}
+        return {"row": row, "report": None, "changed": [], "releases": {}}
     report = json.loads(rep.read_text(encoding="utf-8"))
     changed: list[str] = []
     for s in report["segments"]:
@@ -173,4 +173,6 @@ def export_view(store: Store, root: Path, export_id: int) -> dict:
             changed.append(f"配乐 {m['path']} 不在本机了")
         elif provenance.cached_sha256(f) != m["sha256"]:
             changed.append(f"配乐 {m['path']} 的内容与导出时不同")
-    return {"row": row, "report": report, "changed": list(dict.fromkeys(changed))}
+    releases = {s["number"]: blankscan.override_note(s["number"], s["blank_override"])     # 白屏人工放行(v12 起)
+                for s in report["segments"] if s.get("blank_override")}
+    return {"row": row, "report": report, "changed": list(dict.fromkeys(changed)), "releases": releases}

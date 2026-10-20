@@ -114,3 +114,16 @@ def test_export_snapshot_page_lists_the_music(client, runtime, store, two_segmen
     page = client.get(f"/trace/export/{eid}").text
     assert "data-export-music" in page and "自购曲库 #42" in page and "人工提供,非 AI 生成" in page
     assert "assets/music/song.wav" in page and "1.0–9.0 秒" in page
+
+
+def test_export_snapshot_page_shows_a_blank_screen_release(client, runtime, store, two_segments):
+    s = two_segments
+    runtime.data_root = s["root"]
+    eid = _export(store, s["root"], s)
+    rep = s["root"] / "outputs/exports/x/provenance.json"
+    report = json.loads(rep.read_text(encoding="utf-8"))
+    report["segments"][0]["blank_override"] = {"spans": [[1.0, 2.0]], "reason": "雪景,本来就白",
+                                               "created_at": "2026-10-20T12:00:00+00:00"}
+    rep.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    page = client.get(f"/trace/export/{eid}").text
+    assert "data-blank-release" in page and "人工确认放行:段落 1,第 1.0–2.0 秒,雪景,本来就白" in page

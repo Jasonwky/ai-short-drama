@@ -26,6 +26,7 @@
     <section class="card" data-export-segment="{{ s.number }}">
       <h2>段落 {{ s.number }}({{ s.duration_sec }} 秒)</h2>
       <p class="hint">{{ s.description }}</p>
+      {% if v.releases[s.number] %}<p class="hint" data-blank-release>{{ v.releases[s.number] }}</p>{% endif %}
       {{ node(s.video) }}
       {% if s.subtitles %}<p class="hint">字幕:</p>{{ node(s.subtitles) }}{% endif %}
     </section>
