@@ -187,13 +187,16 @@ def stage(data_root: Path, data: bytes, filename: str) -> str:
 
 
 def add(store: Store, data_root: Path, episode_id: int, rel: str, license: str, *, start_sec: float,
-        end_sec: float | None = None, **fields) -> int:
-    """挂一条 cue。终点不填 = 起点 + 音乐时长(超出成片的部分由导出检查列出,人来改)。"""
+        end_sec: float | None = None, until: float | None = None, **fields) -> int:
+    """挂一条 cue。终点不填 = 起点 + 音乐时长,不超过 until(成片时长,已知时);淡入淡出不填 = 各 1 秒,短 cue 按时长的 1/4。"""
     f = Path(data_root) / rel
     if end_sec is None:
         end_sec = round(start_sec + media.audio(f)[0], 3)
-    row = {"start_sec": start_sec, "end_sec": end_sec, "gain_db": -14.0, "duck_db": -10.0, "fade_in": 1.0,
-           "fade_out": 1.0, **fields}
+        if until is not None and start_sec < until:
+            end_sec = min(end_sec, until)
+    fade = round(min(1.0, (end_sec - start_sec) / 4), 2)
+    row = {"start_sec": start_sec, "end_sec": end_sec, "gain_db": -14.0, "duck_db": -10.0, "fade_in": fade,
+           "fade_out": fade, **fields}
     validate(row, license)
     return repo.add_music_cue(store, episode_id, path=rel, sha256=sha256_file(f), license=license.strip(), **row)
 
@@ -262,9 +265,8 @@ def _clips(store: Store, data_root: Path, episode_id: int) -> list[Path]:
     return [Path(data_root) / s["video_path"] for s in segs]
 
 
-def preview_path(store: Store, data_root: Path, cue) -> str:
+def preview_path(store: Store, cue, speech: list[tuple[float, float]]) -> str:
     """试听文件的路径:按 cue 参数 + 各段视频 + 台词区间取哈希 —— 改了任何一样就是新文件,不会把旧的当新的听。"""
-    _, speech, _ = timeline(store, data_root, cue["episode_id"])
     segs = [s[0] for s in store.conn.execute("SELECT video_path FROM segment WHERE episode_id = ? ORDER BY number",
                                              (cue["episode_id"],))]
     key = json.dumps([cue["sha256"], [cue[k] for k in FIELDS], segs, speech])
@@ -276,7 +278,7 @@ def preview(store: Store, data_root: Path, cue_id: int) -> str:
     cue = repo.get(store, "music_cue", cue_id)
     clips = _clips(store, data_root, cue["episode_id"])
     _, speech, _ = timeline(store, data_root, cue["episode_id"])
-    rel = preview_path(store, data_root, cue)
+    rel = preview_path(store, cue, speech)
     out = Path(data_root) / rel
     if not out.is_file():
         media.mix_audio(clips, mixes(data_root, [cue], speech), out, trim=(cue["start_sec"], cue["end_sec"]))
