@@ -348,3 +348,24 @@ def test_cue_edits_after_begin_do_not_change_this_export(store, two_segments):
     assert row["state"] == "done", row["checks_json"]
     [m] = json.loads(row["music_json"])
     assert (m["start_sec"], m["end_sec"]) == (1.0, 2.0)
+
+
+def test_checker_catches_ducking_that_did_not_happen(store, two_segments):
+    """台词处没压低(混音时 duck_db 当成 0):旧自检只量非台词区间,全 PASS;投影判据要把它判 FAIL
+    (spike-results/2026-10-20-配乐读回自检阈值标定.md「台词处压低」:真片正常三档投影偏差 ≤ 0.2 dB,失效 +9.95 dB)。"""
+    s, root = two_segments, two_segments["root"]
+    _with_cue(store, s, start_sec=0.0, end_sec=2.0, fade_in=0.1, fade_out=0.1, gain_db=0.0, duck_db=-12.0)
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    export.run(store, root, eid)
+    row = export.get(store, eid)
+    good = {c["name"]: c for c in json.loads(row["checks_json"])}["配乐"]
+    assert good["ok"] and "台词处压低" in good["detail"] and "与设定差" in good["detail"], good
+    videos = json.loads(row["inputs_json"])
+    speech = music.speech_of([(c, o) for c, o, _ in export._parts(root, videos)])
+    [cue] = json.loads(row["music_json"])
+    media.encode_episode([root / v["video_path"] for v in videos], root / "noduck.mp4", None,
+                         music=music.mixes(root, [cue | {"duck_db": 0.0}], speech))
+    checks = export.check(store, root, row, row["labeled_path"], "noduck.mp4", row["report_path"],
+                          media.Label.for_size(384, 672))
+    bad = {c["name"]: c["detail"] for c in checks if not c["ok"]}
+    assert "配乐" in bad and "台词处没压低" in bad["配乐"], bad

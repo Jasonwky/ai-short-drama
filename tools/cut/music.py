@@ -288,10 +288,39 @@ SR = 16000                # 读回用的采样率(单声道)
 WANT_MARGIN_DB = 6.0      # cue 内:差异电平不低于「按包络独立算出的音乐电平」减这么多
 OUTSIDE_BELOW_DB = 25.0   # cue 外:差异电平要比原音轨低这么多
 FLOOR_DB = -80.0          # 绝对下限(dBFS):原音轨本身近乎无声时用它
+# 台词处压低:差异按能量判分不开(-28 档压低后的音乐比 AAC 误差还低 6 dB),改为把「成片 − 参照」投影到预期音乐上看增益;
+# 真片三档偏差 ≤ 0.20 dB、压低失效 +9.95 dB(spike-results/2026-10-20-配乐读回自检阈值标定.md)
+DUCK_TOL_DB = 3.0
+MIN_DUCK_SEC = 0.5        # 台词区间(去掉淡入淡出)短于它就不判压低,写明「没量」
 
 
 def _db(sq: float, n: int) -> float:
     return 10 * math.log10(sq / n) - 20 * math.log10(32768) if n and sq > 0 else -math.inf
+
+
+def _ducked(c, speech, song, steps, x, r, n) -> tuple[bool, str]:
+    """台词处压低是否生效:台词区间里 成片 − 参照 投影到预期音乐(已含压低)上的增益,应接近 0 dB。"""
+    lo, hi = c["start_sec"] + c["fade_in"], c["end_sec"] - c["fade_out"]
+    spans = [(max(a, lo), min(b, hi)) for a, b in merge_speech(speech) if min(b, hi) > max(a, lo)]
+    secs = sum(b - a for a, b in spans)
+    if secs < MIN_DUCK_SEC:
+        return True, f"配乐 #{c['id']}:台词处压低没量(cue 里的台词只有 {secs:.1f} 秒)"
+    s0 = round(c["start_sec"] * SR)
+    dot = ww = 0.0
+    for a, b in spans:
+        for k in range(round(a * SR), min(round(b * SR), n)):
+            j = k - s0
+            w = song[j] * steps[min(j * 100 // SR, len(steps) - 1)] if 0 <= j < len(song) else 0.0
+            dot += (x[k] - r[k]) * w
+            ww += w * w
+    if ww <= 0.0:
+        return True, f"配乐 #{c['id']}:台词处压低没量(这段音乐本身无声)"
+    gain = 20 * math.log10(dot / ww) if dot > 0 else -math.inf
+    if abs(gain) > DUCK_TOL_DB:
+        what = "台词处没压低" if gain > 0 else "台词处音乐比设定还低 / 没混进去"
+        return False, (f"配乐 #{c['id']}:台词处 {secs:.1f} 秒,成片里的音乐是设定的 {gain:+.1f} dB"
+                       f"(容差 ±{DUCK_TOL_DB:g})—— {what}")
+    return True, f"配乐 #{c['id']}:台词处压低 {secs:.1f} 秒,与设定差 {gain:+.2f} dB"
 
 
 def readback(data_root: Path, clips: list[Path], cues, speech: list[tuple[float, float]],
@@ -299,7 +328,8 @@ def readback(data_root: Path, clips: list[Path], cues, speech: list[tuple[float,
     """对成片文件实测配乐。参照 = 同一条音频链、不混配乐把原音轨重编一遍:cue 之前与成片逐样本相同,
     cue 之后只剩 AAC 码率分配带来的小差异(实测比原音轨低 38 dB 以上)。
     - cue 内(满音量区间,台词与淡入淡出扣掉):成片 − 参照 的电平 ≥ 按包络独立算出的音乐电平 − 6 dB → 音乐在;
-    - cue 外:成片 − 参照 的电平 ≤ 原音轨电平 − 25 dB(或低于 −80 dBFS)→ 没漏混、原音轨没被压低。"""
+    - cue 外:成片 − 参照 的电平 ≤ 原音轨电平 − 25 dB(或低于 −80 dBFS)→ 没漏混、原音轨没被压低;
+    - 台词处(cue 去掉淡入淡出 ∩ 台词区间):成片 − 参照 在预期音乐上的投影增益偏离 0 dB 不超过 3 dB → 确实压低了。"""
     if not cues:
         return True, "本集无配乐"
     with tempfile.TemporaryDirectory() as d:
@@ -338,6 +368,9 @@ def readback(data_root: Path, clips: list[Path], cues, speech: list[tuple[float,
                          f"低于预期音乐电平 {want:.1f} − {WANT_MARGIN_DB:g} dB —— 音乐没混进去")
         else:
             notes.append(f"配乐 #{c['id']}:非台词区间 {span} 差异 {got:.1f} dBFS(预期音乐 {want:.1f})")
+        duck_ok, duck_note = _ducked(c, speech, song, steps, x, r, n)
+        ok = ok and duck_ok
+        notes.append(duck_note)
     gaps = outside(cues, n / SR)
     worst = -math.inf
     for a, b in gaps:
