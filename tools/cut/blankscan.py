@@ -12,6 +12,9 @@
 量法只用本机 ffmpeg:缩到 160 宽 → lut 把亮度 ≥ LUMA 的像素置 255、其余置 0 → signalstats 的 YAVG / 255 就是占比。
 亮度按视频原值比(H3 出的是有限范围 yuv420p,纯白约 235)。
 结果按视频 sha256 缓存在视频旁(`<视频>.blankscan.json`,与 `textscan` 同一做法),换了视频或改了阈值自动作废。
+
+误报(雪景等本来就白)由人在视频卡片上填理由放行(`confirm`,库表 blank_override,v12):只认那条视频的 sha256,
+换了视频自动失效;导出 begin 时快照进 inputs_json,溯源报告逐条列出。
 """
 from __future__ import annotations
 
@@ -21,6 +24,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from tools.cut import media
+from tools.drama import repo
+from tools.drama.db import Store
 from tools.serve.dispatch import sha256_file
 
 LUMA = 200                  # 有限范围 16–235 里的 200 ≈ 全范围 214(满亮度的 84%)
@@ -100,3 +105,40 @@ def check(root: Path, video_rel: str) -> list[Span]:
 def problem(number: int, found: list[Span]) -> str:
     where = "、".join(f"第 {s.start:.1f}–{s.end:.1f} 秒" for s in found)
     return f"段落 {number} {where}画面近乎全白(大片纯白底或白闪),重出这段再导"
+
+
+# ── 人工确认放行(用户 2026-10-20 定)────────────────────────────
+# 雪景之类本来就白的画面:人看过、填理由放行。只认这条视频的 sha256 —— 重出 / 挑别的版本就自动失效、重新拦。
+
+def override_for(store: Store, root: Path, seg) -> dict | None:
+    """这段当前视频的放行(按内容哈希对);没有视频 / 文件不在 / 没放行过 = None。"""
+    if not seg["video_path"] or not (Path(root) / seg["video_path"]).is_file():
+        return None
+    row = repo.blank_override(store, seg["id"], sha256_file(Path(root) / seg["video_path"]))
+    return None if row is None else dict(row)
+
+
+def confirm(store: Store, root: Path, segment_id: int, reason: str) -> int:
+    """放行这段的当前视频。只放行查过且命中的视频(没命中就没什么可放行的);理由★必填。"""
+    seg = repo.get(store, "segment", segment_id)
+    found = (cached(root, seg["video_path"])
+             if seg["video_path"] and (Path(root) / seg["video_path"]).is_file() else None)
+    if not found:
+        raise ValueError(f"段落 {seg['number']} 的当前视频没查出白屏(或还没查过),不用放行")
+    return repo.add_blank_override(store, segment_id, video_path=seg["video_path"],
+                                   sha256=sha256_file(Path(root) / seg["video_path"]),
+                                   spans=[[s.start, s.end] for s in found], reason=reason)
+
+
+def snapshot(override: dict | None) -> dict | None:
+    """导出 begin 时记进 inputs_json 的那份(与视频的 sha256 同处一项)。"""
+    if override is None:
+        return None
+    return {"id": override["id"], "sha256": override["sha256"], "spans": json.loads(override["spans_json"]),
+            "reason": override["reason"], "created_at": override["created_at"]}
+
+
+def override_note(number: int, snap: dict) -> str:
+    """溯源报告里的一行。"""
+    where = "、".join(f"第 {a:.1f}–{b:.1f} 秒" for a, b in snap["spans"])
+    return f"人工确认放行:段落 {number},{where},{snap['reason']},{snap['created_at']}"

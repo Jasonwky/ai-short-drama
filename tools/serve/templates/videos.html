@@ -28,7 +28,19 @@
           </select>
           <button class="btn primary" type="submit" data-generate-video>生成视频</button>
         </form>
-        {% if s.blank %}<p class="status-bad" data-blank-screen>{{ s.blank }}<span class="hint">(导出时查的白屏,命中不许导出)</span></p>{% endif %}
+        {% if s.blank and s.blank_override %}
+          {% set o = s.blank_override %}
+          <p class="status-ok" data-blank-override>已{{ o.note }}
+            <span class="hint">(白屏检测命中,人看过确认不是白屏;只对这条视频 sha256 <code>{{ o.sha256[:16] }}</code> 有效,换了视频重新拦)</span></p>
+        {% elif s.blank %}
+          <p class="status-bad" data-blank-screen>{{ s.blank }}<span class="hint">(导出时查的白屏,命中不许导出)</span></p>
+          <form method="post" action="/segment/{{ s.row.id }}/blank-override" class="row" data-blank-form>
+            <div style="flex: 1; min-width: 220px"><label>不是白屏?写明理由(★必填,如「雪景,本来就白」)</label>
+              <input type="text" name="reason" required data-blank-reason></div>
+            <button class="btn" type="submit" data-blank-confirm>确认不是白屏(放行)</button>
+          </form>
+          <p class="hint">放行只对这条视频有效:重出或挑别的版本后哈希变了,会重新查、重新拦。放行记录写进导出的溯源报告。</p>
+        {% endif %}
         {% if s.few_now %}<p class="status-bad" data-few-steps-now>当前视频只用了 {{ s.few_now }} 步:{{ few_note }}</p>{% endif %}
       </div>
     </div>

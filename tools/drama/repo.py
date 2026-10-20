@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from tools.drama.db import Store, now
@@ -29,7 +30,7 @@ _COLUMNS: dict[str, set[str]] = {
     "music_cue": {"license", "start_sec", "end_sec", "gain_db", "duck_db", "fade_in", "fade_out"},
 }
 _READABLE = {"drama", "episode", "character", "scene", "prop", "segment", "task", "host", "segment_keyframe",
-             "music_cue"}
+             "music_cue", "blank_override"}
 
 
 def _check_cols(table: str, fields: dict) -> None:
@@ -147,6 +148,24 @@ def delete_music_cue(store: Store, cue_id: int) -> None:
     with store.write() as c:
         if c.execute("DELETE FROM music_cue WHERE id = ?", (cue_id,)).rowcount == 0:
             raise KeyError(f"music_cue {cue_id} 不存在")
+
+
+def add_blank_override(store: Store, segment_id: int, *, video_path: str, sha256: str, spans: list,
+                       reason: str) -> int:
+    """白屏人工放行:只对这条视频(sha256)有效。不走通用更新 —— 写下就不可改(触发器);
+    是否真命中由 cut/blankscan.confirm 判。"""
+    if not reason.strip():
+        raise ValueError("放行理由是★必填:写清为什么这不是白屏(如「雪景,本来就白」)")
+    get(store, "segment", segment_id)
+    return _insert(store, "blank_override", {"segment_id": segment_id, "video_path": video_path, "sha256": sha256,
+                                             "spans_json": json.dumps(spans), "reason": reason.strip(),
+                                             "created_at": now()})
+
+
+def blank_override(store: Store, segment_id: int, sha256: str) -> sqlite3.Row | None:
+    """这段对这条视频(按内容哈希)最近的一次放行;没有 = None。"""
+    return store.conn.execute("SELECT * FROM blank_override WHERE segment_id = ? AND sha256 = ?"
+                              " ORDER BY id DESC LIMIT 1", (segment_id, sha256)).fetchone()
 
 
 _HWM = "segment_id_hwm"
