@@ -9,9 +9,10 @@
 有台词的段落没有字幕 = 前提不满足,不开工。
 
 配乐(人上传的有许可的音乐,cut/music.py)两版都按包络混入;begin 时快照进导出记录,之后改 cue 不影响这次导出。
+白屏的人工确认放行也在 begin 时快照,记在 inputs_json 每段那一项里(与它绑定的视频 sha256 同处一项,run 只认快照)。
 
 两态:`begin` 当场核对前提(★必答的服务提供者编码、每段有视频、尺寸一致、有音轨、溯源成立、
-查过的段落没有烧进画面的字幕、没有白屏、配乐文件与哈希对得上且不超出成片),不满足就报原因不开工;`run` 在后台跑(一集 1–3 分钟),结束时整行锁定(触发器)。
+查过的段落没有烧进画面的字幕、没有白屏(人工确认放行过这条视频的除外)、配乐文件与哈希对得上且不超出成片),不满足就报原因不开工;`run` 在后台跑(一集 1–3 分钟),结束时整行锁定(触发器)。
 **自检不过 = 导出失败**:文件留着给人查原因,但状态是 failed,界面标「不可发布」。
 """
 from __future__ import annotations
@@ -77,7 +78,7 @@ def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
             if found:
                 problems.append(textscan.problem(s["number"], found))
             blank = blankscan.cached(data_root, s["video_path"])                                # 同上:只读缓存
-            if blank:
+            if blank and blankscan.override_for(store, data_root, s) is None:                   # 人工确认放行过这条视频的不拦
                 problems.append(blankscan.problem(s["number"], blank))
     try:
         media.require_ffmpeg()
@@ -107,7 +108,8 @@ def begin(store: Store, data_root: Path, episode_id: int, producer: str) -> int:
     problems += [f"段落 {n} 的视频没有音轨" for n, p in probes.items() if not p.has_audio]
     videos = [{"segment_id": s["id"], "number": s["number"], "video_path": s["video_path"],
                "sha256": sha256_file(root / s["video_path"]), "subtitle_path": s["subtitle_path"],
-               "subtitle_sha256": sha256_file(root / s["subtitle_path"]) if s["subtitle_path"] else None}
+               "subtitle_sha256": sha256_file(root / s["subtitle_path"]) if s["subtitle_path"] else None,
+               "blank_override": blankscan.snapshot(blankscan.override_for(store, root, s))}
               for s in segs]
     cues = music.snapshot(store, episode_id)
     problems += provenance.problems(provenance.build(store, root, episode_id, produce_id="", producer=producer,
@@ -163,7 +165,8 @@ def run(store: Store, data_root: Path, export_id: int) -> None:
     burned = []
     for v in videos:                       # 白屏检测(ffmpeg,每段一两秒)+ 烧字幕检测(OCR,每段约半分钟),结果都缓存:命中就不导出
         blank = blankscan.check(root, v["video_path"])
-        if blank:
+        released = v.get("blank_override") and v["blank_override"]["sha256"] == v["sha256"]    # 只认 begin 时的快照
+        if blank and not released:
             burned.append(blankscan.problem(v["number"], blank))
         seg = repo.get(store, "segment", v["segment_id"])
         found = textscan.check(root, v["video_path"], _lines(seg), _context(seg))

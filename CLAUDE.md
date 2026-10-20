@@ -84,6 +84,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   画面里的字与台词 / 描述 / 视频提示词对得上就**拦导出**(匾额对联不算);单测里 OCR 被 `tests/conftest.py` 换成看不见字的假读者。
   **白屏检测** `cut/blankscan.py`:近白像素(亮度 ≥ 200)占画面 ≥ 35% 连续 ≥ 0.5 秒就**拦导出**(实战是四视图白底带进视频,不是整屏白;
   标定 spike-results/2026-10-20-白屏检测标定.md),同样按 sha256 缓存、单测里被 conftest 换成「没白屏」。
+  误报由人在视频卡片上**填理由放行**(`blank_override` 表,库结构 v12,写下不可改):只认那条视频的 sha256,换了视频自动失效;
+  导出 begin 时快照进 `inputs_json` 每段一项,run 只认快照,溯源报告列「人工确认放行」。
   **配乐** `cut/music.py` + `music_cue` 表(库结构 v11):人上传**有许可**的音乐(license ★必填,不做 AI 生成配乐 —— 许可证红线),
   整集时间轴上多段,台词区间按字幕自动压低;`begin` 把配乐快照进 `export.music_json`(不可改),两版都混;读回自检第 9 项「配乐」对成片**实测**
   cue 内有音乐、cue 外与原音轨一致(阈值 spike-results/2026-10-20-配乐读回自检阈值标定.md)

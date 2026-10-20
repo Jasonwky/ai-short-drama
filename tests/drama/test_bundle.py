@@ -280,3 +280,21 @@ def test_music_cues_and_their_files_travel(store, project, tmp_path):
     (project["root"] / "assets/music/abc.mp3").unlink()
     with pytest.raises(ValueError, match="文件不在本机:assets/music/abc.mp3"):
         bundle.export_bundle(store, project["root"], project["drama"])
+
+
+def test_blank_overrides_travel_and_still_match_the_video(store, project, tmp_path):
+    """v12 白屏放行:跟着段落走,视频路径加前缀;文件逐字节相同,哈希照样对得上 —— 导入后放行仍有效。"""
+    from tools.cut import blankscan
+    repo.add_blank_override(store, project["seg"], video_path="videos/s1.mp4",
+                            sha256=bundle._sha256(project["root"] / "videos/s1.mp4"), spans=[[1.0, 2.5]],
+                            reason="雪景,本来就白")
+    rel = bundle.export_bundle(store, project["root"], project["drama"])
+    dest_root = tmp_path / "dst"
+    dest = Store(":memory:")
+    new = bundle.import_bundle(dest, dest_root, project["root"] / rel)
+    seg = dest.conn.execute("SELECT s.* FROM segment s JOIN episode e ON e.id = s.episode_id WHERE e.drama_id = ?",
+                            (new,)).fetchone()
+    o = blankscan.override_for(dest, dest_root, seg)
+    assert o is not None and o["segment_id"] == seg["id"] and o["reason"] == "雪景,本来就白"
+    assert o["video_path"] == seg["video_path"] and o["video_path"].startswith("imports/")
+    assert json.loads(o["spans_json"]) == [[1.0, 2.5]]

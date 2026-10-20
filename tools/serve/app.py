@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -21,6 +22,17 @@ from tools.serve import comfy_shim
 from tools.serve.runtime import Runtime
 
 STATIC = Path(__file__).resolve().parent / "static"
+
+
+_KIND = {"int": "整数", "float": "数字", "bool": "是 / 否"}
+
+
+def _field_problem(e: dict) -> str:
+    name = e["loc"][-1]
+    if e["type"] == "missing":
+        return f"{name} 没填"
+    want = next((v for k, v in _KIND.items() if e["type"].startswith(k)), "正确的格式")
+    return f"{name} 应为{want}(收到「{e.get('input')}」)"
 
 
 def create_app(runtime: Runtime) -> FastAPI:
@@ -34,6 +46,12 @@ def create_app(runtime: Runtime) -> FastAPI:
     @app.exception_handler(ValueError)
     async def refused(request: Request, exc: ValueError):
         return common.render(request, "error.html", "", message=str(exc),
+                             back=request.headers.get("referer") or "/", status_code=400)
+
+    @app.exception_handler(RequestValidationError)
+    async def malformed(request: Request, exc: RequestValidationError):
+        """表单字段缺 / 类型不对(手改请求、旧页面):与其他拒绝原因一样给人话的 400,不给英文 422。"""
+        return common.render(request, "error.html", "", message="表单填得不对:" + ";".join(map(_field_problem, exc.errors())),
                              back=request.headers.get("referer") or "/", status_code=400)
 
     @app.exception_handler(LLMError)

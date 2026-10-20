@@ -26,3 +26,27 @@ def test_videos_panel_ignores_cache_of_a_replaced_video(client, runtime, store, 
     blankscan.check(runtime.data_root, "videos/s1.mp4")
     _video(runtime.data_root, body=b"another-video")
     assert "data-blank-screen" not in client.get(f"/episode/{sample['episode']}/videos").text
+
+
+def test_confirm_not_blank_with_a_reason_releases_this_video(client, runtime, store, sample, monkeypatch):
+    _video(runtime.data_root)
+    monkeypatch.setattr(blankscan, "detect", lambda path: [blankscan.Span(2.33, 6.21)])
+    blankscan.check(runtime.data_root, "videos/s1.mp4")
+    page = client.get(f"/episode/{sample['episode']}/videos").text
+    assert "data-blank-reason" in page and "data-blank-confirm" in page
+    r = client.post(f"/segment/{sample['seg']}/blank-override", data={"reason": "  "})
+    assert r.status_code == 400 and "★必填" in r.text
+    r = client.post(f"/segment/{sample['seg']}/blank-override", data={"reason": "雪景,本来就白"})
+    assert r.status_code == 200
+    assert "data-blank-override" in r.text and "雪景,本来就白" in r.text and "已人工确认放行" in r.text
+    assert "data-blank-confirm" not in r.text
+    _video(runtime.data_root, body=b"another-video")                           # 换了视频:放行跟着失效
+    blankscan.check(runtime.data_root, "videos/s1.mp4")
+    page = client.get(f"/episode/{sample['episode']}/videos").text
+    assert "data-blank-override" not in page and "data-blank-confirm" in page
+
+
+def test_confirm_refuses_a_video_without_a_blank_hit(client, runtime, store, sample):
+    _video(runtime.data_root)
+    r = client.post(f"/segment/{sample['seg']}/blank-override", data={"reason": "雪景"})
+    assert r.status_code == 400 and "没查出白屏" in r.text

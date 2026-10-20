@@ -4,7 +4,7 @@ import html
 import json
 
 from tests.cut.conftest import done_task, mp4_bytes, two_segments  # noqa: F401
-from tests.serve.test_trace_views import _export
+from tests.serve.test_trace_views import _export, _with_music
 from tools.cut import provenance
 from tools.drama import repo
 from tools.drama.tasks import create_task, set_task_state
@@ -104,3 +104,26 @@ def test_params_show_chinese_as_is_and_timeline_cells_do_not_wrap(client, store,
     assert "这块玉佩,是我母亲留给我的。" in client.get(f"/task/{t}").text.split("data-task-params")[1]
     page = client.get("/trace").text
     assert page.count('class="nowrap"') >= 3
+
+
+def test_export_snapshot_page_lists_the_music(client, runtime, store, two_segments):
+    s = two_segments
+    runtime.data_root = s["root"]
+    eid = _export(store, s["root"], s)
+    _with_music(s["root"], eid)
+    page = client.get(f"/trace/export/{eid}").text
+    assert "data-export-music" in page and "自购曲库 #42" in page and "人工提供,非 AI 生成" in page
+    assert "assets/music/song.wav" in page and "1.0–9.0 秒" in page
+
+
+def test_export_snapshot_page_shows_a_blank_screen_release(client, runtime, store, two_segments):
+    s = two_segments
+    runtime.data_root = s["root"]
+    eid = _export(store, s["root"], s)
+    rep = s["root"] / "outputs/exports/x/provenance.json"
+    report = json.loads(rep.read_text(encoding="utf-8"))
+    report["segments"][0]["blank_override"] = {"spans": [[1.0, 2.0]], "reason": "雪景,本来就白",
+                                               "created_at": "2026-10-20T12:00:00+00:00"}
+    rep.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    page = client.get(f"/trace/export/{eid}").text
+    assert "data-blank-release" in page and "人工确认放行:段落 1,第 1.0–2.0 秒,雪景,本来就白" in page

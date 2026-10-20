@@ -182,6 +182,65 @@ def test_blank_screen_blocks_export(store, two_segments, monkeypatch):
         export.begin(store, root, s["episode"], PRODUCER)
 
 
+
+def test_confirmed_blank_screen_passes_and_is_in_the_report(store, two_segments, monkeypatch):
+    # 雪景之类本来就白的画面:人填理由放行,只对这条视频(sha256)有效(用户 2026-10-20 定)
+    from tools.cut import blankscan
+    s, root = two_segments, two_segments["root"]
+    monkeypatch.setattr(blankscan, "detect", lambda path: [blankscan.Span(0.2, 0.9)] if "v2" in str(path) else [])
+    with pytest.raises(ValueError, match="没查出白屏"):                      # 没查过 / 没命中:没什么可放行的
+        blankscan.confirm(store, root, s["seg2"], "雪景,本来就白")
+    blankscan.check(root, "outputs/tasks/v2/clip.mp4")
+    with pytest.raises(ValueError, match="★必填"):
+        blankscan.confirm(store, root, s["seg2"], "   ")
+    blankscan.confirm(store, root, s["seg2"], " 雪景,本来就白 ")
+    assert not any("画面近乎全白" in p for p in export.readiness(store, root, s["episode"]))
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    snap = {v["number"]: v["blank_override"] for v in json.loads(export.get(store, eid)["inputs_json"])}
+    assert snap[1] is None and snap[2]["reason"] == "雪景,本来就白" and snap[2]["spans"] == [[0.2, 0.9]]
+    export.run(store, root, eid)
+    row = export.get(store, eid)
+    assert row["state"] == "done", row["checks_json"]
+    report = json.loads((root / row["report_path"]).read_text(encoding="utf-8"))
+    assert report["segments"][1]["blank_override"]["reason"] == "雪景,本来就白"
+    md = (root / row["report_path"]).with_suffix(".md").read_text(encoding="utf-8")
+    assert f"人工确认放行:段落 2,第 0.2–0.9 秒,雪景,本来就白,{snap[2]['created_at']}" in md
+
+
+def test_blank_override_expires_when_the_video_is_replaced(store, two_segments, monkeypatch, tmp_path):
+    from tests.cut.conftest import done_task
+    from tools.cut import blankscan
+    s, root = two_segments, two_segments["root"]
+    monkeypatch.setattr(blankscan, "detect", lambda path: [blankscan.Span(0.2, 0.9)] if "v2" in str(path) else [])
+    blankscan.check(root, "outputs/tasks/v2/clip.mp4")
+    blankscan.confirm(store, root, s["seg2"], "雪景,本来就白")
+    other = tmp_path / "other.mp4"                                          # 重出了一版:内容不同的新视频
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(root / "outputs/tasks/v2/clip.mp4"), "-c", "copy",
+                    "-metadata", "comment=reroll", str(other)], check=True)
+    done_task(store, root, s["seg2"], "video", "outputs/tasks/v2b/clip.mp4", other.read_bytes(),
+              refs=["outputs/tasks/f2/frame.png"])
+    assert blankscan.override_for(store, root, repo.get(store, "segment", s["seg2"])) is None
+    blankscan.check(root, "outputs/tasks/v2b/clip.mp4")
+    assert any("段落 2 第 0.2–0.9 秒" in p for p in export.readiness(store, root, s["episode"]))
+    with pytest.raises(ValueError, match="重出这段再导"):
+        export.begin(store, root, s["episode"], PRODUCER)
+    # 挑回原来那版:哈希又对上了,放行自动恢复
+    repo.update(store, "segment", s["seg2"], video_path="outputs/tasks/v2/clip.mp4")
+    assert not any("画面近乎全白" in p for p in export.readiness(store, root, s["episode"]))
+
+
+def test_blank_override_snapshot_is_checked_again_at_run(store, two_segments, monkeypatch):
+    """begin 时没有放行,run 才查出白屏:照样拦(放行只认 begin 快照里的,不在 run 时临时去库里找)。"""
+    from tools.cut import blankscan
+    s, root = two_segments, two_segments["root"]
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    monkeypatch.setattr(blankscan, "detect", lambda path: [blankscan.Span(0.2, 0.9)] if "v2" in str(path) else [])
+    blankscan.check(root, "outputs/tasks/v2/clip.mp4")
+    blankscan.confirm(store, root, s["seg2"], "雪景,本来就白")
+    with pytest.raises(media.CutError, match="段落 2 第 0.2–0.9 秒画面"):
+        export.run(store, root, eid)
+
+
 # ── 配乐 ────────────────────────────────────────────────
 
 def _song(root, secs=5):
@@ -289,3 +348,24 @@ def test_cue_edits_after_begin_do_not_change_this_export(store, two_segments):
     assert row["state"] == "done", row["checks_json"]
     [m] = json.loads(row["music_json"])
     assert (m["start_sec"], m["end_sec"]) == (1.0, 2.0)
+
+
+def test_checker_catches_ducking_that_did_not_happen(store, two_segments):
+    """台词处没压低(混音时 duck_db 当成 0):旧自检只量非台词区间,全 PASS;投影判据要把它判 FAIL
+    (spike-results/2026-10-20-配乐读回自检阈值标定.md「台词处压低」:真片正常三档投影偏差 ≤ 0.2 dB,失效 +9.95 dB)。"""
+    s, root = two_segments, two_segments["root"]
+    _with_cue(store, s, start_sec=0.0, end_sec=2.0, fade_in=0.1, fade_out=0.1, gain_db=0.0, duck_db=-12.0)
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    export.run(store, root, eid)
+    row = export.get(store, eid)
+    good = {c["name"]: c for c in json.loads(row["checks_json"])}["配乐"]
+    assert good["ok"] and "台词处压低" in good["detail"] and "与设定差" in good["detail"], good
+    videos = json.loads(row["inputs_json"])
+    speech = music.speech_of([(c, o) for c, o, _ in export._parts(root, videos)])
+    [cue] = json.loads(row["music_json"])
+    media.encode_episode([root / v["video_path"] for v in videos], root / "noduck.mp4", None,
+                         music=music.mixes(root, [cue | {"duck_db": 0.0}], speech))
+    checks = export.check(store, root, row, row["labeled_path"], "noduck.mp4", row["report_path"],
+                          media.Label.for_size(384, 672))
+    bad = {c["name"]: c["detail"] for c in checks if not c["ok"]}
+    assert "配乐" in bad and "台词处没压低" in bad["配乐"], bad
