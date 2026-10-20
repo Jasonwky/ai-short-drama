@@ -6,6 +6,7 @@
   段落 2 点「用段落 1 视频的尾帧」→ 首帧出现 → 视频面板「补全本集缺的视频」→ 确认页 → 段落 2 视频出现;
   视频面板「补全本集缺的字幕」→ 确认页 → 两段的字幕逐句出现(假对齐脚本「听见」的是两段台词);
   成片面板填服务提供者编码点「导出成片」→ 等自检通过、成片播放器出现(本机真 ffmpeg);
+  成片面板上传配乐(合成的粉红噪声)→ 改起止 → 音量曲线与台词底色出现(截图)→ 试听出播放器 → 再导出 → 自检「配乐」PASS;
   立项面板「导出工程」→ 工程包链接出现 →「导入为新剧」→ 新剧的资产面板打开;
   大纲面板贴原文点「下一步:看分批」→ 分批页出现;资产面板改角色声音描述 → 先出代价确认页(已有视频会作废);
   资产面板给没图的道具「上传」参考图 → 图出现;对它点「从图反推描述」→ 假 LLM 看不见图,被校验数字拦下(失败带原因);
@@ -29,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -85,6 +87,8 @@ def seed_demo(store: Store, data_root: Path) -> dict:
     jade = repo.add_prop(store, d, "玉佩", image_path="assets/jade.png", final_prompt="A green jade pendant.")
     photo = repo.add_prop(store, d, "旧照片")                  # 没有参考图:留给「上传」链路
     (data_root / "upload_demo.png").write_bytes(_png(96, 96, 200))
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "anoisesrc=color=pink:amplitude=0.3", "-t", "3",
+                    "-ac", "2", str(data_root / "demo_song.wav")], check=True)       # 配乐链路:合成的,无版权问题
     seg = repo.add_segment(
         store, ep, 1, scene_id=yard, duration_sec=8.0, reference_mode="first",
         description="【镜头1】林小雨低头看着玉佩。【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」",
@@ -234,6 +238,29 @@ def _blank_video(store: Store, root: Path, segment_id: int):
         if not blankscan.check(root, rel):
             raise RuntimeError("现造的白屏片没被白屏检测查出来")
         page.reload()
+
+
+def _music_cue(shot: Path):
+    """配乐卡片:把起止改成成片第 1–2 秒(段落 2 的位置,淡入淡出各 0.2 秒)并保存;曲线与台词底色必须画出来,截图留证。"""
+    def act(page) -> None:
+        card = page.locator("[data-music-cue]").first
+        for name, value in (("start_sec", "1"), ("end_sec", "2"), ("fade_in", "0.2"), ("fade_out", "0.2")):
+            card.locator(f'[data-music-field="{name}"]').fill(value)
+        card.locator("[data-music-save]").click()
+        page.wait_for_load_state()
+        curve = page.locator("[data-music-cue] [data-music-curve]").first
+        curve.scroll_into_view_if_needed()
+        page.screenshot(path=str(shot), full_page=True)
+        points = curve.locator("polyline").get_attribute("points") or ""
+        if len(points.split()) < 10 or not curve.locator("[data-music-speech]").count():
+            raise RuntimeError(f"音量曲线没画出来:{len(points.split())} 个点,台词底色 {curve.locator('[data-music-speech]').count()} 块")
+    return act
+
+
+def _expect(selector: str, why: str):
+    def act(page) -> None:
+        if not page.locator(selector).count():
+            raise RuntimeError(why)
     return act
 
 
@@ -301,6 +328,13 @@ def run(out_dir: Path) -> dict:
                     ("videos", "字幕区出现台词外多说提醒", {}, [], f"#seg-{seg} [data-extra-speech]", 20),
                     ("final", "导出成片", {"[data-producer]": "SELFTEST-ONLY"}, ["[data-export]"],
                      '[data-export-state="done"] [data-export-video]', 90),
+                    # 配乐:第二次导出(上一条是 #1),等的是 #2 的自检里「配乐」PASS
+                    ("final", "配乐:上传 → 设起止 → 曲线 → 试听 → 再导出 → 自检「配乐」PASS",
+                     {"[data-music-file]": lambda: work / "demo_song.wav",
+                      "[data-music-new-license]": "自测用合成音乐(粉红噪声,ffmpeg 现造),无版权"},
+                     ["[data-music-upload-button]", _music_cue(out_dir / "flow_music_curve.png"), "[data-music-preview]",
+                      _expect("[data-music-audio]", "点了试听,页面上没有出现播放器"), "[data-export]"],
+                     '[data-export-row="2"][data-export-state="done"] [data-check-name="配乐"][data-check-ok="1"]', 120),
                     ("projects", "导出工程", {}, ["[data-export-bundle]"], "[data-bundle-link]", 20),
                     ("projects", "导入为新剧", {"[data-bundle-file]": bundle_zip}, ["[data-import-button]"],
                      "[data-asset-col=character] [data-asset]", 20),

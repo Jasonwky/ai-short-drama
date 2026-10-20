@@ -63,3 +63,20 @@ def test_cannot_set_scene_from_another_drama(store, sample):
         repo.set_scene(store, sample["seg"], far)
     with pytest.raises(ValueError, match="另一部剧"):
         repo.add_segment(store, sample["episode"], 2, scene_id=far)
+
+
+def test_music_cues_are_written_through_the_whitelist(store, sample):
+    cid = repo.add_music_cue(store, sample["episode"], path="assets/music/a.mp3", sha256="0" * 64, license="曲库 #1",
+                             start_sec=1.0, end_sec=9.0, fade_in=0.5)
+    repo.update(store, "music_cue", cid, gain_db=-20.0, duck_db=-6.0)
+    row = repo.get(store, "music_cue", cid)
+    assert (row["start_sec"], row["gain_db"], row["duck_db"], row["fade_in"], row["fade_out"]) == (1.0, -20, -6, 0.5, 1.0)
+    with pytest.raises(ValueError, match="不允许写入字段"):
+        repo.update(store, "music_cue", cid, path="elsewhere.mp3")          # 文件跟内容哈希绑定,不改
+    with pytest.raises(ValueError, match="不允许写入字段"):
+        repo.add_music_cue(store, sample["episode"], path="a", sha256="b", license="c", start_sec=0, end_sec=1,
+                           created_at="2000")
+    repo.delete_music_cue(store, cid)
+    assert repo.music_cues(store, sample["episode"]) == []
+    with pytest.raises(KeyError):
+        repo.delete_music_cue(store, cid)

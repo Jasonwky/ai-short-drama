@@ -2,10 +2,11 @@
 """真 ffmpeg 真导出(两段 1 秒样片,几秒钟)。"""
 import json
 import sqlite3
+import subprocess
 
 import pytest
 
-from tools.cut import export, media
+from tools.cut import export, media, music
 from tools.drama import repo
 
 PRODUCER = "91310000MA1234567X"
@@ -18,7 +19,7 @@ def test_export_writes_both_versions_report_and_passes_readback(store, two_segme
     row = export.get(store, eid)
     checks = json.loads(row["checks_json"])
     assert row["state"] == "done" and row["error"] is None, checks
-    assert all(c["ok"] for c in checks) and len(checks) == 8
+    assert all(c["ok"] for c in checks) and len(checks) == 9
     assert export.saved_producer(store) == PRODUCER                       # 记住,下次预填
 
     tags = media.format_tags(root / row["labeled_path"])
@@ -179,3 +180,112 @@ def test_blank_screen_blocks_export(store, two_segments, monkeypatch):
     assert any("段落 2 第 0.2–0.9 秒" in p for p in export.readiness(store, root, s["episode"]))
     with pytest.raises(ValueError, match="重出这段再导"):
         export.begin(store, root, s["episode"], PRODUCER)
+
+
+# ── 配乐 ────────────────────────────────────────────────
+
+def _song(root, secs=5):
+    """一首「有许可的」合成音乐:粉红噪声立体声。"""
+    src = root / "song_src.wav"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "anoisesrc=color=pink:amplitude=0.3",
+                    "-t", str(secs), "-ac", "2", str(src)], check=True)
+    return music.stage(root, src.read_bytes(), "song.wav")
+
+
+def _with_cue(store, s, **over):
+    rel = _song(s["root"])
+    return music.add(store, s["root"], s["episode"], rel, "自购曲库 #42,商用授权", **{
+        "start_sec": 1.0, "end_sec": 2.0, "fade_in": 0.2, "fade_out": 0.2, **over})
+
+
+def test_music_is_mixed_into_both_versions_and_read_back(store, two_segments):
+    s, root = two_segments, two_segments["root"]
+    cid = _with_cue(store, s, gain_db=0.0)                 # 满音量:混没混,电平上一眼看得出
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    export.run(store, root, eid)
+    row = export.get(store, eid)
+    checks = {c["name"]: c for c in json.loads(row["checks_json"])}
+    assert row["state"] == "done", checks
+    assert len(checks) == 9 and checks["配乐"]["ok"] and f"#{cid}" in checks["配乐"]["detail"]
+    ref = media.rms_envelope(root / "outputs/tasks/v2/clip.mp4")[5]               # 段落 2 中间:原片只有 440 Hz 对白
+    for key in ("labeled_path", "plain_path"):                                      # 两版都混了
+        assert media.rms_envelope(root / row[key])[15] > ref * 1.05
+    [m] = json.loads((root / row["report_path"]).read_text(encoding="utf-8"))["music"]
+    assert m["license"] == "自购曲库 #42,商用授权" and m["source"] == "人工提供,非 AI 生成"
+    assert (m["start_sec"], m["end_sec"]) == (1.0, 2.0) and len(m["sha256"]) == 64
+    assert "人工提供,非 AI 生成" in (root / row["report_path"]).with_suffix(".md").read_text(encoding="utf-8")
+
+
+def test_without_music_the_check_says_so(store, two_segments):
+    s, root = two_segments, two_segments["root"]
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    export.run(store, root, eid)
+    checks = {c["name"]: c for c in json.loads(export.get(store, eid)["checks_json"])}
+    assert checks["配乐"]["ok"] and checks["配乐"]["detail"] == "本集无配乐"
+
+
+def test_checker_catches_music_that_is_missing_from_the_file(store, two_segments):
+    """把没混音乐的成片交给检查器:「配乐」必须 FAIL。"""
+    s, root = two_segments, two_segments["root"]
+    _with_cue(store, s)
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    export.run(store, root, eid)
+    row = export.get(store, eid)
+    media.encode_episode([root / "outputs/tasks/v1/clip.mp4", root / "outputs/tasks/v2/clip.mp4"],
+                         root / "nomusic.mp4", None)
+    checks = export.check(store, root, row, row["labeled_path"], "nomusic.mp4", row["report_path"],
+                          media.Label.for_size(384, 672))
+    bad = {c["name"]: c["detail"] for c in checks if not c["ok"]}
+    assert "配乐" in bad and "没混进去" in bad["配乐"]
+
+
+def test_checker_catches_dialogue_that_was_turned_down(store, two_segments):
+    """原音轨被压低 / 改动(cue 外与原音轨对不上):「配乐」必须 FAIL。"""
+    s, root = two_segments, two_segments["root"]
+    _with_cue(store, s)
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    export.run(store, root, eid)
+    row = export.get(store, eid)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(root / row["plain_path"]), "-c:v", "copy",
+                    "-af", "volume=0.5", "-c:a", "aac", "-b:a", "128k", str(root / "quiet.mp4")], check=True)
+    checks = export.check(store, root, row, row["labeled_path"], "quiet.mp4", row["report_path"],
+                          media.Label.for_size(384, 672))
+    bad = {c["name"]: c["detail"] for c in checks if not c["ok"]}
+    assert "配乐" in bad and "cue 外" in bad["配乐"]
+
+
+def test_music_problems_block_export(store, two_segments):
+    s, root = two_segments, two_segments["root"]
+    cid = _with_cue(store, s, start_sec=1.0, end_sec=2.5)
+    probs = export.readiness(store, root, s["episode"])
+    assert any(f"配乐 #{cid}" in p and "超出成片" in p for p in probs)
+    repo.update(store, "music_cue", cid, end_sec=2.0)
+    assert export.readiness(store, root, s["episode"]) == []
+    f = root / repo.get(store, "music_cue", cid)["path"]
+    f.write_bytes(b"swapped")
+    assert any("哈希" in p for p in export.readiness(store, root, s["episode"]))
+    f.unlink()
+    with pytest.raises(ValueError, match=f"配乐 #{cid} 的文件不在本机"):
+        export.begin(store, root, s["episode"], PRODUCER)
+
+
+def test_music_swapped_after_begin_fails_the_run(store, two_segments):
+    s, root = two_segments, two_segments["root"]
+    cid = _with_cue(store, s)
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    (root / repo.get(store, "music_cue", cid)["path"]).write_bytes(b"other")
+    with pytest.raises(media.CutError, match="配乐"):
+        export.run(store, root, eid)
+
+
+def test_cue_edits_after_begin_do_not_change_this_export(store, two_segments):
+    """导出按 begin 时的配乐快照做:之后改 cue 不影响这次的混音、报告与自检。"""
+    s, root = two_segments, two_segments["root"]
+    cid = _with_cue(store, s)
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    repo.update(store, "music_cue", cid, start_sec=0.0, end_sec=1.0)
+    export.run(store, root, eid)
+    row = export.get(store, eid)
+    assert row["state"] == "done", row["checks_json"]
+    [m] = json.loads(row["music_json"])
+    assert (m["start_sec"], m["end_sec"]) == (1.0, 2.0)

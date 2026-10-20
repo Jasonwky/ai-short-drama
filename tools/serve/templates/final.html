@@ -21,6 +21,61 @@
   </table>
 </section>
 
+<section class="card" id="music" data-music>
+  <h2>配乐</h2>
+  <p class="hint">上传<b>有许可的</b>音乐(不做 AI 生成),按成片时间轴挂一段或多段;导出时两版都混进去,原音轨(对白)不衰减。
+    台词期间音乐再压低(前后各 0.3 秒过渡);溯源报告里标「{{ music_note }}」。
+    曲线横轴是成片时间(0–{{ "%.1f" | format(axis) }} 秒),纵轴 0 dB(顶)到 {{ curve[2] | int }} dB(底),灰底是台词区间。</p>
+  {% if not timeline_exact %}<p class="status-bad">有段落还没有视频:时间轴按设定时长估算,曲线与台词位置是近似的</p>{% endif %}
+  {% for m in cues %}
+    {% set c = m.row %}
+    <div class="export-row" id="music-{{ c.id }}" data-music-cue="{{ c.id }}">
+      <p>#{{ c.id }} · <code>{{ c.path }}</code> · sha256 <code>{{ c.sha256[:16] }}</code></p>
+      <form method="post" action="/music/{{ c.id }}" data-music-form>
+        <label>许可说明(★必填:来源与许可)</label>
+        <input type="text" name="license" value="{{ c.license }}" data-music-license>
+        <div class="row">
+          {% for name, label in (("start_sec", "起点(秒)"), ("end_sec", "终点(秒)"), ("gain_db", "音量(dB)"),
+                                 ("duck_db", "台词期间再压低(dB)"), ("fade_in", "淡入(秒)"), ("fade_out", "淡出(秒)")) %}
+            <div><label>{{ label }}</label>
+              <input type="number" step="0.1" name="{{ name }}" value="{{ c[name] }}" data-music-field="{{ name }}"></div>
+          {% endfor %}
+        </div>
+        <button class="btn small" type="submit" data-music-save>保存</button>
+      </form>
+      <svg viewBox="-36 -6 {{ curve[0] + 44 }} {{ curve[1] + 26 }}" width="{{ curve[0] + 44 }}" height="{{ curve[1] + 26 }}"
+           style="max-width: 100%; display: block; margin-top: 10px; font-family: var(--mono); font-size: 10px"
+           data-music-curve>
+        <rect x="0" y="0" width="{{ curve[0] }}" height="{{ curve[1] }}" fill="var(--paper)" stroke="var(--line)"></rect>
+        {% for x, w in m.curve.speech %}<rect x="{{ x }}" y="0" width="{{ w }}" height="{{ curve[1] }}" fill="var(--line)" data-music-speech></rect>{% endfor %}
+        <line x1="0" x2="{{ curve[0] }}" y1="{{ m.curve.gain_y }}" y2="{{ m.curve.gain_y }}" stroke="var(--ink-3)" stroke-dasharray="3 3"></line>
+        <polyline points="{{ m.curve.points }}" fill="none" stroke="var(--ink)" stroke-width="1.5"></polyline>
+        <text x="-4" y="8" text-anchor="end" fill="var(--ink-2)">0</text>
+        <text x="-4" y="{{ m.curve.gain_y + 3 }}" text-anchor="end" fill="var(--ink-2)">{{ c.gain_db | round(1) }}</text>
+        <text x="-4" y="{{ curve[1] }}" text-anchor="end" fill="var(--ink-2)">{{ curve[2] | int }}</text>
+        <text x="0" y="{{ curve[1] + 14 }}" fill="var(--ink-2)">0 s</text>
+        <text x="{{ curve[0] }}" y="{{ curve[1] + 14 }}" text-anchor="end" fill="var(--ink-2)">{{ "%.1f" | format(axis) }} s</text>
+      </svg>
+      <div class="row" style="align-items: center; margin-top: 8px">
+        <form method="post" action="/music/{{ c.id }}/preview"><button class="btn small" type="submit" data-music-preview>试听(只混音频)</button></form>
+        {% if m.preview %}<audio src="/media/{{ m.preview }}" controls preload="metadata" data-music-audio></audio>{% endif %}
+        <form method="post" action="/music/{{ c.id }}/delete"><button class="btn small danger" type="submit" data-music-delete>删除这条(文件保留)</button></form>
+      </div>
+    </div>
+  {% else %}
+    <div class="empty">还没有配乐</div>
+  {% endfor %}
+  <form method="post" action="/episode/{{ ep.id }}/music" enctype="multipart/form-data" data-music-upload>
+    <label>上传音乐({{ music_exts }})</label>
+    <input type="file" name="file" accept="{{ music_exts }}" data-music-file>
+    <label>许可说明(★必填:来源与许可,如曲库名 + 授权编号)</label>
+    <input type="text" name="license" data-music-new-license>
+    <label>起点(成片第几秒;终点默认到音乐结束或成片结束,挂上后可改)</label>
+    <input type="number" step="0.1" name="start_sec" value="0" data-music-new-start>
+    <button class="btn" type="submit" data-music-upload-button>上传并挂上</button>
+  </form>
+</section>
+
 <section class="card">
   <h2>导出</h2>
   <ul class="checklist" data-export-readiness>
@@ -48,7 +103,7 @@
         <table data-export-checks>
           <tr><th>自检项</th><th>结果</th><th>依据</th></tr>
           {% for c in e.checks %}
-            <tr><td>{{ c.name }}</td><td class="{{ 'status-ok' if c.ok else 'status-bad' }}">{{ "PASS" if c.ok else "FAIL" }}</td><td>{{ c.detail }}</td></tr>
+            <tr data-check-name="{{ c.name }}" data-check-ok="{{ 1 if c.ok else 0 }}"><td>{{ c.name }}</td><td class="{{ 'status-ok' if c.ok else 'status-bad' }}">{{ "PASS" if c.ok else "FAIL" }}</td><td>{{ c.detail }}</td></tr>
           {% endfor %}
         </table>
       {% endif %}

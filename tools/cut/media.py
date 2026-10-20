@@ -75,6 +75,57 @@ def probe(path: Path) -> Probe:
                  any(s["codec_type"] == "audio" for s in doc["streams"]))
 
 
+@dataclass(frozen=True)
+class Music:
+    """一条配乐:文件、成片时间轴上的起止、音量表达式(ffmpeg 表达式,t = 成片时间,见 cut/music.filter_expr)。"""
+    path: Path
+    start: float
+    end: float
+    volume: str
+
+
+def audio(path: Path) -> tuple[float, str]:
+    """(时长秒, 第一条音轨的声道布局)。没有音轨报 CutError —— 上传配乐时据此拒绝。"""
+    p = _run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,channel_layout,channels:format=duration",
+              "-of", "json", str(path)])
+    doc = json.loads(p.stdout)
+    a = [s for s in doc.get("streams", []) if s["codec_type"] == "audio"]
+    if not a:
+        raise CutError(f"{path} 里没有音轨")
+    return float(doc["format"]["duration"]), a[0].get("channel_layout") or f"{a[0]['channels']}c"
+
+
+def _music_graph(first: int, music: list[Music], src: str, layout: str) -> tuple[list[str], str, str]:
+    """把配乐逐条叠到音轨 src 上:返回 (额外的 -i 参数, 滤镜, 输出标签)。
+    配乐转成原音轨的声道布局(不把对白上混成立体声 —— 单声道上混会压低 3 dB);下混限幅到 1(立体声转单声道
+    不叠加成 1.4 倍,音量 dB 就是相对音乐文件本身);amix 不归一化:**原音轨不衰减**。"""
+    ins = [a for m in music for a in ("-i", str(m.path))]
+    fmt = f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts={layout}"
+    graph = [f"{src}{fmt}[a0]"]
+    for k, m in enumerate(music):
+        graph.append(f"[{first + k}:a:0]aresample=48000:ocl={layout}:rematrix_maxval=1,{fmt},atrim=duration={m.end - m.start:.3f},asetpts=PTS-STARTPTS,"
+                     f"adelay=delays={round(m.start * 1000)}:all=1,volume='{m.volume}':eval=frame[m{k}]")
+    labels = "".join(f"[m{k}]" for k in range(len(music)))
+    graph.append(f"[a0]{labels}amix=inputs={len(music) + 1}:duration=first:dropout_transition=0:normalize=0[am]")
+    return ins, ";".join(graph), "[am]"
+
+
+def mix_audio(clips: list[Path], music: list[Music], out: Path, *, trim: tuple[float, float] | None = None,
+              codec: list[str] | None = None) -> None:
+    """只拼音轨、叠配乐(不碰视频)。配乐试听用:trim 截出成片时间轴上的一段。"""
+    n = len(clips)
+    ins = [a for c in clips for a in ("-i", str(c))]
+    graph = "".join(f"[{i}:a:0]" for i in range(n)) + f"concat=n={n}:v=0:a=1[a]"
+    mins, mgraph, aout = _music_graph(n, music, "[a]", audio(clips[0])[1])
+    graph += ";" + mgraph
+    if trim is not None:
+        graph += f";{aout}atrim={trim[0]:.3f}:{trim[1]:.3f},asetpts=PTS-STARTPTS[at]"
+        aout = "[at]"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    _run(["ffmpeg", "-v", "error", "-y", *ins, *mins, "-filter_complex", graph, "-map", aout,
+          *(codec or ["-c:a", "aac", "-b:a", "128k"]), "-map_metadata", "-1", str(out)])
+
+
 def frame_count(path: Path) -> int:
     p = _run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
               "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(path)])
@@ -101,12 +152,18 @@ def _filter_path(p: Path) -> str:
     return s.replace(":", "\\:")
 
 
-def encode_episode(clips: list[Path], out: Path, label: Label | None, subtitles: Path | None = None) -> None:
-    """按顺序拼接(重编码),可选烧录字幕(整集 SRT,底部居中)与显式标识(左上角、全程)。**清空全部原有元数据**:
+def encode_episode(clips: list[Path], out: Path, label: Label | None, subtitles: Path | None = None,
+                   music: list[Music] = ()) -> None:
+    """按顺序拼接(重编码),可选烧录字幕(整集 SRT,底部居中)、显式标识(左上角、全程)与配乐。**清空全部原有元数据**:
     ComfyUI 的 mp4 里嵌着完整工作流(提示词、种子、参考图名),不能带进成片。"""
     n = len(clips)
     ins = [a for c in clips for a in ("-i", str(c))]
     graph = "".join(f"[{i}:v:0][{i}:a:0]" for i in range(n)) + f"concat=n={n}:v=1:a=1[v][a]"
+    aout = "[a]"
+    if music:
+        mins, mgraph, aout = _music_graph(n, list(music), "[a]", audio(clips[0])[1])
+        ins += mins
+        graph += ";" + mgraph
     vout = "[v]"
     if subtitles is not None:
         graph += (f";[v]subtitles=filename='{_filter_path(subtitles)}':fontsdir='{_filter_path(FONT.parent)}'"
@@ -118,7 +175,7 @@ def encode_episode(clips: list[Path], out: Path, label: Label | None, subtitles:
                   f":borderw={label.border}:bordercolor=black:x={label.margin}:y={label.margin}[vl]")
         vout = "[vl]"
     out.parent.mkdir(parents=True, exist_ok=True)
-    _run(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", graph, "-map", vout, "-map", "[a]",
+    _run(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", graph, "-map", vout, "-map", aout,
           "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
           "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-map_metadata", "-1", str(out)])
 
@@ -130,6 +187,13 @@ def rms_envelope(video: Path, step: float = 0.1) -> list[float]:
     samples = array.array("h", p.stdout)
     w = round(16000 * step)
     return [round(math.sqrt(sum(x * x for x in samples[i:i + w]) / w), 1) for i in range(0, len(samples) - w + 1, w)]
+
+
+def pcm(path: Path, duration: float | None = None) -> array.array:
+    """音轨解成单声道 16 kHz 的 16 位样本(配乐读回自检用)。duration 只取开头这么多秒。"""
+    p = _run(["ffmpeg", "-v", "error", "-i", str(path), *(["-t", f"{duration:.3f}"] if duration else []),
+              "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"], binary=True)
+    return array.array("h", p.stdout)
 
 
 def stream_sha256(path: Path) -> str:

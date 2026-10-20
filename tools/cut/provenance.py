@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from tools.cut.music import NOTE as MUSIC_NOTE
 from tools.drama import repo
 from tools.drama.db import Store
 from tools.serve.dispatch import sha256_file
@@ -58,9 +59,10 @@ def node(store: Store, root: Path, path: str) -> dict:
 
 
 def build(store: Store, data_root: Path, episode_id: int, *, produce_id: str, producer: str,
-          videos: list[dict]) -> dict:
+          videos: list[dict], music: list[dict] = ()) -> dict:
     """videos:导出时快照的 [{segment_id, number, video_path, subtitle_path?}],按顺序。
-    字幕的生成记录(对齐任务)以视频为输入,所以字幕这条链也一路追到素材。"""
+    字幕的生成记录(对齐任务)以视频为输入,所以字幕这条链也一路追到素材。
+    music:导出时快照的配乐 cue —— 人工提供、不是 AI 生成,照实列出文件、哈希、许可与起止。"""
     ep = repo.get(store, "episode", episode_id)
     drama = repo.get(store, "drama", ep["drama_id"])
     segs = []
@@ -72,7 +74,15 @@ def build(store: Store, data_root: Path, episode_id: int, *, produce_id: str, pr
                      "subtitles": node(store, Path(data_root), sub) if sub else None})
     return {"produce_id": produce_id, "content_producer": producer, "drama": drama["title"],
             "aspect_ratio": drama["aspect_ratio"], "episode": ep["number"], "license": LICENSE_NOTE,
-            "models": sorted(_models([n for s in segs for n in (s["video"], s["subtitles"]) if n])), "segments": segs}
+            "models": sorted(_models([n for s in segs for n in (s["video"], s["subtitles"]) if n])), "segments": segs,
+            "music": [_music(Path(data_root), c) for c in music]}
+
+
+def _music(root: Path, c: dict) -> dict:
+    f = root / c["path"]
+    return {"path": c["path"], "sha256": cached_sha256(f) if f.is_file() else None, "recorded_sha256": c["sha256"],
+            "license": c["license"], **{k: c[k] for k in ("start_sec", "end_sec", "gain_db", "duck_db", "fade_in",
+                                                         "fade_out")}, "source": MUSIC_NOTE}
 
 
 def _models(nodes: list[dict]) -> set[str]:
@@ -104,6 +114,11 @@ def problems(report: dict) -> list[str]:
             out.append(f"段落 {s['number']}:视频 {s['video']['path']} 在 task 表里没有生成记录")
         if s.get("subtitles") and s["subtitles"]["task"] is None:
             out.append(f"段落 {s['number']}:字幕 {s['subtitles']['path']} 在 task 表里没有生成记录")
+    for m in report.get("music", []):        # 早于配乐(v11)的报告没有这一项
+        if m["sha256"] is None:
+            out.append(f"配乐:文件不在本机 {m['path']}")
+        elif m["sha256"] != m["recorded_sha256"]:
+            out.append(f"配乐:{m['path']} 的内容与挂上时记的哈希不一致(文件被替换过)—— 溯源不成立")
     return list(dict.fromkeys(out))      # 字幕链里又走一遍视频,同一条问题只报一次
 
 
@@ -132,5 +147,10 @@ def to_markdown(report: dict) -> str:
         if s.get("subtitles"):
             lines.append("字幕:")
             emit(s["subtitles"], 0)
+        lines.append("")
+    if report.get("music"):
+        lines += ["## 配乐", ""]
+        lines += [f"- `{m['path']}` —— {m['source']} · {m['start_sec']:g}–{m['end_sec']:g} 秒 · "
+                  f"sha256 `{(m['sha256'] or '缺失')[:16]}` · 许可:{m['license']}" for m in report["music"]]
         lines.append("")
     return "\n".join(lines)

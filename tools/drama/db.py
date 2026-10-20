@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -269,6 +269,31 @@ KEYFRAME_DDL = [
 ]
 SCHEMA += "".join(f"{stmt};\n" for stmt in KEYFRAME_DDL)
 
+# v11:配乐(specs/2026-10-20-配乐白屏与替换神情-design.md 一)。人上传的有许可的音乐,按整集多段挂;
+# license 是★必填(空串在库这一层也拒)。导出记录快照当时的配乐(music_json),与 inputs_json 一样不可改 ——
+# 溯源报告与读回自检按快照算,begin 之后再改 cue 不影响这次导出
+MUSIC_DDL = [
+    """CREATE TABLE music_cue (
+  id INTEGER PRIMARY KEY,
+  episode_id INTEGER NOT NULL REFERENCES episode(id),
+  path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  license TEXT NOT NULL CHECK (length(trim(license)) > 0),
+  start_sec REAL NOT NULL CHECK (start_sec >= 0),
+  end_sec REAL NOT NULL,
+  gain_db REAL NOT NULL DEFAULT -14,
+  duck_db REAL NOT NULL DEFAULT -10,
+  fade_in REAL NOT NULL DEFAULT 1.0,
+  fade_out REAL NOT NULL DEFAULT 1.0,
+  created_at TEXT NOT NULL,
+  CHECK (end_sec > start_sec)
+)""",
+    "ALTER TABLE export ADD COLUMN music_json TEXT NOT NULL DEFAULT '[]'",
+    """CREATE TRIGGER export_music_immutable BEFORE UPDATE OF music_json ON export
+BEGIN SELECT RAISE(ABORT, '导出记录的身份字段不可变 —— 配乐快照与溯源报告绑定'); END""",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in MUSIC_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -299,6 +324,8 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE segment DROP COLUMN key_time_sec",
         "ALTER TABLE segment DROP COLUMN key_image_prompt",
         "ALTER TABLE segment DROP COLUMN key_frame_path"],
+    # v11:配乐 cue;导出记录加配乐快照
+    10: MUSIC_DDL,
 }
 
 

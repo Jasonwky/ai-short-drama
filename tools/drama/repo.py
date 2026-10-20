@@ -25,8 +25,11 @@ _COLUMNS: dict[str, set[str]] = {
                 "reference_mode", "first_frame_path", "last_frame_path", "video_path", "subtitle_path"},
     # segment_id 不在这里:关键帧建在哪段就属于哪段,不挪
     "segment_keyframe": {"time_sec", "image_prompt", "frame_path"},
+    # path / sha256 不在这里:文件按内容寻址,换文件就是新挂一条
+    "music_cue": {"license", "start_sec", "end_sec", "gain_db", "duck_db", "fade_in", "fade_out"},
 }
-_READABLE = {"drama", "episode", "character", "scene", "prop", "segment", "task", "host", "segment_keyframe"}
+_READABLE = {"drama", "episode", "character", "scene", "prop", "segment", "task", "host", "segment_keyframe",
+             "music_cue"}
 
 
 def _check_cols(table: str, fields: dict) -> None:
@@ -123,6 +126,27 @@ def delete_keyframe(store: Store, keyframe_id: int) -> None:
     with store.write() as c:
         if c.execute("DELETE FROM segment_keyframe WHERE id = ?", (keyframe_id,)).rowcount == 0:
             raise KeyError(f"segment_keyframe {keyframe_id} 不存在")
+
+
+def add_music_cue(store: Store, episode_id: int, *, path: str, sha256: str, **fields) -> int:
+    """给一集挂一条配乐。数字是否合理由 cut/music.validate 判(给人话原因),库约束兜底。"""
+    _check_cols("music_cue", fields)
+    get(store, "episode", episode_id)
+    return _insert(store, "music_cue", {"episode_id": episode_id, "path": path, "sha256": sha256, **fields,
+                                        "created_at": now()})
+
+
+def music_cues(store: Store, episode_id: int) -> list[sqlite3.Row]:
+    """这一集的配乐,按起点先后。"""
+    return store.conn.execute("SELECT * FROM music_cue WHERE episode_id = ? ORDER BY start_sec, id",
+                              (episode_id,)).fetchall()
+
+
+def delete_music_cue(store: Store, cue_id: int) -> None:
+    """删一条配乐。文件不删:同一个文件可能被别的 cue、旧导出的溯源引用着。"""
+    with store.write() as c:
+        if c.execute("DELETE FROM music_cue WHERE id = ?", (cue_id,)).rowcount == 0:
+            raise KeyError(f"music_cue {cue_id} 不存在")
 
 
 _HWM = "segment_id_hwm"
