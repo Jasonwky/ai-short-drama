@@ -54,6 +54,34 @@ def test_qwen_rejects_bad_tags_and_bad_sizes():
         build_qwen("x", ["a", "b", "c", "d"], 1)
 
 
+SECOND = "保持 Picture 1 的画面不变,只做以下修改:把画面中的丙换成 Picture 2(丙) 的长相、发型发饰和服装。"
+
+
+def test_qwen_second_pass_chains_after_the_first_decode():
+    wf = build_qwen("Picture 1 在 Picture 2 看着 Picture 3 和丙", ["a.png", "b.png", "c.png"], 7, size=(928, 1664),
+                    second_pass=(SECOND, ["d.png"]))
+    assert _dangling(wf) == []
+    enc = wf["32"]["inputs"]
+    assert enc["image1"] == ["28", 0] and wf[enc["image2"][0]]["inputs"]["image"] == "d.png" and "image3" not in enc
+    assert enc["prompt"] == SECOND
+    ks = wf["34"]["inputs"]
+    # 复用第一遍的模型 / 步数 / CFG / 负面条件:模板预设改步数两遍一起生效
+    assert (ks["model"], ks["steps"], ks["cfg"], ks["negative"]) == (["9", 0], ["12", 0], ["15", 0], ["24", 0])
+    assert ks["positive"] == ["33", 0] and ks["latent_image"] == ["30", 0] and ks["seed"] == 8
+    assert wf["29"]["inputs"]["images"] == ["35", 0]
+
+
+def test_qwen_without_second_pass_is_unchanged():
+    a = build_qwen("Picture 1", ["a.png"], 1, size=(928, 1664))
+    assert a == build_qwen("Picture 1", ["a.png"], 1, size=(928, 1664), second_pass=None)
+    assert "32" not in a
+
+
+def test_qwen_second_pass_checks_its_own_tags():
+    with pytest.raises(ValueError, match="第二遍"):
+        build_qwen("Picture 1", ["a.png"], 1, size=(928, 1664), second_pass=("只改 Picture 1", ["d.png"]))
+
+
 def test_region_crops_edits_and_pastes_back():
     wf = build_qwen_region("保持 Picture 1 不变,把其中的人物换成 Picture 2(丙)。", "frame.png", "ref.png",
                            (64, 160, 272, 384), (928, 1664), 5)

@@ -48,9 +48,13 @@ def _raise_if(problems: list[str]) -> None:
 
 
 def build_qwen(prompt: str, image_names: list[str], seed: int, *, preset: str = "fast",
-               size: tuple[int, int] | None = None, angles_lora: bool = False) -> dict:
+               size: tuple[int, int] | None = None, angles_lora: bool = False,
+               second_pass: tuple[str, list[str]] | None = None) -> dict:
     """Qwen-Image-Edit-2511(GGUF)。size 为 None 时输出画幅跟随参考图 1(改背景、出四视图);
-    合成分镜首帧**必须给 size** —— 闸门 0-3 实测提示词压不过 latent 尺寸。"""
+    合成分镜首帧**必须给 size** —— 闸门 0-3 实测提示词压不过 latent 尺寸。
+
+    second_pass = (提示词, [图名…]):参考图超过 3 张时的第二遍(`spike-results/2026-10-19-首帧多参考图实测.md`),
+    第一遍出的图当 Picture 1、再接最多 2 张参考图,串在同一份工作流末尾,只出一张图。"""
     if not 1 <= len(image_names) <= 3:
         raise ValueError(f"Qwen-Image-Edit 需要 1–3 张参考图,给了 {len(image_names)} 张")
     _raise_if(check_tags(prompt, len(image_names), dialect="qwen"))
@@ -81,7 +85,33 @@ def build_qwen(prompt: str, image_names: list[str], seed: int, *, preset: str = 
         wf["27"]["inputs"]["latent_image"] = ["30", 0]
         wf.pop("25")
         wf.pop("26")
+    if second_pass is not None:
+        if size is None:
+            raise ValueError("第二遍只用于合成参考帧,要给 size")
+        _second_pass(wf, *second_pass, seed)
     return wf
+
+
+SECOND_LOADS = ("31", "36")      # 第二遍的参考图节点(Picture 2 / 3);32 编码 · 33 参考方式 · 34 采样 · 35 解码
+
+
+def _second_pass(wf: dict, prompt: str, image_names: list[str], seed: int) -> None:
+    if not 1 <= len(image_names) <= len(SECOND_LOADS):
+        raise ValueError(f"第二遍只能再接 1–{len(SECOND_LOADS)} 张参考图,给了 {len(image_names)} 张")
+    problems = check_tags(prompt, len(image_names) + 1, dialect="qwen")
+    if problems:
+        raise ValueError("第二遍:" + ";".join(problems))
+    images = {"image1": ["28", 0]}
+    for i, (node, name) in enumerate(zip(SECOND_LOADS, image_names), 2):
+        wf[node] = {"class_type": "LoadImage", "inputs": {"image": name}}
+        images[f"image{i}"] = [node, 0]
+    wf["32"] = {"class_type": "TextEncodeQwenImageEditPlus",
+                "inputs": {"clip": ["16", 0], "vae": ["17", 0], "prompt": prompt, **images}}
+    wf["33"] = {"class_type": "FluxKontextMultiReferenceLatentMethod",
+                "inputs": {"conditioning": ["32", 0], "reference_latents_method": "index_timestep_zero"}}
+    wf["34"] = {"class_type": "KSampler", "inputs": {**wf["27"]["inputs"], "positive": ["33", 0], "seed": seed + 1}}
+    wf["35"] = {"class_type": "VAEDecode", "inputs": {"samples": ["34", 0], "vae": ["17", 0]}}
+    wf["29"]["inputs"]["images"] = ["35", 0]
 
 
 def build_qwen_region(prompt: str, source_name: str, ref_name: str, box: tuple[int, int, int, int],

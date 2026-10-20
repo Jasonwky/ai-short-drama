@@ -15,7 +15,7 @@
   工作流面板改首帧模板(调度器)→ 确认页列出改动 → 保存 →「设为当前」先出确认页 → 当前变成 v1;
   段落 1 加关键帧 → 生成关键帧图 → 重出视频看「关键帧钉住了吗」→ 选草稿档重出 → 卡片标「草稿 · 10 步」;
   段落 2 加到 3 张关键帧 → 出「未经真机验证」警告、「加一张」置灰;
-  第 2 集三角色 + 场景同框的段落 → 参考帧面板出「槽位不足,用局部替换补」提示;在它的首帧上拖框 → 选角色 →「生成替换版」→ 历史里多一版;
+  第 2 集三角色 + 场景同框的段落 → 参考帧面板出「两遍合成」提示;在它的首帧上拖框 → 选角色 →「生成替换版」→ 历史里多一版;
 - iframe 里的 ComfyUI 前端**不许访问外网**:页面上出现任何非本机请求即判失败(实测前端会去 api.comfy.org,垫片已改向);
 - 在**全新临时目录**里建演示工程、用**假后端**跑 —— 假产物碰不到真工程,页面顶部标着「假后端」;
 - **一律有头**(CLAUDE.md 硬约束,用户 2026-09-24 明确要求):人要看得见它点开了每个面板。
@@ -71,7 +71,7 @@ KEY_SELECTOR = {
 
 def seed_demo(store: Store, data_root: Path) -> dict:
     """一部写实风格的演示剧:一集、两个素材齐全的段落(第 2 段的首帧留给尾帧衔接)、一台假云机;
-    第 2 集一个「首尾帧」模式的段落,和一个三角色 + 场景同框、首帧已有的段落(槽位不足提示 + 局部替换)
+    第 2 集一个「首尾帧」模式的段落,和一个三角色 + 场景同框、首帧已有的段落(两遍合成提示 + 局部替换)
     —— 都放第 2 集,不影响第 1 集的导出链路。"""
     for rel in ("assets/lin.png", "assets/yard.png", "assets/jade.png", "assets/shen.png", "assets/zhou.png"):
         (data_root / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -116,7 +116,7 @@ def seed_demo(store: Store, data_root: Path) -> dict:
     seg4 = repo.add_segment(
         store, ep2, 2, scene_id=yard, duration_sec=8.0, reference_mode="first", first_frame_path="frames/demo_s4.png",
         description="【镜头1】林小雨、沈墨、周伯站在庭院里。【镜头2】周伯说：「少爷回来了。」",
-        image_prompt="@林小雨 、@沈墨 和 @周伯 站在 @老宅庭院 里",
+        image_prompt="@林小雨 和 @周伯 站在 @老宅庭院 里,@沈墨 站在一旁",      # 沈墨单独一句:第二遍加入
         video_prompt="@林小雨 、@沈墨 和 @周伯 在 @老宅庭院 相见,@周伯 开口说话")
     repo.bind_characters(store, seg4, [lin, shen, zhou])
     add_host(store, label="假云机", ssh_host="fake.local", ssh_port=1, ssh_user="root", key_ref="C:/fake/key",
@@ -316,8 +316,8 @@ def run(out_dir: Path) -> dict:
                      f"#seg-{seg} [data-few-steps]", 60),
                     ("frames", "段落 2 加到 3 张关键帧 → 未经真机验证的警告、「加一张」置灰", {},
                      [_set_keyframes(seg2, ["2", "4", "6"])], '[data-readiness] [data-check="keyframe_count"]', 20),
-                    ("frames:episode2", "三角色 + 场景同框 → 「槽位不足,用局部替换补」提示", {}, [],
-                     f'#seg-{seg4} [data-frame-notes] [data-check="slots"]', 20),
+                    ("frames:episode2", "三角色 + 场景同框 → 「两遍合成」提示(第二遍加入沈墨)", {}, [],
+                     f'#seg-{seg4} [data-frame-notes] [data-check="two_pass"]', 20),
                     ("frames:episode2", "局部替换:拖框 → 选角色 → 生成替换版 → 历史多一版", {},
                      [f"#seg-{seg4} [data-region] summary", _drag_region(seg4, out_dir / "flow_region_box.png"),
                       lambda pg: pg.locator(f"#seg-{seg4} [data-region-asset]").select_option(f"character:{zhou}"),

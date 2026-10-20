@@ -58,3 +58,45 @@ def allocate_slots(characters: list[tuple[Ref, int]], scene: Ref | None, props: 
     chars = [r for r, _ in sorted(characters, key=lambda x: -x[1])]
     order = chars[:1] + ([scene] if scene else []) + chars[1:2] + list(props) + chars[2:]
     return order[:slots], order[slots:]
+
+
+def allocate_passes(characters: list[tuple[Ref, int]], scene: Ref | None, props: list[Ref],
+                    slots: int) -> tuple[list[Ref], list[Ref], list[Ref]]:
+    """两遍合成的分槽,返回 (第一遍, 第二遍, 仍放不下的)。优先级同 `allocate_slots`。
+
+    第一遍占满 slots;第二遍的 Picture 1 是第一遍出的图,所以只剩 slots - 1 个槽给新参考图
+    (`spike-results/2026-10-19-首帧多参考图实测.md`:两遍 3/3 三人认对,只写名字 0/3)。
+    """
+    first, rest = allocate_slots(characters, scene, props, slots)
+    return first, rest[:slots - 1], rest[slots - 1:]
+
+
+_CLAUSE = re.compile(r"([，,;；。])")
+_SLOT = {1: "画面中给另一个人留出位置", 2: "画面中给另外两个人留出位置"}
+
+
+def split_for_add(text: str, later: list[Ref], names: list[str]) -> tuple[str, list[str], list[Ref]]:
+    """两遍合成「第一遍留位、第二遍加人」的提示词拆分,返回 (第一遍图提示词, 拿出来的分句, 第二遍能加入的素材)。
+
+    按逗号 / 分号 / 句号切分句;一个分句只 @ 了第二遍的素材,就整句从第一遍拿掉、留给第二遍「加入」。
+    某素材只要有一句和别人写在一起(「@萧珩 俯视 @沈青禾」),它就拿不出来 —— 第一遍照旧写成名字,不进第二遍
+    (不然第一遍已经按名字画了一个,第二遍再加一个)。拿掉的有角色时,原位插一句留位句。
+    依据:`spike-results/2026-10-20-多人同框留位加人实测.md`(换人 0/3,留位加人 3/3)。
+    """
+    parts = _CLAUSE.split(text)
+    clauses = [(parts[i], parts[i + 1] if i + 1 < len(parts) else "") for i in range(0, len(parts), 2)]
+    mentions = [set(find_mentions(c, names)[0]) for c, _ in clauses]
+    addable = {r.name for r in later if any(r.name in m for m in mentions)}
+    while bad := {n for m in mentions if m & addable and not m <= addable for n in m & addable}:
+        addable -= bad
+    moved_people = sum(1 for r in later if r.name in addable and r.kind == "character")
+    out, moved, slotted = [], [], False
+    for (clause, sep), m in zip(clauses, mentions):
+        if m and m <= addable:
+            moved.append(clause.strip())
+            if moved_people and not slotted:
+                out += [_SLOT[moved_people], sep]
+                slotted = True
+            continue
+        out += [clause, sep]
+    return "".join(out).rstrip("，,;；。 "), moved, [r for r in later if r.name in addable]

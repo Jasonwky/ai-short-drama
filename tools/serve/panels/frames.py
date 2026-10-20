@@ -24,7 +24,7 @@ from tools.serve.panels.common import confirm_page, needs_confirm, new_seed, rea
 router = APIRouter()
 
 
-FRAME_NOTES = ("slots",)      # 就绪清单里与出参考帧有关的提醒(槽位不足 → 提示用局部替换补)
+FRAME_NOTES = ("two_pass", "slots")      # 就绪清单里与出参考帧有关的提醒(两遍合成;槽位不足 → 怎么补)
 
 
 def region_assets(store, segment_id: int) -> list[tuple[str, str]]:

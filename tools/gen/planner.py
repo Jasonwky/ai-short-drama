@@ -36,14 +36,34 @@ def _aspect(store: Store, segment_id: int) -> str:
     return row[0]
 
 
-def _slot_refs(seg, assets) -> tuple[list[refs.Ref], list[refs.Ref]]:
+def _slot_refs(seg, assets) -> tuple[list[refs.Ref], list[refs.Ref], list[refs.Ref]]:
+    """参考帧的分槽:(第一遍, 可进第二遍的, 仍放不下的)。超过 3 张才有第二遍(两遍合成)。"""
     chars, scene, props = assets["characters"], assets["scene"], assets["props"]
     spoken = rules.dialogue_by_speaker(seg["description"], [c["name"] for c in chars])
     weighted = [(refs.Ref("character", c["name"], c["turnaround_path"]),
                  sum(n for who, n in spoken.items() if who.startswith(c["name"]))) for c in chars]
     scene_ref = refs.Ref("scene", scene["name"], scene["image_path"]) if scene is not None else None
     prop_refs = [refs.Ref("prop", p["name"], p["image_path"]) for p in props]
-    return refs.allocate_slots(weighted, scene_ref, prop_refs, QWEN_IMAGE_EDIT_2511.max_ref_images)
+    return refs.allocate_passes(weighted, scene_ref, prop_refs, QWEN_IMAGE_EDIT_2511.max_ref_images)
+
+
+def _bound_names(assets) -> list[str]:
+    return ([c["name"] for c in assets["characters"]] + ([assets["scene"]["name"]] if assets["scene"] is not None else [])
+            + [p["name"] for p in assets["props"]])
+
+
+def _passes(seg, assets, text: str) -> tuple[list[refs.Ref], str, list[str], list[refs.Ref], list[refs.Ref]]:
+    """按图提示词 text 定两遍:(第一遍参考图, 第一遍提示词, 拿出来的分句, 第二遍加入的, 只能写成名字的)。
+    第二遍「留位加人」只收提示词里能整句拿出来的素材(`refs.split_for_add`),其余照旧退化成名字。"""
+    kept, later, dropped = _slot_refs(seg, assets)
+    first_text, moved, added = refs.split_for_add(text, later, _bound_names(assets))
+    return kept, first_text, moved, added, [r for r in later if r not in added] + dropped
+
+
+def frame_passes(store: Store, segment_id: int) -> int:
+    """这段的参考帧要合成几遍(1 或 2)—— 估时用,按首帧图提示词判(尾帧 / 关键帧多半同一批人)。"""
+    seg = repo.get(store, "segment", segment_id)
+    return 2 if _passes(seg, repo.segment_assets(store, segment_id), seg["image_prompt"])[3] else 1
 
 
 # 参考帧字段 → 用它的参考模式、它的提示词字段、界面上的叫法。
@@ -107,16 +127,19 @@ def _plan_image(store: Store, segment_id: int, text: str, seed: int, writes: dic
     """按图提示词 text 合成一张参考帧(内容已核过)。writes:写回到哪(writes,关键帧另带 keyframe_id)。"""
     seg = repo.get(store, "segment", segment_id)
     assets = repo.segment_assets(store, segment_id)
-    kept, dropped = _slot_refs(seg, assets)
-    prompt = tags.expand(text, kept, dropped, "qwen")
+    kept, first_text, moved, added, dropped = _passes(seg, assets, text)
+    prompt = tags.expand(first_text, kept, added + dropped, "qwen")
     params = {
         "workflow": "qwen_image", "preset": "fast", "size": list(FRAME_SIZE[_aspect(store, segment_id)]),
         "image_refs": [r.path for r in kept], **writes, "expect_ext": ".png",
-        "dropped": [r.name for r in dropped],   # 出槽退化成文字的素材,溯源里要看得到(就绪清单提示用局部替换补)
+        "dropped": [r.name for r in dropped],   # 退化成文字的素材,溯源里要看得到(就绪清单提示用局部替换补)
     }
+    if added:                                   # 第一遍留位、第二遍加入(spike-results/2026-10-20-多人同框留位加人实测.md)
+        params["second_pass"] = {"image_refs": [r.path for r in added], "names": [r.name for r in added],
+                                 "prompt": compose.second_pass_prompt(moved, added)}
     params = presets.stamp(store, "frame", params)      # 绑定当前「首帧 / 尾帧」模板预设(没有 = 内置)
     return create_task(store, kind="image", target_type="segment", target_id=segment_id, model=QWEN_MODEL,
-                       params=params, seed=seed, prompt=prompt, refs=params["image_refs"])
+                       params=params, seed=seed, prompt=prompt, refs=params["image_refs"] + [r.path for r in added])
 
 
 def first_frame_problems(store: Store, segment_id: int) -> list[str]:

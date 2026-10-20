@@ -20,8 +20,8 @@ from tools.gen import estimate, presets
 from tools.gen.align import align_problems, plan_align
 from tools.gen.assets import SPEC, asset_problems, fourview_problems, locked_seed, plan_asset_image, plan_fourview
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511, WHISPER_ALIGN
-from tools.gen.planner import (first_frame_problems, key_frame_problems, last_frame_problems, plan_first_frame,
-                               plan_key_frame, plan_last_frame, plan_video, video_problems)
+from tools.gen.planner import (first_frame_problems, frame_passes, key_frame_problems, last_frame_problems,
+                               plan_first_frame, plan_key_frame, plan_last_frame, plan_video, video_problems)
 
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
 KINDS = {"frames": ("episode", "首帧"), "lastframes": ("episode", "尾帧"), "keyframes": ("episode", "关键帧"),
@@ -102,17 +102,18 @@ def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
         repo.get(store, "episode", scope_id)
         for s in store.conn.execute("SELECT * FROM segment WHERE episode_id = ? ORDER BY number", (scope_id,)):
             label = f"段落 {s['number']}"
+            img = b.item(QWEN_IMAGE_EDIT_2511)
+            frame_est = None if img is None else img * frame_passes(store, s["id"])     # 两遍合成按两张图算
             if kind == "frames":
                 items.append(_item(store, "segment", s, label, "image", "first_frame_path",
-                                   lambda sid=s["id"]: first_frame_problems(store, sid), b.item(QWEN_IMAGE_EDIT_2511)))
+                                   lambda sid=s["id"]: first_frame_problems(store, sid), frame_est))
             elif kind == "lastframes":
                 items.append(_item(store, "segment", s, label, "image", "last_frame_path",
-                                   lambda sid=s["id"]: last_frame_problems(store, sid), b.item(QWEN_IMAGE_EDIT_2511)))
+                                   lambda sid=s["id"]: last_frame_problems(store, sid), frame_est))
             elif kind == "keyframes":                           # 按张列;没设关键帧的段落不算「缺」
                 for k in repo.keyframes(store, s["id"]):
                     items.append(_item(store, "segment_keyframe", k, f"{label} · 第 {k['time_sec']:g} 秒", "image",
-                                       "frame_path", lambda kid=k["id"]: key_frame_problems(store, kid),
-                                       b.item(QWEN_IMAGE_EDIT_2511)))
+                                       "frame_path", lambda kid=k["id"]: key_frame_problems(store, kid), frame_est))
             elif kind == "subtitles":
                 items.append(_item(store, "segment", s, label, "align", "subtitle_path",
                                    lambda sid=s["id"]: align_problems(store, sid), b.item(WHISPER_ALIGN)))

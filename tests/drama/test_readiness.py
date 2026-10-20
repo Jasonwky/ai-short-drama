@@ -54,12 +54,24 @@ def test_two_characters_push_prop_out_of_slots_as_warning(store, sample):
     repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])
     repo.update(store, "segment", sample["seg"],
                 description="【镜头1】沈墨说：「你还留着它。」【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」",
+                image_prompt="@林小雨 把 @玉佩 递给 @沈墨,@老宅庭院 黄昏",
                 video_prompt="@林小雨 把 @玉佩 递给 @沈墨,@老宅庭院 黄昏")
     checks = _check(store, sample["seg"])
     slots = _by_key(checks)["slots"]
     assert slots.ok and slots.warn
-    assert slots.msg == ("道具「玉佩」因槽位不足未作为参考图,仅以文字描述参与。" + REGION_HINT)
+    # 玉佩够得上第二遍,但和别人写在同一句、拿不出来 —— 告诉人怎么改
+    assert slots.msg == ("道具「玉佩」因槽位不足未作为参考图,仅以文字描述参与(它和别人写在图提示词的同一句里,"
+                         "两遍合成加不进来;给它单独写一句就能加)。" + REGION_HINT)
+    assert "two_pass" not in _by_key(checks)
     assert is_ready(checks)  # 告警不阻塞,但必须让人看见
+
+
+def test_a_fourth_reference_in_its_own_clause_is_added_in_a_second_pass(store, sample):
+    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])
+    repo.update(store, "segment", sample["seg"], image_prompt="@林小雨 看着 @沈墨,桌上放着 @玉佩,@老宅庭院 黄昏")
+    checks = _by_key(_check(store, sample["seg"]))
+    assert checks["two_pass"].warn and checks["two_pass"].msg == "多参考图 4 张:两遍合成,耗时约 2 倍(第二遍加入:玉佩)"
+    assert "slots" not in checks
 
 
 def test_host_down_blocks(store, sample):

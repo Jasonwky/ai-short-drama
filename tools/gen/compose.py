@@ -18,6 +18,15 @@ MIN_SIDE = 128      # 框再小,放大到 1 MP 再缩回会糊
 WORK_PIXELS = 1024 * 1024
 
 
+def second_pass_prompt(moved: list[str], refs: list[Ref]) -> str:
+    """两遍合成的第二遍:往第一遍留出的位置里加入 refs(Picture 2 起;Picture 1 是第一遍出的图)。
+    moved 是从图提示词里拿出来的分句(`refs.split_for_add`)。"""
+    text = ";".join(moved)
+    for k, r in sorted(enumerate(refs, 2), key=lambda kr: -len(kr[1].name)):    # 长名字先换,免得「林小」吞了「林小雨」
+        text = text.replace(f"@{r.name}", f"Picture {k}({r.name})")
+    return f"保持 Picture 1 的画面、构图、光线和已有人物完全不变,在画面中加入:{text}。"
+
+
 def region_prompt(ref: Ref, note: str, styling: str = "") -> str:
     """styling:角色表的「造型」字段(只有角色有)。具体神情代码推不出,靠 note 由人写。"""
     if ref.kind == "character":

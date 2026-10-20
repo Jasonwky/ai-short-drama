@@ -49,3 +49,14 @@ def test_png_size_reads_the_header():
     assert compose.png_size(_png(96, 160, 150)) == (96, 160)
     with pytest.raises(ValueError, match="不是 PNG"):
         compose.png_size(b"GIF89a....")
+
+
+def test_second_pass_prompt_is_the_one_that_passed_on_the_cloud():
+    # spike-results/2026-10-20-多人同框留位加人实测.md:3/3
+    qing = Ref("character", "沈青禾", "q.png")
+    p = compose.second_pass_prompt(["@沈青禾 身着大红嫁衣站在床边冷眼旁观"], [qing])
+    assert p == ("保持 Picture 1 的画面、构图、光线和已有人物完全不变,在画面中加入:"
+                 "Picture 2(沈青禾) 身着大红嫁衣站在床边冷眼旁观。")
+    two = compose.second_pass_prompt(["@沈青禾 站在床边", "@玉佩 放在桌上"], [qing, Ref("prop", "玉佩", "j.png")])
+    assert two.endswith("加入:Picture 2(沈青禾) 站在床边;Picture 3(玉佩) 放在桌上。")
+    assert check_tags(two, n_images=3, dialect="qwen") == []

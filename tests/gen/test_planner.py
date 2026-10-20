@@ -136,6 +136,36 @@ def test_last_frame_needs_a_mode_that_uses_it_and_a_prompt(store, sample):
         plan_last_frame(store, sample["seg"], seed=1)
 
 
+# ── 参考图超过 3 张:第一遍留位、第二遍加入 ─────────────────
+
+def _crowd(store, sample, prompt):
+    """林小雨(有台词)+ 沈墨 + 王五 + 老宅庭院 + 玉佩 = 5 张参考图:第一遍 林小雨 / 庭院 / 沈墨,第二遍 玉佩 / 王五。"""
+    wang = repo.add_character(store, sample["drama"], "王五", turnaround_path="assets/wang.png")
+    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"], wang])
+    repo.update(store, "segment", sample["seg"], image_prompt=prompt)
+
+
+def test_more_than_three_references_leave_a_spot_then_add(store, sample):
+    from tools.gen.planner import frame_passes
+    _crowd(store, sample, "@林小雨 把 @玉佩 递给 @沈墨,@王五 站在一旁,@老宅庭院 黄昏")
+    row, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
+    assert p["image_refs"] == ["assets/lin.png", "assets/yard.png", "assets/shen.png"]
+    # 王五单独一句:第一遍拿掉、留位,第二遍加入;玉佩和别人同句:拿不出来,照旧写成名字
+    assert row["prompt"] == "Picture 1(林小雨) 把 玉佩 递给 Picture 3(沈墨),画面中给另一个人留出位置,Picture 2(老宅庭院) 黄昏"
+    sp = p["second_pass"]
+    assert (sp["image_refs"], sp["names"], p["dropped"]) == (["assets/wang.png"], ["王五"], ["玉佩"])
+    assert sp["prompt"] == "保持 Picture 1 的画面、构图、光线和已有人物完全不变,在画面中加入:Picture 2(王五) 站在一旁。"
+    assert json.loads(row["refs_json"]) == [*p["image_refs"], "assets/wang.png"]
+    assert frame_passes(store, sample["seg"]) == 2
+
+
+def test_nothing_to_add_means_one_pass_as_before(store, sample):
+    from tools.gen.planner import frame_passes
+    _crowd(store, sample, "@林小雨 把 @玉佩 递给 @沈墨,@王五 和 @沈墨 对视,@老宅庭院 黄昏")
+    _, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
+    assert "second_pass" not in p and p["dropped"] == ["玉佩", "王五"] and frame_passes(store, sample["seg"]) == 1
+
+
 # ── 框选局部替换 ─────────────────────────────────────
 
 def test_region_replace_plans_a_new_version_of_the_same_frame(store, sample):

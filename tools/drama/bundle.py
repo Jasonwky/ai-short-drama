@@ -204,6 +204,8 @@ def _insert(store: Store, m: dict, prefix: str, root: Path) -> int:
             # 视频锚点 [[路径, 帧号], …](首帧 / 尾帧 / 关键帧钉在哪一帧;P7 加锚点时这里漏了)
             if params.get("anchors"):
                 params["anchors"] = [[mv(p), idx] for p, idx in params["anchors"]]
+            if params.get("second_pass"):                  # 两遍合成的第二遍参考图
+                params["second_pass"]["image_refs"] = [mv(p) for p in params["second_pass"]["image_refs"]]
             # 关键帧任务写回哪一张:编号全部重新分配,不改就指到别的剧的关键帧或空号;那张在原库里已删 → None(仍是「已删除」)
             if "keyframe_id" in params:
                 params["keyframe_id"] = ids["segment_keyframe"].get(params["keyframe_id"])
