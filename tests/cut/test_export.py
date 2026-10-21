@@ -244,9 +244,9 @@ def test_blank_override_snapshot_is_checked_again_at_run(store, two_segments, mo
 # ── 配乐 ────────────────────────────────────────────────
 
 def _song(root, secs=5):
-    """一首「有许可的」合成音乐:粉红噪声立体声。"""
+    """一首「有许可的」合成音乐:粉红噪声立体声(定种子:不定的话电平断言时过时不过)。"""
     src = root / "song_src.wav"
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "anoisesrc=color=pink:amplitude=0.3",
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "anoisesrc=color=pink:amplitude=0.3:seed=42",
                     "-t", str(secs), "-ac", "2", str(src)], check=True)
     return music.stage(root, src.read_bytes(), "song.wav")
 
@@ -268,7 +268,8 @@ def test_music_is_mixed_into_both_versions_and_read_back(store, two_segments):
     assert len(checks) == 9 and checks["配乐"]["ok"] and f"#{cid}" in checks["配乐"]["detail"]
     ref = media.rms_envelope(root / "outputs/tasks/v2/clip.mp4")[5]               # 段落 2 中间:原片只有 440 Hz 对白
     for key in ("labeled_path", "plain_path"):                                      # 两版都混了
-        assert media.rms_envelope(root / row[key])[15] > ref * 1.05
+        env = media.rms_envelope(root / row[key])[12:18]           # cue 满音量的 1.2–1.8 秒;单个 0.1 秒窗的噪声起伏太大
+        assert sum(v * v for v in env) / len(env) > ref * ref * 1.05   # 按能量比:台词处压低后的音乐也要明显加上去
     [m] = json.loads((root / row["report_path"]).read_text(encoding="utf-8"))["music"]
     assert m["license"] == "自购曲库 #42,商用授权" and m["source"] == "人工提供,非 AI 生成"
     assert (m["start_sec"], m["end_sec"]) == (1.0, 2.0) and len(m["sha256"]) == 64
