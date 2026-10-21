@@ -9,7 +9,7 @@ import pytest
 from tools.cut import blankscan
 from tools.cut.blankscan import detect as real_detect      # 收集时取到的是真的;conftest 每条测试前把它换成「没白屏」
 
-pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="本机没有 ffmpeg:白屏检测靠它抽亮度,跳过")
+pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="本机没有 ffmpeg:白屏检测靠它解帧,跳过")
 
 SIZE = "96x160"
 
@@ -53,12 +53,22 @@ def test_white_background_behind_a_figure_is_found(tmp_path):
     assert abs(span.start - 1.0) < 0.15 and abs(span.end - 2.0) < 0.15
 
 
+def test_gray_backdrop_behind_a_figure_is_found(tmp_path):
+    # 种子 20261023 那条:人物站在浅灰影棚底前(亮度约 190,够不上「近白」)—— 平底也要拦
+    fig = f"color=0xC0C0C0:size={SIZE}:rate=10:d=1,drawbox=x=24:y=20:w=48:h=140:color=0x302010:t=fill"
+    clip = _clip(tmp_path / "v.mp4", [_normal(1), fig, _normal(1)])
+    (span,) = real_detect(clip)
+    assert abs(span.start - 1.0) < 0.15 and abs(span.end - 2.0) < 0.15
+
+
 def test_bright_frame_with_content_is_not_blank(tmp_path):
-    # 白墙 / 白衣占一小块(实战最多 16%),其余是正常内容;整体调亮;满屏浅灰(亮但不白)
+    # 白墙 / 白衣占一小块(实战最多 16%),其余是正常内容;整体调亮;
+    # 有纹理的浅灰(石墙、布纹)、有颜色的浅色平墙 —— 都不是棚拍平底
     wall = f"{_normal(2)},drawbox=x=0:y=0:w=96:h=24:color=white:t=fill"
     bright = f"{_normal(2)},eq=brightness=0.15"
-    gray = f"color=0xC0C0C0:size={SIZE}:rate=10:d=2"
-    for i, src in enumerate((wall, bright, gray, _normal(2))):
+    textured = f"color=0xC0C0C0:size={SIZE}:rate=10:d=2,noise=alls=60:allf=t"
+    tinted = f"color=0xF0D890:size={SIZE}:rate=10:d=2"
+    for i, src in enumerate((wall, bright, textured, tinted, _normal(2))):
         assert real_detect(_clip(tmp_path / f"{i}.mp4", [src])) == [], src
 
 

@@ -234,7 +234,7 @@ def _blank_video(store: Store, root: Path, segment_id: int):
 
 def _no_blank_problem(page) -> None:
     """成片面板的导出检查:人工确认放行过的白屏段落不该再列为问题。"""
-    left = [t for t in page.locator("li.bad").all_inner_texts() if "画面近乎全白" in t]
+    left = [t for t in page.locator("li.bad").all_inner_texts() if "白 / 灰的平底" in t]
     if left:
         raise AssertionError(f"放行后导出检查仍列着白屏:{left}")
 
@@ -387,7 +387,7 @@ def run(out_dir: Path) -> dict:
                     # 白屏检测:排最后(换掉了第 2 集首尾帧段落的视频)
                     ("videos:episode2", "白屏片过导出前检查 → 视频卡片出白屏提示", {}, [_blank_video(store, work, seg3)],
                      f"#seg-{seg3} [data-blank-screen]", 20),
-                    ("final:episode2", "白屏段落列在导出检查的问题里", {}, [], 'li.bad:has-text("画面近乎全白")', 20),
+                    ("final:episode2", "白屏段落列在导出检查的问题里", {}, [], 'li.bad:has-text("白 / 灰的平底")', 20),
                     # 人工确认放行(用户 2026-10-20 定):填理由 → 放行 → 卡片标「已人工确认放行」→ 导出检查不再列它
                     ("videos:episode2", "填理由 → 确认不是白屏(放行)→ 卡片显示「已人工确认放行」",
                      {f"#seg-{seg3} [data-blank-reason]": "雪景,本来就白"}, [f"#seg-{seg3} [data-blank-confirm]"],

@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-"""白屏检测:找「连续 ≥ MIN_SEC 秒、画面大片近乎纯白」的区间 —— 命中就拦导出(用户 2026-10-20 定)。
+"""白屏检测:找「连续 ≥ MIN_SEC 秒、画面大片是白 / 灰的平底」的区间 —— 命中就拦导出(用户 2026-10-20 定)。
 
 为什么要它:实战《替嫁冲喜》第 2 段第三轮视频(task 82)中段约 4 秒人物站在白底前(疑似四视图的白底带进了视频),
 末尾再一下整屏白闪;人眼逐段看才发现。
 
-判据(`spike-results/2026-10-20-白屏检测标定.md`,实战 24 条视频):每帧算「亮度 ≥ LUMA 的像素占比」,
-占比 ≥ RATIO 的帧连续 ≥ MIN_SEC 秒算一段白屏。命中那条白底段每帧占比 0.47–1.00,其余 23 条视频
-(白墙、白衣、烛光高光)每帧最高 0.16。不是只看整屏全白:白底前站着人时白只占六成,blackdetect 式的
-「整屏 ≥ 98%」会漏掉它。
+判据(`spike-results/2026-10-21-平底背景检测标定.md`,实战 26 条 + 对照 15 条):每帧算「平底像素」占比 ——
+亮度 ≥ LUMA、饱和度 ≤ SAT、3×3 邻域里相邻像素亮度差都 ≤ GRAD(没纹理)。占比 ≥ RATIO 的帧连续 ≥ MIN_SEC 秒算一段。
+四视图的棚拍底不只是白的:种子 20261023 那条李福站在浅灰底前(亮度约 190),旧判据「亮度 ≥ 200 的近白占比」漏掉它;
+反过来,浅黄的平墙很亮却不是棚拍底。正例 4 条每帧峰值 ≥ 0.48,负例 37 条(白墙、白衣、烛光、窗光)≤ 0.12。
+不是只看整屏:底前站着人时平底只占五六成。
 
-量法只用本机 ffmpeg:缩到 160 宽 → lut 把亮度 ≥ LUMA 的像素置 255、其余置 0 → signalstats 的 YAVG / 255 就是占比。
-亮度按视频原值比(H3 出的是有限范围 yuv420p,纯白约 235)。
+量法:本机 ffmpeg 解成 160 宽的 RGB,numpy 逐帧算(一条 8 秒片约 1 秒)。帧时刻按帧率算(H3 出的是恒定帧率)。
 结果按视频 sha256 缓存在视频旁(`<视频>.blankscan.json`,与 `textscan` 同一做法),换了视频或改了阈值自动作废。
 
 误报(雪景等本来就白)由人在视频卡片上填理由放行(`confirm`,库表 blank_override,v12):只认那条视频的 sha256,
@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -28,10 +27,13 @@ from tools.drama import repo
 from tools.drama.db import Store
 from tools.serve.dispatch import sha256_file
 
-LUMA = 200                  # 有限范围 16–235 里的 200 ≈ 全范围 214(满亮度的 84%)
-RATIO = 0.35                # 一帧里近白像素占比过它就算这帧「大片白」
+WIDTH = 160                 # 解码宽度(高按比例);梯度阈值是在这个尺度上标定的
+LUMA = 160                  # RGB 加权亮度 0–255;灰底约 190、白底 235 以上
+SAT = 0.12                  # (max - min) / max;棚拍底几乎是中性色(实测 ≤ 0.03)
+GRAD = 5                    # 3×3 邻域里相邻像素亮度差的最大值;棚拍底 ≤ 2,石墙布纹几十
+RATIO = 0.35                # 一帧里平底像素占比过它就算这帧「大片平底」
 MIN_SEC = 0.5
-PARAMS = {"luma": LUMA, "ratio": RATIO, "min_sec": MIN_SEC}
+PARAMS = {"width": WIDTH, "luma": LUMA, "sat": SAT, "grad": GRAD, "ratio": RATIO, "min_sec": MIN_SEC}
 
 
 @dataclass(frozen=True)
@@ -41,7 +43,7 @@ class Span:
 
 
 def spans(samples: list[tuple[float, float]]) -> list[Span]:
-    """samples = [(帧时刻, 近白占比)],按时刻排好。一帧占到它与下一帧之间(最后一帧按前一个间隔算)。"""
+    """samples = [(帧时刻, 平底占比)],按时刻排好。一帧占到它与下一帧之间(最后一帧按前一个间隔算)。"""
     out, run = [], None
     for i, (t, frac) in enumerate(samples):
         nxt = samples[i + 1][0] if i + 1 < len(samples) else t + (t - samples[i - 1][0] if i else 0.0)
@@ -54,21 +56,34 @@ def spans(samples: list[tuple[float, float]]) -> list[Span]:
     return out
 
 
+def flat_ratio(frames):
+    """frames: (帧数, 高, 宽, 3) 的 RGB 数组 → 每帧平底像素占比。"""
+    import numpy as np
+    a = frames.astype(np.float32)
+    luma = a @ np.array([0.299, 0.587, 0.114], np.float32)
+    hi = a.max(-1)
+    sat = (hi - a.min(-1)) / np.maximum(hi, 1)
+    g = np.maximum(np.abs(np.diff(luma, axis=2, prepend=luma[:, :, :1])),
+                   np.abs(np.diff(luma, axis=1, prepend=luma[:, :1, :])))
+    pad = np.pad(g, ((0, 0), (1, 1), (1, 1)))
+    h, w = g.shape[1:]
+    rough = np.max([pad[:, dy:dy + h, dx:dx + w] for dy in range(3) for dx in range(3)], axis=0)
+    return ((luma >= LUMA) & (sat <= SAT) & (rough <= GRAD)).mean(axis=(1, 2))
+
+
 def measure(path: Path) -> list[tuple[float, float]]:
-    vf = f"scale=160:-2,lut=y='gte(val\\,{LUMA})*255':u=128:v=128,signalstats,metadata=print:file=-"
-    p = media._run(["ffmpeg", "-v", "error", "-i", str(path), "-vf", vf, "-an", "-f", "null", "-"])
-    out, t = [], None
-    for line in p.stdout.splitlines():
-        m = re.match(r"frame:\d+\s+pts:\S+\s+pts_time:(\S+)", line)
-        if m:
-            t = float(m.group(1))
-            continue
-        m = re.match(r"lavfi\.signalstats\.YAVG=(\S+)", line)
-        if m and t is not None:
-            out.append((t, float(m.group(1)) / 255))
-    if not out:
-        raise media.CutError(f"白屏检测没从 {path} 读出任何帧的亮度")
-    return out
+    import numpy as np
+    p = media._run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                    "stream=width,height,r_frame_rate", "-of", "json", str(path)])
+    st = json.loads(p.stdout)["streams"][0]
+    num, den = (int(x) for x in st["r_frame_rate"].split("/"))
+    h = max(2, round(st["height"] * WIDTH / st["width"] / 2) * 2)
+    raw = media._run(["ffmpeg", "-v", "error", "-i", str(path), "-vf", f"scale={WIDTH}:{h}", "-an",
+                      "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], binary=True).stdout
+    frames = np.frombuffer(raw, np.uint8)
+    if not frames.size or not num:
+        raise media.CutError(f"白屏检测没从 {path} 读出任何帧")
+    return [(i * den / num, float(r)) for i, r in enumerate(flat_ratio(frames.reshape(-1, h, WIDTH, 3)))]
 
 
 def detect(path: Path) -> list[Span]:
@@ -104,7 +119,7 @@ def check(root: Path, video_rel: str) -> list[Span]:
 
 def problem(number: int, found: list[Span]) -> str:
     where = "、".join(f"第 {s.start:.1f}–{s.end:.1f} 秒" for s in found)
-    return f"段落 {number} {where}画面近乎全白(大片纯白底或白闪),重出这段再导"
+    return f"段落 {number} {where}画面大片是白 / 灰的平底(疑似四视图的棚拍底带进视频,或白闪),重出这段再导"
 
 
 # ── 人工确认放行(用户 2026-10-20 定)────────────────────────────

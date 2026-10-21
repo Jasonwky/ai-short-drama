@@ -194,7 +194,7 @@ def test_confirmed_blank_screen_passes_and_is_in_the_report(store, two_segments,
     with pytest.raises(ValueError, match="★必填"):
         blankscan.confirm(store, root, s["seg2"], "   ")
     blankscan.confirm(store, root, s["seg2"], " 雪景,本来就白 ")
-    assert not any("画面近乎全白" in p for p in export.readiness(store, root, s["episode"]))
+    assert not any("白 / 灰的平底" in p for p in export.readiness(store, root, s["episode"]))
     eid = export.begin(store, root, s["episode"], PRODUCER)
     snap = {v["number"]: v["blank_override"] for v in json.loads(export.get(store, eid)["inputs_json"])}
     assert snap[1] is None and snap[2]["reason"] == "雪景,本来就白" and snap[2]["spans"] == [[0.2, 0.9]]
@@ -226,7 +226,7 @@ def test_blank_override_expires_when_the_video_is_replaced(store, two_segments, 
         export.begin(store, root, s["episode"], PRODUCER)
     # 挑回原来那版:哈希又对上了,放行自动恢复
     repo.update(store, "segment", s["seg2"], video_path="outputs/tasks/v2/clip.mp4")
-    assert not any("画面近乎全白" in p for p in export.readiness(store, root, s["episode"]))
+    assert not any("白 / 灰的平底" in p for p in export.readiness(store, root, s["episode"]))
 
 
 def test_blank_override_snapshot_is_checked_again_at_run(store, two_segments, monkeypatch):
