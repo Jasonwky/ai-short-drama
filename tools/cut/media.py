@@ -21,7 +21,8 @@ FONT = Path("C:/Windows/Fonts/NotoSansSC-VF.ttf")    # SIL OFL,可渲染进视�
 LABEL_TEXT = "AI 生成"                                 # 同时含「AI」与「生成」(5.4 b)
 FONT_RATIO = 0.075
 MARGIN_RATIO = 0.04
-# 字幕(libass,SRT 的画布高 288):11 号 ≈ 画面高的 3.8%,竖屏 768x1344 上约 51px,一行放得下 15 个字
+# 字幕(libass,SRT 的画布高 288):11 号 ≈ 画面高的 3.8%;实测竖屏 768x1344 每字宽约 35px,一行 21 字就到边、中文不折行 ——
+# 长台词由 subtitles.fit_screen 按画幅拆成几条
 SUB_STYLE = "FontName=Noto Sans SC,FontSize=11,Outline=1,MarginV=24"
 
 

@@ -173,3 +173,31 @@ def test_apply_writes_back_the_scripts_own_wording(store):
     ids = sb.apply(store, ep, args, CTX)
     desc = repo.get(store, "segment", ids[0])["description"]
     assert "这块玉佩，是我母亲留给我的。" in desc and "这块玉佩," not in desc
+
+
+def test_two_people_interacting_must_say_who_faces_whom():
+    """实战第 7 段:「沈玉瑶跪在地上求饶,萧珩俯视她」没写朝向,出图她背对着萧珩跪。"""
+    a = good_args()
+    a["segments"][1]["image_prompt"] = "@林小雨 跪在地上求饶,@沈墨 俯视她,@老宅庭院"
+    (msg,) = [p for p in sb.judge_factory(CTX)(a) if "朝向" in p]
+    assert msg.startswith("段落2")
+    a["segments"][1]["image_prompt"] = "@林小雨 面朝@沈墨 跪在地上求饶,@沈墨 俯视她,@老宅庭院"
+    assert not [p for p in sb.judge_factory(CTX)(a) if "朝向" in p]
+    a["segments"][0]["image_prompt"] = "@林小雨 跪在地上捧着 @玉佩,@老宅庭院"       # 一个人跪着不涉及朝谁
+    assert not [p for p in sb.judge_factory(CTX)(a) if "朝向" in p]
+
+
+def test_lying_must_say_how():
+    """实战第 3、6 段:只写「躺在床上」,出图人横在床沿、腿伸出床外。"""
+    a = good_args()
+    a["segments"][0]["image_prompt"] = "@林小雨 躺在床上,手里握着 @玉佩,@老宅庭院"
+    (msg,) = [p for p in sb.judge_factory(CTX)(a) if "躺" in p]
+    assert msg.startswith("段落1") and "仰面" in msg
+    a["segments"][0]["image_prompt"] = "@林小雨 仰面平躺在床上,全身在床内,手里握着 @玉佩,@老宅庭院"
+    assert not [p for p in sb.judge_factory(CTX)(a) if "躺" in p]
+    a["segments"][0]["image_prompt"] = "@林小雨 走进卧房,手里握着 @玉佩,@老宅庭院"   # 「卧房」不是躺
+    assert not [p for p in sb.judge_factory(CTX)(a) if "躺" in p]
+
+
+def test_prompt_teaches_facing_lying_and_prop_size():
+    assert "面朝" in sb.SYSTEM and "仰面" in sb.SYSTEM and "道具" in sb.SYSTEM and "大小" in sb.SYSTEM

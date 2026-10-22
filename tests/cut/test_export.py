@@ -7,6 +7,7 @@ import subprocess
 import pytest
 
 from tools.cut import export, media, music
+from tests.cut.conftest import done_task
 from tools.drama import repo
 
 PRODUCER = "91310000MA1234567X"
@@ -127,6 +128,24 @@ def test_subtitles_are_burned_into_both_versions(store, two_segments, tmp_path):
     srt = (root / row["plain_path"]).with_name("subtitles.srt").read_text(encoding="utf-8")
     assert "00:00:00,200 --> 00:00:00,900" in srt
     assert {c["name"]: c["ok"] for c in json.loads(row["checks_json"])}["字幕"] is True
+
+
+def test_long_line_is_split_to_stay_inside_the_frame(store, two_segments, tmp_path):
+    """实战第 2 段:26 字一句一条字幕,中文不折行,两头冲出画面。导出按画幅拆成几条,烧进去的字不贴边。"""
+    s, root = two_segments, two_segments["root"]
+    line = "王妃？不过是个冲喜的祭品。王爷都快咽气了，你还想翻身？"
+    done_task(store, root, s["seg1"], "align", "outputs/tasks/a2/subtitles.srt",
+              f"1\n00:00:00,100 --> 00:00:00,950\n{line}\n\n".encode("utf-8"), refs=["outputs/tasks/v1/clip.mp4"])
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    export.run(store, root, eid)
+    row = export.get(store, eid)
+    srt = (root / row["plain_path"]).with_name("subtitles.srt").read_text(encoding="utf-8")
+    assert "王妃？不过是个冲喜的祭品。\n" in srt and "\n王爷都快咽气了，你还想翻身？\n" in srt
+    clips = [root / "outputs/tasks/v1/clip.mp4", root / "outputs/tasks/v2/clip.mp4"]
+    media.encode_episode(clips, tmp_path / "nosub.mp4", None)
+    frame = lambda f, t: media.gray_frame(f, t, 384, 672)   # noqa: E731
+    box = media.diff_bbox(frame(root / row["plain_path"], 0.3), frame(tmp_path / "nosub.mp4", 0.3), 384)
+    assert box is not None and box[0] > 10 and box[2] < 384 - 10
 
 
 def test_dialogue_without_subtitles_blocks_export(store, two_segments):

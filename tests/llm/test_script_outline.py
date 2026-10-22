@@ -172,3 +172,15 @@ def test_apply_creates_episodes_with_outline_and_source_paragraphs(store):
     assert eps[0]["source_text"].count("\n") == 2                    # 3 段原文,分段保留
     with pytest.raises(ValueError, match="这一批要接在后面,请重跑"):     # 同一批批两次 → 集号已被占
         outline.apply(store, d, good_outline(), ctx)
+
+
+def test_bed_in_a_hall_is_sent_back():
+    """实战(题甲第 1 集):剧本把「走向床边昏睡的王爷」写在【靖王府正堂】,出图就成了正堂正中摆床。"""
+    args = _script_args(40)
+    args["scenes"][0]["place"] = "靖王府正堂"
+    args["scenes"][0]["lines"][0]["text"] = "沈青禾径直走向床边昏睡的王爷。"
+    (msg,) = [p for p in sw.judge_factory({"minutes": 1})(args) if "床" in p]
+    assert "靖王府正堂" in msg and "卧房" in msg
+    for place in ("靖王寝殿", "王府卧房", "老宅庭院"):        # 卧房 / 寝殿里有床天经地义;不是厅堂的不管
+        args["scenes"][0]["place"] = place
+        assert not [p for p in sw.judge_factory({"minutes": 1})(args) if "床" in p]

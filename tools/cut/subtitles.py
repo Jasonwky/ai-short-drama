@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import difflib
+import re
 from dataclasses import dataclass
 
 PUNCT = set("，。！？、,.!?\"'“”「」：:；; …—")
@@ -173,6 +174,48 @@ def _secs(ts: str) -> float:
     h, m, rest = ts.split(":")
     s, ms = rest.split(",")
     return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
+
+
+# 一行能放几个字(tmp/subwidth/probe.py 按 media.SUB_STYLE 实测):字宽 ≈ 画面高的 2.6%(竖屏 768x1344 每字 35 px,
+# 25 字贴边被裁);只用画宽的 75%,两边留白;横屏放得下更多,但一行再长就读不完,封顶 16
+CHAR_PER_HEIGHT = 35 / 1344
+LINE_SHARE = 0.75
+LINE_CAP = 16
+_BREAK = re.compile(r"(?<=[，。！？；、…,.!?;])")
+
+
+def max_chars(width: int, height: int) -> int:
+    return min(LINE_CAP, int(width * LINE_SHARE / (height * CHAR_PER_HEIGHT)))
+
+
+def _pieces(text: str, limit: int) -> list[str]:
+    """先在标点后断句、能并就并成不超过 limit 的一块;单句超长就均分成几块。"""
+    out: list[str] = []
+    for clause in (c for c in _BREAK.split(text) if c):
+        if out and len(out[-1]) + len(clause) <= limit:
+            out[-1] += clause
+        elif len(clause) <= limit:
+            out.append(clause)
+        else:
+            n = -(-len(clause) // limit)
+            size = -(-len(clause) // n)
+            out += [clause[i:i + size] for i in range(0, len(clause), size)]
+    return out
+
+
+def fit_screen(cues: list[Cue], limit: int) -> list[Cue]:
+    """一句台词一条字幕,中文没有空格 libass 不会折行,长句直接冲出画面(实战第 2 段 26 字)。
+    超过 limit 字的拆成几条首尾相接的字幕,时间按各块念的字数(去标点)分 —— 不重新对齐,逐字时间戳没存。"""
+    out = []
+    for c in cues:
+        parts = _pieces(c.text, limit) if len(c.text) > limit else [c.text]
+        weights = [max(1, len(_clean(p))) for p in parts]
+        t = c.start
+        for i, (p, w) in enumerate(zip(parts, weights)):
+            end = c.end if i == len(parts) - 1 else round(t + (c.end - c.start) * w / sum(weights), 2)
+            out.append(Cue(p, t, end))
+            t = end
+    return out
 
 
 def episode_srt(parts: list[tuple[list[Cue], float]]) -> str:

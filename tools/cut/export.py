@@ -204,14 +204,17 @@ def run(store: Store, data_root: Path, export_id: int) -> None:
 
 
 def _parts(root: Path, videos: list[dict]) -> list[tuple[list[subtitles.Cue], float, Path]]:
-    """每段 (字幕, 本段在成片里的起点秒, 本段视频)。起点 = 前面各段视频时长之和(拼接就是按这个接的)。"""
+    """每段 (字幕, 本段在成片里的起点秒, 本段视频)。起点 = 前面各段视频时长之和(拼接就是按这个接的)。
+    长台词按画幅拆成几条(`subtitles.fit_screen`),免得一行冲出画面。"""
     parts, offset = [], 0.0
     for v in videos:
         clip = root / v["video_path"]
+        p = media.probe(clip)
         sub = v.get("subtitle_path")
-        cues = subtitles.parse_srt((root / sub).read_text(encoding="utf-8")) if sub else []
+        cues = subtitles.fit_screen(subtitles.parse_srt((root / sub).read_text(encoding="utf-8")),
+                                    subtitles.max_chars(p.width, p.height)) if sub else []
         parts.append((cues, offset, clip))
-        offset += media.probe(clip).duration
+        offset += p.duration
     return parts
 
 

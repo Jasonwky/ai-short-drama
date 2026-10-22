@@ -48,6 +48,27 @@ def test_storyboard_golden(client):
     assert [restore(x, script) for x in said] == want
 
 
+def test_storyboard_with_kneeling_and_lying_converges(client):
+    """题甲第 1 集看片(2026-10-22):跪的朝向、躺姿没写 → 判卷打回。真模型要能在轮次上限内写清。"""
+    script = (GOLDEN / "tijia_ep1.txt").read_text(encoding="utf-8")
+    ctx = {"script": script, "characters": ["沈青禾", "沈玉瑶", "李福", "萧珩"], "scenes": ["靖王府正堂", "靖王府寝殿"],
+           "props": ["银针"]}
+    res = _gate(client, "storyboard", storyboard, ctx)
+    segs = res.args["segments"]
+    assert any(storyboard._LYING.search(s["image_prompt"]) for s in segs)   # 规则真被触发过,不是绕开了
+    assert all(storyboard._POSTURE.search(s["image_prompt"]) for s in segs if storyboard._LYING.search(s["image_prompt"]))
+
+
+def test_script_keeps_the_bed_out_of_the_hall(client):
+    ctx = {"kind": "synopsis", "minutes": 1, "outline": "", "characters": ["沈青禾", "李福", "萧珩"],
+           "source": "大婚当晚,替嫁冲喜的沈青禾在王府正堂受管事李福羞辱。她不怒反笑,走到昏迷在床的靖王萧珩身边,"
+                     "一针刺入眉心,当众揭穿李福在汤药里下毒。萧珩猛然睁眼,李福吓得跪地求饶。"}
+    res = _gate(client, "script_synopsis", script_writer, ctx)
+    for sc in res.args["scenes"]:
+        if any("床" in ln["text"] for ln in sc["lines"]):
+            assert not script_writer._HALL.search(sc["place"]) or script_writer._BEDROOM.search(sc["place"]), sc["place"]
+
+
 def test_voice(client):
     ctx = {"name": "林小雨", "appearance": "二十出头,长发,素色上衣", "styling": "",
            "lines": ["这块玉佩，是我母亲留给我的。", "我总觉得，她还会回来。"]}

@@ -113,3 +113,29 @@ def test_srt_round_trip_and_episode_offsets():
     ep = st.parse_srt(st.episode_srt([(a, 0.0), (b, 8.0)]))
     assert ep[2] == Cue("第三句", 8.25, 10.0)
     assert st.episode_srt([(a, 0.0), (b, 8.0)]).count("\n3\n") == 1   # 编号连续
+
+
+def test_line_width_fits_the_frame():
+    # 实测(tmp/subwidth/probe.py):竖屏 768x1344 每字约 35 px,25 字就贴边被裁;横屏每字约 20 px
+    assert st.max_chars(768, 1344) == 16
+    assert st.max_chars(1344, 768) == 16      # 横屏放得下更多,但一行再长就读不完
+
+
+def test_long_line_is_split_at_punctuation_and_time_shared_by_length():
+    line = "王妃？不过是个冲喜的祭品。王爷都快咽气了，你还想翻身？"      # 实战第 2 段,26 字一行冲出画面
+    out = st.fit_screen([Cue(line, 1.2, 6.7)], 16)
+    assert [c.text for c in out] == ["王妃？不过是个冲喜的祭品。", "王爷都快咽气了，你还想翻身？"]
+    assert out[0].start == 1.2 and out[-1].end == 6.7
+    assert out[0].end == out[1].start                     # 首尾相接,不留空档
+    assert 3.0 < out[0].end < 4.0                         # 按念的字数分:11 字 / 12 字
+
+
+def test_clause_longer_than_the_line_is_cut_evenly():
+    out = st.fit_screen([Cue("甲" * 20, 0.0, 4.0)], 16)
+    assert [len(c.text) for c in out] == [10, 10]
+    assert all(len(c.text) <= 16 for c in out)
+
+
+def test_short_lines_are_untouched():
+    cues = [Cue("都闭嘴。", 0.5, 1.5), Cue("王爷不是病，是中毒。", 1.6, 3.0)]
+    assert st.fit_screen(cues, 16) == cues
