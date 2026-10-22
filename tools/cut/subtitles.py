@@ -17,6 +17,10 @@ from dataclasses import dataclass
 
 PUNCT = set("，。！？、,.!?\"'“”「」：:；; …—")
 MIN_HIT = 0.7            # 一句台词至少对上 70% 的字才算对齐可信
+# 同音字容错(2026-10-22 实战第 7 段:「杖毙」听成「障蔽」、「李福」听成「礼服」,人念对了):
+# 夹在对上的字后面、与台词等长的一段替换(≤ SUBST_MAX 字)算识别错字,计入命中;但严格对上的字要过 MIN_EXACT
+SUBST_MAX = 2
+MIN_EXACT = 0.5
 ONSET_RATIO = 0.15       # 能量越过峰值的 15% 算开口
 STEP = 0.1               # 能量曲线的窗长(秒)
 MIN_SHOW = 1.0           # 字幕至少显示 1 秒
@@ -36,19 +40,29 @@ def _clean(s: str) -> str:
 
 def align(lines: list[str], chars: list[tuple[str, float, float]]) -> list[dict]:
     """每句台词按顺序在识别文字里找命中字(用过的字不再给后面的句子)。
-    返回 [{line, hit, total, first, second, last, lead}],first/second/last 是命中字在 chars 里的下标(没命中为 None),
+    返回 [{line, hit, subst, total, first, second, last, lead}]:hit 是严格对上的字数,subst 是算作识别错字的等长替换字数;
+    first/second/last 是命中字(含替换)在 chars 里的下标(没命中为 None),
     lead 是台词开头没对上的字数(首字听错时,它前面那 lead 个识别字仍算这句台词)。"""
     heard = "".join(c for c, _, _ in chars)
     used = 0
     out = []
     for line in lines:
-        want = _clean(line)
-        sm = difflib.SequenceMatcher(None, want, heard[used:], autojunk=False)
-        blocks = [blk for blk in sm.get_matching_blocks() if blk.size]
-        hit = sorted(used + b + k for _, b, n in blocks for k in range(n))
-        out.append({"line": line, "hit": len(hit), "total": len(want),
+        want, rest = _clean(line), heard[used:]
+        ops = difflib.SequenceMatcher(None, want, rest, autojunk=False).get_opcodes()
+        pairs, exact, subst = [], 0, 0
+        for k, (tag, i1, i2, j1, j2) in enumerate(ops):
+            if tag == "equal":
+                exact += i2 - i1
+            elif not (tag == "replace" and i2 - i1 == j2 - j1 <= SUBST_MAX and k and ops[k - 1][0] == "equal"
+                      and ((k + 1 < len(ops) and ops[k + 1][0] == "equal") or (i2 == len(want) and j2 == len(rest)))):
+                continue                    # 只认夹在对上的字后面的等长替换;句尾的替换要连识别也到头(否则会吃掉下一句)
+            else:
+                subst += i2 - i1
+            pairs += [(i1 + n, used + j1 + n) for n in range(i2 - i1)]
+        hit = sorted(h for _, h in pairs)
+        out.append({"line": line, "hit": exact, "subst": subst, "total": len(want),
                     "first": hit[0] if hit else None, "second": hit[1] if len(hit) > 1 else (hit[0] if hit else None),
-                    "last": hit[-1] if hit else None, "lead": blocks[0].a if blocks else 0})
+                    "last": hit[-1] if hit else None, "lead": min(a for a, _ in pairs) if pairs else 0})
         if hit:
             used = hit[-1] + 1
     return out
@@ -64,7 +78,7 @@ def extra_speech(lines: list[str], chars: list[tuple[str, float, float]],
     - 任一句台词命中率低于 MIN_HIT → 不判(否则一句没识别出来,所有识别字都成了「多说」);
     - **用数据审 whisper**:候选所在时间段的能量要达到开口门槛 —— whisper 会在静音尾巴上编出「字幕由……提供」。"""
     aligned = align(lines, chars)
-    if any(a["total"] and a["hit"] / a["total"] < MIN_HIT for a in aligned):
+    if any(a["total"] and not _trusted(a) for a in aligned):
         return [], "识别与台词对不上,无法判断是否多说"
     covered: set[int] = set()
     for a in aligned:
@@ -91,6 +105,12 @@ def extra_speech(lines: list[str], chars: list[tuple[str, float, float]],
     return runs, ""
 
 
+def _trusted(a: dict) -> bool:
+    """这句的识别可信:严格命中过 MIN_HIT;或严格命中过 MIN_EXACT、加上等长替换(识别错字)过 MIN_HIT。"""
+    exact = a["hit"] / a["total"]
+    return exact >= MIN_HIT or (exact >= MIN_EXACT and (a["hit"] + a["subst"]) / a["total"] >= MIN_HIT)
+
+
 def onset(envelope: list[float], lo: float, hi: float) -> float | None:
     """[lo, hi] 内能量第一个**上升沿**(前一窗低于、这一窗达到峰值的 ONSET_RATIO)的时刻;没有返回 None。
     要上升沿而不是「第一次高于」:lo 是上一句的句尾,上一句的尾音可能还没落下去。"""
@@ -113,7 +133,7 @@ def build(lines: list[str], chars: list[tuple[str, float, float]], envelope: lis
     for n, a in enumerate(align(lines, chars), 1):
         if a["total"] == 0:
             continue
-        if a["hit"] / a["total"] < MIN_HIT:
+        if not _trusted(a):
             problems.append(f"第 {n} 句只对上 {a['hit']}/{a['total']} 字(低于 {int(MIN_HIT * 100)}%)—— 识别与台词对不上,需人工校")
             continue
         end = chars[a["last"]][2]
