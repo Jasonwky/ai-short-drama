@@ -172,3 +172,14 @@ def test_first_last_plus_keyframe_is_flagged_untested(store, sample):
     repo.update(store, "segment", sample["seg"], reference_mode="first_last")
     c = _by_key(_check(store, sample["seg"]))["keyframe_untested"]
     assert c.ok and c.warn and "未经真机验证" in c.msg
+
+
+def test_furniture_outside_the_scene_list_blocks(store, sample):
+    """场景陈设表(v13):场景填了固定陈设,首帧提示词里清单外的陈设拦生成;没填不查。"""
+    repo.update(store, "segment", sample["seg"], image_prompt="@林小雨 坐在床边捧着 @玉佩,@老宅庭院")
+    assert "furnishings" not in _by_key(_check(store, sample["seg"]))
+    repo.update(store, "scene", sample["yard"], purpose="庭院", furnishings="石桌、古井")
+    c = _by_key(_check(store, sample["seg"]))["furnishings"]
+    assert not c.ok and c.msg.startswith("首帧图提示词:「床」不在场景的固定陈设里")
+    repo.update(store, "scene", sample["yard"], furnishings="石桌、古井、竹床")
+    assert _by_key(_check(store, sample["seg"]))["furnishings"].ok

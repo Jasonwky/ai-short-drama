@@ -24,7 +24,12 @@
           </div>
           <form method="post" action="/asset/{{ col.table }}/{{ it.row.id }}">
             {% for key, label in col.fields %}
-              <label>{{ label }}</label><textarea name="{{ key }}">{{ it.row[key] }}</textarea>
+              <label>{{ label }}</label>
+              {% if key == "purpose" %}<select name="purpose" data-scene-purpose>
+                <option value="">(没填)</option>
+                {% for p in purposes %}<option value="{{ p }}"{{ " selected" if it.row.purpose == p }}>{{ p }}</option>{% endfor %}
+              </select>
+              {% else %}<textarea name="{{ key }}"{% if key == "furnishings" %} data-scene-furnishings{% endif %}>{{ it.row[key] }}</textarea>{% endif %}
             {% endfor %}
             <button class="btn" type="submit">保存描述</button>
           </form>

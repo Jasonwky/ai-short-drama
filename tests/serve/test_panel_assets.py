@@ -36,3 +36,14 @@ def test_pick_older_version_with_cost_confirmation(client, store, sample):
     assert r.headers["location"] == nxt
     assert repo.get(store, "segment", sample["seg"])["first_frame_path"] == "outputs/tasks/1/a.png"
     assert client.post(f"/task/{t}/pick", data={"next": "//evil.example"}).status_code == 400
+
+
+def test_scene_purpose_and_furnishings_are_edited_on_the_card(client, store, sample):
+    page = client.get(f"/drama/{sample['drama']}/assets").text
+    assert "data-scene-purpose" in page and "data-scene-furnishings" in page
+    form = {"location": "", "time": "", "lighting": "", "final_prompt": "", "purpose": "庭院", "furnishings": "石桌、古井"}
+    assert client.post(f"/asset/scene/{sample['yard']}", data=form, follow_redirects=False).status_code == 303
+    row = repo.get(store, "scene", sample["yard"])
+    assert (row["purpose"], row["furnishings"]) == ("庭院", "石桌、古井")
+    r = client.post(f"/asset/scene/{sample['yard']}", data={**form, "purpose": "宇宙飞船"})
+    assert r.status_code == 400 and "场景用途只能是" in r.text

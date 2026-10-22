@@ -140,7 +140,8 @@ def _episode(store):
 
 def test_context_reads_names_from_the_drama(store):
     ep = _episode(store)
-    assert sb.context(store, ep) == CTX
+    empty = {"purpose": "", "furnishings": ""}
+    assert sb.context(store, ep) == {**CTX, "scene_info": {"老宅庭院": empty, "老宅书房": empty}}
 
 
 def test_context_refuses_what_it_cannot_do(store):
@@ -201,3 +202,16 @@ def test_lying_must_say_how():
 
 def test_prompt_teaches_facing_lying_and_prop_size():
     assert "面朝" in sb.SYSTEM and "仰面" in sb.SYSTEM and "道具" in sb.SYSTEM and "大小" in sb.SYSTEM
+
+
+def test_furniture_outside_the_scene_list_is_sent_back():
+    """场景陈设表(v13):场景登记了固定陈设,首帧提示词里清单外的陈设打回;提示词把陈设告诉 LLM。"""
+    ctx = {**CTX, "scene_info": {"老宅庭院": {"purpose": "庭院", "furnishings": "石桌、石凳、古井"},
+                                 "老宅书房": {"purpose": "", "furnishings": ""}}}
+    assert "老宅庭院(庭院;固定陈设:石桌、石凳、古井)" in sb.user_message(ctx)
+    a = good_args()
+    a["segments"][0]["image_prompt"] = "@林小雨 坐在床边捧着 @玉佩,@老宅庭院"
+    (msg,) = [p for p in sb.judge_factory(ctx)(a) if "陈设" in p]
+    assert msg.startswith("段落1") and "「床」" in msg
+    a["segments"][0]["image_prompt"] = "@林小雨 坐在石桌旁捧着 @玉佩,@老宅庭院"
+    assert not [p for p in sb.judge_factory(ctx)(a) if "陈设" in p]

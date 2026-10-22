@@ -127,7 +127,7 @@ def seed_demo(store: Store, data_root: Path) -> dict:
     add_host(store, label="假云机", ssh_host="fake.local", ssh_port=1, ssh_user="root", key_ref="C:/fake/key",
              local_port=8188, vram_gb=24.0, models_dir="/fake/models", gpu="RTX 4090")
     return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2, "photo": photo, "lin": lin,
-            "episode2": ep2, "segment3": seg3, "segment4": seg4, "zhou": zhou}
+            "episode2": ep2, "segment3": seg3, "segment4": seg4, "zhou": zhou, "yard": yard}
 
 
 def _free_port() -> int:
@@ -404,7 +404,12 @@ def run(out_dir: Path) -> dict:
                     ("videos:episode2", "填理由 → 确认不是白屏(放行)→ 卡片显示「已人工确认放行」",
                      {f"#seg-{seg3} [data-blank-reason]": "雪景,本来就白"}, [f"#seg-{seg3} [data-blank-confirm]"],
                      f"#seg-{seg3} [data-blank-override]", 20),
-                    ("final:episode2", "放行后导出检查不再列这段白屏", {}, [_no_blank_problem], "[data-final-segment]", 20)), 1):
+                    ("final:episode2", "放行后导出检查不再列这段白屏", {}, [_no_blank_problem], "[data-final-segment]", 20),
+                    # 放在最后:填了陈设,前面链路的提示词就要按它查
+                    ("assets", "场景选用途、填固定陈设 → 保存", {f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]': "石桌、古井"},
+                     [lambda pg: pg.locator(f'[data-asset="scene-{ids["yard"]}"] [data-scene-purpose]').select_option("庭院"),
+                      f'[data-asset="scene-{ids["yard"]}"] form button[type=submit]'],
+                     f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]:has-text("古井")', 20)), 1):
                 errors.clear()
                 key, _, ep_key = key.partition(":")               # 「面板:集」—— 默认第 1 集
                 p = next(x for x in REGISTRY if x.key == key)

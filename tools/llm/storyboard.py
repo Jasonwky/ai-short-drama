@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 import re
 
-from tools.drama import refs, repo, rules
+from tools.drama import furnish, refs, repo, rules
 from tools.drama.db import Store
 from tools.gen.capability import MINIMAX_H3
 from tools.llm.verbatim import restore, squash
@@ -64,8 +64,10 @@ def context(store: Store, episode_id: int) -> dict:
         problems.append("这部剧还没有角色(先在「资产」里建)")
     if problems:
         raise ValueError(";".join(problems))
+    info = {r["name"]: {"purpose": r["purpose"], "furnishings": r["furnishings"]} for r in store.conn.execute(
+        "SELECT name, purpose, furnishings FROM scene WHERE drama_id = ? ORDER BY id", (did,))}
     return {"script": ep["script"], "characters": names["character"], "scenes": names["scene"],
-            "props": names["prop"]}
+            "props": names["prop"], "scene_info": info}
 
 
 def schema(ctx: dict) -> dict:
@@ -98,8 +100,15 @@ def user_message(ctx: dict) -> str:
     # 各模型首轮普遍拆成 5–7 段、被 check_episode 打回,多花一整轮
     lo, hi = rules.expected_segment_range(ctx["script"])
     return (f"本集应拆成 {lo}–{hi} 个段落,每段 2–4 个子镜头。\n"
-            f"角色名单:{'、'.join(ctx['characters'])}\n场景名单:{'、'.join(ctx['scenes'])}\n"
+            f"角色名单:{'、'.join(ctx['characters'])}\n场景名单:{'、'.join(_scene_label(n, ctx) for n in ctx['scenes'])}\n"
             f"道具名单:{'、'.join(ctx['props']) or '(无)'}\n\n<script>\n{ctx['script']}\n</script>")
+
+
+def _scene_label(name: str, ctx: dict) -> str:
+    """场景名后面带上用途与固定陈设(陈设表,spec 2026-10-22 第 3 项):首帧里只许用清单上的陈设。"""
+    i = ctx.get("scene_info", {}).get(name) or {}
+    extra = ";".join(x for x in (i.get("purpose", ""), f"固定陈设:{i['furnishings']}" if i.get("furnishings") else "") if x)
+    return f"{name}({extra})" if extra else name
 
 
 def describe(seg: dict) -> str:
@@ -161,6 +170,8 @@ def judge_factory(ctx: dict, cap=MINIMAX_H3):
             found, _ = refs.find_mentions(seg["image_prompt"], bound)
             problems += [f"{where}:绑定了「{b}」但 image_prompt 没有 @ 它" for b in bound if b not in found]
             img = seg["image_prompt"]
+            furn = ctx.get("scene_info", {}).get(seg["scene"], {}).get("furnishings", "")
+            problems += [f"{where}:image_prompt 里{p} —— 首帧只许用场景清单上的陈设" for p in furnish.problems(img, furn)]
             if len(chars) >= 2 and _INTERACT.search(img) and not _FACING.search(img):
                 problems.append(f"{where}:image_prompt 里有人物互动({_INTERACT.search(img).group()}),要写清朝向 ——"
                                 "谁面朝谁(如「@甲 面朝@乙 跪下」)")

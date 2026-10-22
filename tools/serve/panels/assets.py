@@ -16,7 +16,7 @@ import sqlite3
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
 
-from tools.drama import invalidation, repo, uploads
+from tools.drama import furnish, invalidation, repo, uploads
 from tools.drama.tasks import tasks_for
 from tools.gen.assets import SPEC, ensure_canvas, lock_seed, plan_asset_image, plan_fourview, unlock_seed
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
@@ -29,7 +29,8 @@ router = APIRouter()
 FIELDS = {
     "character": [("appearance", "外貌"), ("styling", "服装造型"), ("voice_desc", "声音描述(视频里的音色靠它)"),
                   ("final_prompt", "生成描述(英文效果更稳)")],
-    "scene": [("location", "地点"), ("time", "时间"), ("lighting", "光线"), ("final_prompt", "生成描述")],
+    "scene": [("location", "地点"), ("time", "时间"), ("lighting", "光线"), ("final_prompt", "生成描述"),
+              ("purpose", "用途"), ("furnishings", "固定陈设(顿号分隔,如「雕花床榻、屏风」;填了就按它查首帧提示词里的陈设)")],
     "prop": [("description", "描述"), ("final_prompt", "生成描述")],
 }
 KIND_LABEL = {"character": "角色", "scene": "场景", "prop": "道具"}
@@ -49,7 +50,8 @@ def page(request: Request, drama_id: int):
             items.append({"row": row, "current": row[SPEC[table][0]], "tasks": [t for t in tasks if t not in fourview],
                           "fourview_tasks": fourview, "llm_runs": runs.history(store, table, row["id"])})
         cols.append({"table": table, "label": KIND_LABEL[table], "entries": items, "fields": FIELDS[table]})
-    return render(request, "assets.html", "assets", drama_id=drama_id, cols=cols, seed=new_seed())
+    return render(request, "assets.html", "assets", drama_id=drama_id, cols=cols, seed=new_seed(),
+                  purposes=furnish.PURPOSES)
 
 
 @router.post("/drama/{drama_id}/assets")
@@ -72,6 +74,8 @@ async def edit(request: Request, table: str, row_id: int):
     form = await request.form()
     store = rt(request).store
     fields = {k: str(form.get(k, "")) for k, _ in FIELDS[table]}
+    if table == "scene" and fields["purpose"] not in ("", *furnish.PURPOSES):
+        raise ValueError(f"场景用途只能是 {'、'.join(furnish.PURPOSES)}")
     row = repo.get(store, table, row_id)
     back = f"/drama/{row['drama_id']}/assets"
     if table == "character" and fields["voice_desc"] != row["voice_desc"]:

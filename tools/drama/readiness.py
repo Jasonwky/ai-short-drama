@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tools.drama import refs, repo, rules
+from tools.drama import furnish, refs, repo, rules
 from tools.drama.db import Store
 from tools.gen.capability import Capability
 
@@ -118,6 +118,12 @@ def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, i
             lack.append(f"场景「{scene['name']}」缺空镜图")
         lack += [f"道具「{p['name']}」缺白底图" for p in props if not p["image_path"]]
         checks.append(Check("assets_bound", not lack, ";".join(lack) or "参考素材齐备"))
+
+    if scene is not None and scene["furnishings"].strip():      # 场景陈设表(spec 2026-10-22 第 3 项)
+        odd = [f"{label}:{p}" for label, text in (("首帧图提示词", seg["image_prompt"]), ("尾帧图提示词", seg["last_image_prompt"]))
+               for p in furnish.problems(text, scene["furnishings"])]
+        checks.append(Check("furnishings", not odd, ";".join(odd) + " —— 改提示词,或在「资产」里把它加进场景陈设"
+                            if odd else f"陈设与场景「{scene['name']}」一致"))
 
     bound = ([c["name"] for c in chars] + ([scene["name"]] if scene is not None else [])
              + [p["name"] for p in props])
