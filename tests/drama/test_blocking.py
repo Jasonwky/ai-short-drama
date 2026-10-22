@@ -18,6 +18,12 @@ def test_side_and_back_facing_read_naturally():
     assert ",背对镜头," in bk.phrase([_e("李福", "跪", "背对镜头", "左")])
 
 
+def test_bending_over_someone_is_a_pose():
+    # 实战第 4 段:施针要俯身凑近;只有「站」时人站在画面另一边,模型凭空多画一只手递针
+    assert bk.phrase([_e("沈青禾", "俯身", "萧珩", "中")]).startswith("@沈青禾 俯下身子凑近,面朝@萧珩")
+    assert bk.transition_problems([_e("沈青禾", "站")], "沈青禾俯身取出银针", [_e("沈青禾", "俯身")]) == []
+
+
 def test_lying_pose_is_written_by_code_not_left_to_the_model():
     assert "仰面平躺" in bk.phrase([_e("萧珩", "仰躺")]) and "全身" in bk.phrase([_e("萧珩", "仰躺")])
 
