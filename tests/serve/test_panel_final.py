@@ -3,7 +3,7 @@
 import subprocess
 
 from tests.cut.conftest import SRT, done_task
-from tools.cut import export
+from tools.cut import export, review
 from tools.drama import repo
 from tools.serve.fakes import sample_mp4
 
@@ -19,6 +19,8 @@ def two_videos(store, sample, root):
         done_task(store, root, seg, "video", f"outputs/tasks/v{n}/clip.mp4", mp4)
     done_task(store, root, sample["seg"], "align", "outputs/tasks/a1/subtitles.srt", SRT.encode("utf-8"),
               refs=["outputs/tasks/v1/clip.mp4"])
+    for seg in (sample["seg"], seg2):                    # 看片确认(v13):人看过才许导
+        review.confirm(store, root, seg)
     return seg2
 
 

@@ -298,3 +298,16 @@ def test_blank_overrides_travel_and_still_match_the_video(store, project, tmp_pa
     assert o is not None and o["segment_id"] == seg["id"] and o["reason"] == "雪景,本来就白"
     assert o["video_path"] == seg["video_path"] and o["video_path"].startswith("imports/")
     assert json.loads(o["spans_json"]) == [[1.0, 2.5]]
+
+
+def test_reviews_travel_and_still_match_the_video(store, project, tmp_path):
+    """v13 看片确认:同白屏放行,跟着段落走,导入后按 sha256 照样对得上。"""
+    sha = bundle._sha256(project["root"] / "videos/s1.mp4")
+    repo.add_review(store, project["seg"], video_path="videos/s1.mp4", sha256=sha, note="看过")
+    rel = bundle.export_bundle(store, project["root"], project["drama"])
+    dest = Store(":memory:")
+    new = bundle.import_bundle(dest, tmp_path / "dst", project["root"] / rel)
+    seg = dest.conn.execute("SELECT s.* FROM segment s JOIN episode e ON e.id = s.episode_id WHERE e.drama_id = ?",
+                            (new,)).fetchone()
+    r = repo.review(dest, seg["id"], sha)
+    assert r is not None and r["note"] == "看过" and r["video_path"] == seg["video_path"]

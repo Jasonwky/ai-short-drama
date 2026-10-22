@@ -63,6 +63,10 @@ def test_v2_database_gets_the_llm_run_table(tmp_path):
     s.conn.execute("ALTER TABLE segment DROP COLUMN last_image_prompt")
     s.conn.execute("DROP TABLE music_cue")                                    # v11 新增
     s.conn.execute("DROP TABLE blank_override")                               # v12 新增
+    s.conn.execute("DROP TABLE segment_review")                               # v13 新增
+    s.conn.execute("ALTER TABLE scene DROP COLUMN purpose")
+    s.conn.execute("ALTER TABLE scene DROP COLUMN furnishings")
+    s.conn.execute("ALTER TABLE segment DROP COLUMN blocking_json")
     s.conn.execute("UPDATE meta SET value = '2' WHERE key = 'schema_version'")
     s.close()
     s = Store(tmp_path / "d.db")

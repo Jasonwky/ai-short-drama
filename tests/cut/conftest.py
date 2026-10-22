@@ -44,4 +44,7 @@ def two_segments(store, sample, tmp_path, mp4_bytes):  # noqa: F811
                   refs=[f"outputs/tasks/f{n}/frame.png"])
     done_task(store, root, seg1, "align", "outputs/tasks/a1/subtitles.srt", SRT.encode("utf-8"),
               refs=["outputs/tasks/v1/clip.mp4"])
+    for seg, n in ((seg1, 1), (seg2, 2)):           # 看片确认(v13):人看过才许导
+        repo.add_review(store, seg, video_path=f"outputs/tasks/v{n}/clip.mp4",
+                        sha256=sha256_file(root / f"outputs/tasks/v{n}/clip.mp4"))
     return {**sample, "root": root, "seg1": seg1, "seg2": seg2}

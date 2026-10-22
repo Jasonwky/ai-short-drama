@@ -232,6 +232,14 @@ def _blank_video(store: Store, root: Path, segment_id: int):
     return act
 
 
+def _review(seg_id: int):
+    """点这段的「看过,没有穿帮」,等页面刷新出已确认(两段连着点,第二下要在新页面上点)。"""
+    def act(page) -> None:
+        page.locator(f"#seg-{seg_id} [data-review-confirm]").click()
+        page.wait_for_selector(f"#seg-{seg_id} [data-reviewed]", timeout=20000)
+    return act
+
+
 def _no_blank_problem(page) -> None:
     """成片面板的导出检查:人工确认放行过的白屏段落不该再列为问题。"""
     left = [t for t in page.locator("li.bad").all_inner_texts() if "白 / 灰的平底" in t]
@@ -325,6 +333,10 @@ def run(out_dir: Path) -> dict:
                      f"#seg-{seg2} [data-cue]", 30),
                     # 两段共用一段假的「听到的话」(见上面 heard):段落 1 天然多出「我会一直带着它」—— 台词外多说提醒的正例
                     ("videos", "字幕区出现台词外多说提醒", {}, [], f"#seg-{seg} [data-extra-speech]", 20),
+                    ("videos", "看片区:切镜计数 + 上一段末帧 / 本段首帧并排", {}, [], f"#seg-{seg2} [data-seam] img", 30),
+                    ("final", "没看片确认的段落列在导出检查的问题里", {}, [], 'li.bad:has-text("还没看片确认")', 20),
+                    ("videos", "段落 1、2 点「看过,没有穿帮」→ 卡片显示已确认", {},
+                     [_review(seg), _review(seg2)], f"#seg-{seg2} [data-reviewed]", 20),
                     ("final", "导出成片", {"[data-producer]": "SELFTEST-ONLY"}, ["[data-export]"],
                      '[data-export-state="done"] [data-export-video]', 90),
                     # 配乐:第二次导出(上一条是 #1),等的是 #2 的自检里「配乐」PASS

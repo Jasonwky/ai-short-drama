@@ -8,8 +8,17 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v13(s):
+    """退回 v12:删掉 v13 新增的看片确认表、场景陈设两列、段落场记表列。"""
+    s.conn.execute("DROP TABLE segment_review")
+    s.conn.execute("ALTER TABLE scene DROP COLUMN purpose")
+    s.conn.execute("ALTER TABLE scene DROP COLUMN furnishings")
+    s.conn.execute("ALTER TABLE segment DROP COLUMN blocking_json")
+
+
 def _drop_v12(s):
-    """退回 v11:删掉 v12 新增的白屏放行表(触发器随表一起删)。"""
+    """退回 v11:删掉 v12 新增的白屏放行表(触发器随表一起删);v13 的也一并退掉。"""
+    _drop_v13(s)
     s.conn.execute("DROP TABLE blank_override")
 
 
@@ -274,4 +283,28 @@ def test_v11_database_gains_locked_blank_overrides(tmp_path):
                        " VALUES (?, 'v.mp4', 'b', '[]', '  ', 'now')", (seg,))
     with pytest.raises(ValueError, match="★必填"):
         repo.add_blank_override(s, seg, video_path="v.mp4", sha256="a" * 64, spans=[[0.5, 1.5]], reason=" ")
+    s.close()
+
+
+def test_v12_database_gains_reviews_furnishings_and_blocking(tmp_path):
+    """v13:看片确认(写下不可改)、场景用途与陈设、段落场记表;老数据默认空。"""
+    import sqlite3
+
+    import pytest
+
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "玉佩", "9:16")
+    sc = repo.add_scene(s, d, "正堂")
+    seg = repo.add_segment(s, repo.add_episode(s, d, 1, "script"), 1, video_path="v.mp4")
+    _drop_v13(s)
+    s.conn.execute("UPDATE meta SET value = '12' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    assert repo.get(s, "scene", sc)["furnishings"] == "" and repo.get(s, "segment", seg)["blocking_json"] == ""
+    rid = repo.add_review(s, seg, video_path="v.mp4", sha256="a" * 64, note="")
+    assert repo.review(s, seg, "a" * 64)["id"] == rid and repo.review(s, seg, "b" * 64) is None
+    with pytest.raises(sqlite3.IntegrityError, match="不可改"):
+        s.conn.execute("UPDATE segment_review SET note = '别的' WHERE id = ?", (rid,))
     s.close()

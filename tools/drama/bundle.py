@@ -29,7 +29,8 @@ FORMAT = 1
 IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
 PATH_FIELDS = {"character": ("turnaround_path", "fourview_path", "voice_ref_path"), "scene": ("image_path",), "prop": ("image_path",),
                "segment": ("first_frame_path", "last_frame_path", "video_path", "subtitle_path"),
-               "segment_keyframe": ("frame_path",), "music_cue": ("path",), "blank_override": ("video_path",)}
+               "segment_keyframe": ("frame_path",), "music_cue": ("path",), "blank_override": ("video_path",),
+               "segment_review": ("video_path",)}
 # task.params_json 里存路径的键(video:字幕对齐的输入;source / ref:局部替换的原图与参考图)
 PARAM_PATH_KEYS = ("image_refs", "audio_ref", "video", "source", "ref")
 
@@ -64,6 +65,7 @@ def collect(store: Store, drama_id: int) -> dict:
         t[link] = _rows(store, f"SELECT * FROM {link} WHERE segment_id IN ({_in(segs)}) ORDER BY segment_id, position", ())
     t["segment_keyframe"] = _rows(store, f"SELECT * FROM segment_keyframe WHERE segment_id IN ({_in(segs)}) ORDER BY id", ())
     t["blank_override"] = _rows(store, f"SELECT * FROM blank_override WHERE segment_id IN ({_in(segs)}) ORDER BY id", ())
+    t["segment_review"] = _rows(store, f"SELECT * FROM segment_review WHERE segment_id IN ({_in(segs)}) ORDER BY id", ())
     t["music_cue"] = _rows(store, f"SELECT * FROM music_cue WHERE episode_id IN ({_in(eps)}) ORDER BY id", ())
     owned = {"segment": segs, **{k: [r["id"] for r in t[k]] for k in ("character", "scene", "prop")}}
     t["task"] = _rows(store, " UNION ".join(
@@ -194,6 +196,8 @@ def _insert(store: Store, m: dict, prefix: str, root: Path) -> int:
                                                       frame_path=mv(r["frame_path"]))
         for r in t["blank_override"]:                   # 文件逐字节带过去,sha256 不变:放行在新剧里照样对得上
             insert(c, "blank_override", r, segment_id=ids["segment"][r["segment_id"]], video_path=mv(r["video_path"]))
+        for r in t["segment_review"]:                   # 同上:看片确认按 sha256 认,带过去照样有效
+            insert(c, "segment_review", r, segment_id=ids["segment"][r["segment_id"]], video_path=mv(r["video_path"]))
         for r in t["music_cue"]:
             insert(c, "music_cue", r, episode_id=ids["episode"][r["episode_id"]], path=mv(r["path"]))
         for link, col, table in (("segment_character", "character_id", "character"), ("segment_prop", "prop_id", "prop")):

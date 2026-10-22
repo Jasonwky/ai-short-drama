@@ -18,19 +18,19 @@ _COLUMNS: dict[str, set[str]] = {
     "episode": {"source_text", "outline", "script"},
     "character": {"appearance", "styling", "voice_desc", "final_prompt", "seed",
                   "turnaround_path", "fourview_path", "voice_ref_path"},
-    "scene": {"episode_id", "location", "time", "lighting", "final_prompt", "image_path"},
+    "scene": {"episode_id", "location", "time", "lighting", "final_prompt", "image_path", "purpose", "furnishings"},
     "prop": {"description", "final_prompt", "image_path"},
     # scene_id 不在这里:改场景要走 set_scene(),它会核对归属
     "segment": {"duration_sec", "shot_type", "angle", "movement", "description", "result",
                 "atmosphere", "layout", "image_prompt", "last_image_prompt", "video_prompt", "bgm_prompt", "sfx_prompt",
-                "reference_mode", "first_frame_path", "last_frame_path", "video_path", "subtitle_path"},
+                "reference_mode", "first_frame_path", "last_frame_path", "video_path", "subtitle_path", "blocking_json"},
     # segment_id 不在这里:关键帧建在哪段就属于哪段,不挪
     "segment_keyframe": {"time_sec", "image_prompt", "frame_path"},
     # path / sha256 不在这里:文件按内容寻址,换文件就是新挂一条
     "music_cue": {"license", "start_sec", "end_sec", "gain_db", "duck_db", "fade_in", "fade_out"},
 }
 _READABLE = {"drama", "episode", "character", "scene", "prop", "segment", "task", "host", "segment_keyframe",
-             "music_cue", "blank_override"}
+             "music_cue", "blank_override", "segment_review"}
 
 
 def _check_cols(table: str, fields: dict) -> None:
@@ -165,6 +165,19 @@ def add_blank_override(store: Store, segment_id: int, *, video_path: str, sha256
 def blank_override(store: Store, segment_id: int, sha256: str) -> sqlite3.Row | None:
     """这段对这条视频(按内容哈希)最近的一次放行;没有 = None。"""
     return store.conn.execute("SELECT * FROM blank_override WHERE segment_id = ? AND sha256 = ?"
+                              " ORDER BY id DESC LIMIT 1", (segment_id, sha256)).fetchone()
+
+
+def add_review(store: Store, segment_id: int, *, video_path: str, sha256: str, note: str = "") -> int:
+    """看片确认:人看过这条视频(sha256)、确认没有穿帮。写下不可改(触发器);换了视频自动失效。"""
+    get(store, "segment", segment_id)
+    return _insert(store, "segment_review", {"segment_id": segment_id, "video_path": video_path, "sha256": sha256,
+                                             "note": note.strip(), "created_at": now()})
+
+
+def review(store: Store, segment_id: int, sha256: str) -> sqlite3.Row | None:
+    """这段对这条视频最近的一次看片确认;没有 = None。"""
+    return store.conn.execute("SELECT * FROM segment_review WHERE segment_id = ? AND sha256 = ?"
                               " ORDER BY id DESC LIMIT 1", (segment_id, sha256)).fetchone()
 
 

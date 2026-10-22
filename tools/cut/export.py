@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.cut import aigc, blankscan, media, music, provenance, subtitles, textscan
+from tools.cut import aigc, blankscan, media, music, provenance, review, subtitles, textscan
 from tools.drama import repo, rules
 from tools.drama.db import Store, now
 from tools.serve.dispatch import sha256_file
@@ -80,6 +80,8 @@ def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
             blank = blankscan.cached(data_root, s["video_path"])                                # 同上:只读缓存
             if blank and blankscan.override_for(store, data_root, s) is None:                   # 人工确认放行过这条视频的不拦
                 problems.append(blankscan.problem(s["number"], blank))
+            if review.review_for(store, data_root, s) is None:                                 # 人看过才许导
+                problems.append(review.problem(s["number"]))
     try:
         media.require_ffmpeg()
     except ValueError as e:
@@ -109,7 +111,8 @@ def begin(store: Store, data_root: Path, episode_id: int, producer: str) -> int:
     videos = [{"segment_id": s["id"], "number": s["number"], "video_path": s["video_path"],
                "sha256": sha256_file(root / s["video_path"]), "subtitle_path": s["subtitle_path"],
                "subtitle_sha256": sha256_file(root / s["subtitle_path"]) if s["subtitle_path"] else None,
-               "blank_override": blankscan.snapshot(blankscan.override_for(store, root, s))}
+               "blank_override": blankscan.snapshot(blankscan.override_for(store, root, s)),
+               "review": review.snapshot(review.review_for(store, root, s))}
               for s in segs]
     cues = music.snapshot(store, episode_id)
     problems += provenance.problems(provenance.build(store, root, episode_id, produce_id="", producer=producer,

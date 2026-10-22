@@ -6,6 +6,9 @@
 
 白屏检测命中的视频卡片上可以「确认不是白屏(放行)」:理由★必填,只对这条视频的 sha256 有效,换了视频自动失效。
 
+看片(连续性保障,spec 2026-10-22):每段列出自动切镜的时刻与切后那一帧、上一段末帧与本段首帧的接缝;
+人看过点「看过,没有穿帮」(只对这条视频有效),没确认的段落拦导出。
+
 字幕也在这里:对着当前视频对齐台词(云机 whisper),逐句显示当前字幕的起止时间;判卷不过的原因写在对齐记录上。
 """
 from __future__ import annotations
@@ -15,7 +18,7 @@ import json
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from tools.cut import blankscan, keycheck, subtitles
+from tools.cut import blankscan, cuts, keycheck, media, review, subtitles
 from tools.drama import repo
 from tools.drama.tasks import producer, tasks_for
 from tools.gen.capability import MINIMAX_H3
@@ -44,6 +47,7 @@ def page(request: Request, episode_id: int):
     segs, b = [], estimate.basis(store)
     preset_steps = presets.video_steps(store)
     full = preset_steps or H3_STEPS
+    prev = None                                     # 上一段的切镜报告(接缝要它的末帧)
     for s in store.conn.execute("SELECT * FROM segment WHERE episode_id = ? ORDER BY number", (episode_id,)):
         frames = MINIMAX_H3.frames_for(s["duration_sec"]) if s["duration_sec"] else None
         est = b.video(MINIMAX_H3, frames, full) if frames else None
@@ -56,8 +60,14 @@ def page(request: Request, episode_id: int):
                 for t in videos if t["id"] in few}
         cur = producer(store, "video", s["video_path"]) if s["video_path"] else None
         sub = runtime.data_root / s["subtitle_path"] if s["subtitle_path"] else None
-        blank = (blankscan.cached(runtime.data_root, s["video_path"])          # 只读缓存:导出时才查,渲染不现算
-                 if s["video_path"] and (runtime.data_root / s["video_path"]).is_file() else None)
+        has_video = bool(s["video_path"]) and (runtime.data_root / s["video_path"]).is_file()
+        blank = blankscan.cached(runtime.data_root, s["video_path"]) if has_video else None   # 只读缓存:导出时才查
+        cut, cut_error = None, None
+        if has_video:                               # 与 keycheck 一样当场算、按 sha256 缓存(一条约 1 秒)
+            try:
+                cut = cuts.check(runtime.data_root, s["video_path"])
+            except media.CutError as e:
+                cut_error = str(e)
         segs.append({"row": s, "checks": readiness(runtime, s["id"]), "est_min": None if est is None else est / 60,
                      "draft_min": None if draft is None else draft / 60, "tags": tags,
                      "few_now": few.get(cur["id"]) if cur else None,
@@ -67,8 +77,11 @@ def page(request: Request, episode_id: int):
                      "align_tasks": [t for t in tasks if t["kind"] == "align"],
                      "align_problems": align_problems(store, s["id"]),
                      "keychecks": keycheck.check(store, runtime.data_root, s["id"]),
+                     "cuts": cut, "cut_error": cut_error, "prev_last": prev.last_png if prev else None,
+                     "review": review.review_for(store, runtime.data_root, s) if has_video else None,
                      "extra": aligner.extra_speech_for(store, runtime.data_root, s["id"]),
                      "cues": subtitles.parse_srt(sub.read_text(encoding="utf-8")) if sub and sub.is_file() else []})
+        prev = cut
     return render(request, "videos.html", "videos", episode_id=episode_id, ep=ep, segs=segs, seed=new_seed(),
                   est_note=b.note, key_ref=(keycheck.HIT, keycheck.OTHER), full_steps=full,
                   full_from_preset=preset_steps is not None, draft_steps=DRAFT_STEPS, few_note=FEW_STEPS_NOTE)
@@ -87,6 +100,15 @@ def blank_override(request: Request, segment_id: int, reason: str = Form("")):
     """白屏命中、人看过确认不是白屏:填理由放行(★必填),只对这条视频的 sha256 有效。"""
     runtime = rt(request)
     blankscan.confirm(runtime.store, runtime.data_root, segment_id, reason)
+    ep_id = repo.get(runtime.store, "segment", segment_id)["episode_id"]
+    return RedirectResponse(f"/episode/{ep_id}/videos#seg-{segment_id}", status_code=303)
+
+
+@router.post("/segment/{segment_id}/review")
+def confirm_review(request: Request, segment_id: int, note: str = Form("")):
+    """看过这段视频、没有穿帮:只对这条视频的 sha256 有效。"""
+    runtime = rt(request)
+    review.confirm(runtime.store, runtime.data_root, segment_id, note)
     ep_id = repo.get(runtime.store, "segment", segment_id)["episode_id"]
     return RedirectResponse(f"/episode/{ep_id}/videos#seg-{segment_id}", status_code=303)
 

@@ -62,6 +62,34 @@
     </div>
     {% endfor %}
     {% endif %}
+    {% if s.row.video_path %}
+    <h3>看片</h3>
+    <div data-review-section>
+      {% if s.cut_error %}<p class="status-bad">{{ s.cut_error }}</p>{% endif %}
+      {% if s.cuts %}
+      <p class="hint" data-cut-count>本段自动切镜 {{ s.cuts.cuts | length }} 次{% if s.cuts.cuts %}:{% for c in s.cuts.cuts %}{{ "%.2f" | format(c.sec) }} 秒{{ "、" if not loop.last }}{% endfor %}{% endif %}
+        (相邻帧差 &gt; 30 算切镜;切镜之后最容易换了背景、丢了帽子,逐张看)</p>
+      <div class="row">
+        {% if s.prev_last %}<div data-seam><p class="hint">上一段末帧</p><img src="/media/{{ s.prev_last }}" alt="上一段末帧" style="max-height: 200px"></div>{% endif %}
+        <div data-seam-first><p class="hint">本段首帧</p><img src="/media/{{ s.cuts.first_png }}" alt="本段首帧" style="max-height: 200px"></div>
+        {% for c in s.cuts.cuts %}
+        <div data-cut-frame><p class="hint">切镜后 · {{ "%.2f" | format(c.sec) }} 秒</p><img src="/media/{{ s.cuts.cut_pngs[loop.index0] }}" alt="切镜后" style="max-height: 200px"></div>
+        {% endfor %}
+        <div data-seam-last><p class="hint">本段末帧</p><img src="/media/{{ s.cuts.last_png }}" alt="本段末帧" style="max-height: 200px"></div>
+      </div>
+      {% endif %}
+      {% if s.review %}
+        <p class="status-ok" data-reviewed>已看片确认 · {{ s.review.created_at }}{% if s.review.note %} · {{ s.review.note }}{% endif %}
+          <span class="hint">(只对这条视频 sha256 <code>{{ s.review.sha256[:16] }}</code> 有效,换了视频要重新看)</span></p>
+      {% else %}
+        <form method="post" action="/segment/{{ s.row.id }}/review" class="row" data-review-form>
+          <div style="flex: 1; min-width: 220px"><label>备注(可空)</label><input type="text" name="note" data-review-note></div>
+          <button class="btn" type="submit" data-review-confirm>看过,没有穿帮</button>
+        </form>
+        <p class="hint">没确认的段落不许导出。要看:接缝前后人物 / 服装 / 道具 / 站位接不接得上,切镜后背景是不是同一间屋。</p>
+      {% endif %}
+    </div>
+    {% endif %}
     <h3>字幕</h3>
     {% if s.extra and s.extra.problem %}<p class="hint" data-extra-speech-unknown>{{ s.extra.problem }}</p>{% endif %}
     {% for r in (s.extra.runs if s.extra else []) %}

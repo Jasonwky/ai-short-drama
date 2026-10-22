@@ -389,3 +389,20 @@ def test_checker_catches_ducking_that_did_not_happen(store, two_segments):
                           media.Label.for_size(384, 672))
     bad = {c["name"]: c["detail"] for c in checks if not c["ok"]}
     assert "配乐" in bad and "台词处没压低" in bad["配乐"], bad
+
+
+def test_unreviewed_segment_blocks_export_and_review_is_tied_to_the_video(store, two_segments, mp4_bytes):
+    """看片确认(v13):只认那条视频的 sha256;换了视频要重新看,没看过的段落拦导出。"""
+    s, root = two_segments, two_segments["root"]
+    assert export.readiness(store, root, s["episode"]) == []
+    done_task(store, root, s["seg2"], "video", "outputs/tasks/v3/clip.mp4", mp4_bytes + b"\0",
+              refs=["outputs/tasks/f2/frame.png"])                       # 第 2 段换了一条视频
+    (msg,) = [p for p in export.readiness(store, root, s["episode"]) if "看片" in p]
+    assert msg.startswith("段落 2")
+    with pytest.raises(ValueError, match="看片"):
+        export.begin(store, root, s["episode"], PRODUCER)
+    from tools.cut import review
+    review.confirm(store, root, s["seg2"], "接缝看过")
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    snap = json.loads(export.get(store, eid)["inputs_json"])
+    assert [v["review"]["note"] for v in snap] == ["", "接缝看过"]

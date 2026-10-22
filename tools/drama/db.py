@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -69,6 +69,8 @@ CREATE TABLE scene (
   final_prompt TEXT NOT NULL DEFAULT '',
   image_path TEXT,
   library_id INTEGER,
+  purpose TEXT NOT NULL DEFAULT '',
+  furnishings TEXT NOT NULL DEFAULT '',
   UNIQUE (drama_id, name)
 );
 
@@ -107,6 +109,7 @@ CREATE TABLE segment (
   last_frame_path TEXT,
   video_path TEXT,
   subtitle_path TEXT,
+  blocking_json TEXT NOT NULL DEFAULT '',
   UNIQUE (episode_id, number)
 );
 
@@ -312,6 +315,22 @@ BEGIN SELECT RAISE(ABORT, '白屏放行记录一经写下不可改 —— 它只
 ]
 SCHEMA += "".join(f"{stmt};\n" for stmt in BLANK_OVERRIDE_DDL)
 
+# v13:连续性保障(spec 2026-10-22-连续性保障-design.md)。看片确认:人看过这段视频、确认没有穿帮 ——
+# 只对这条视频的 sha256 有效,换了视频自动失效;没确认的段落拦导出。一经写下不可改,备注可空
+REVIEW_DDL = [
+    """CREATE TABLE segment_review (
+  id INTEGER PRIMARY KEY,
+  segment_id INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+  video_path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+)""",
+    """CREATE TRIGGER segment_review_immutable BEFORE UPDATE ON segment_review
+BEGIN SELECT RAISE(ABORT, '看片确认一经写下不可改 —— 它只对当时那条视频有效'); END""",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in REVIEW_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -346,6 +365,11 @@ MIGRATIONS: dict[int, list[str]] = {
     10: MUSIC_DDL,
     # v12:白屏人工放行
     11: BLANK_OVERRIDE_DDL,
+    # v13:看片确认;场景的用途与固定陈设(陈设表);段落的场记表(结构化状态,空 = 没有)
+    12: [*REVIEW_DDL,
+         "ALTER TABLE scene ADD COLUMN purpose TEXT NOT NULL DEFAULT ''",
+         "ALTER TABLE scene ADD COLUMN furnishings TEXT NOT NULL DEFAULT ''",
+         "ALTER TABLE segment ADD COLUMN blocking_json TEXT NOT NULL DEFAULT ''"],
 }
 
 
