@@ -40,7 +40,8 @@ SYSTEM = """你是短剧分镜师。把用户给的一集剧本拆成视频段�
    小道具在 image_prompt 里写清它在画面里的大小,用手或身体比(如「一根手指长的细银针」)。
 6. blocking 是本段**开头那一刻**的场记表:本段每个角色一项 —— pose(姿态)、facing(面朝本段哪个角色,
    或 镜头 / 侧对镜头 / 背对镜头)、side(在画面左 / 中 / 右)、holding(手里拿着本段哪件道具,没有填 无)。
-   系统会按它把姿态、朝向、站位拼进首帧提示词,image_prompt 里**不用再写**这些。
+   系统会按它把姿态、朝向、站位拼进首帧提示词,image_prompt 里**不要再写**这些(跪、躺、站在、坐在、左侧、面朝……)——
+   两处说法不一样时,模型会把同一个人画两遍。image_prompt 只写动作、神情、服饰和环境。
    上一段开头和这一段开头同一人的姿态不同(如站 → 跪),上一段的子镜头里要写出这个动作(如「扑通跪下」)。
 7. pace 选节奏:tight(紧凑)/ normal / lingering(留白多)。
 
@@ -181,6 +182,9 @@ def judge_factory(ctx: dict, cap=MINIMAX_H3):
             furn = ctx.get("scene_info", {}).get(seg["scene"], {}).get("furnishings", "")
             problems += [f"{where}:image_prompt 里{p} —— 首帧只许用场景清单上的陈设" for p in furnish.problems(img, furn)]
             problems += [f"{where}:{p}" for p in blocking.problems(seg["blocking"], chars, seg.get("props", []))]
+            if blocking.pose_words(img):
+                problems.append(f"{where}:image_prompt 里写了姿态 / 站位 / 朝向({'、'.join(blocking.pose_words(img))}),"
+                                "这些只写在 blocking 里 —— 两处说法不一样时模型会把人画两遍")
             if n > 1 and segs[n - 2]["scene"] == seg["scene"]:     # 同场景相邻段:对表
                 prev = segs[n - 2]
                 problems += [f"{where}:{p}" for p in

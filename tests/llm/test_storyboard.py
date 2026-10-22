@@ -212,3 +212,11 @@ def test_furniture_outside_the_scene_list_is_sent_back():
     assert msg.startswith("段落1") and "「床」" in msg
     a["segments"][0]["image_prompt"] = "@林小雨 坐在石桌旁捧着 @玉佩,@老宅庭院"
     assert not [p for p in sb.judge_factory(ctx)(a) if "陈设" in p]
+
+
+def test_pose_words_in_image_prompt_are_sent_back_when_blocking_covers_them():
+    """实战 2026-10-22:文字「俯身在床边」与表「站着,在右侧」冲突 → 同一人画两遍;姿态只许写在 blocking 里。"""
+    a = good_args()
+    a["segments"][1]["image_prompt"] = "@林小雨 跪在地上,@沈墨 站在她左侧,@老宅庭院"
+    (msg,) = [p for p in sb.judge_factory(CTX)(a) if "画两遍" in p]
+    assert msg.startswith("段落2") and "跪" in msg and "站在" in msg and "左侧" in msg

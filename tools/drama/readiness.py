@@ -123,6 +123,10 @@ def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, i
     if entries:
         bad = blocking.problems(entries, [c["name"] for c in chars], [p["name"] for p in props])
         checks.append(Check("blocking", not bad, "场记表:" + ";".join(bad) if bad else "场记表与本段绑定一致"))
+        dup = blocking.pose_words(seg["image_prompt"])
+        if dup:
+            checks.append(Check("blocking_dup", True, f"首帧图提示词里也写了姿态 / 站位 / 朝向({'、'.join(dup)}):"
+                                "和场记表说法不一样时,模型会把人画两遍或不理场记表 —— 最好删掉,交给场记表", warn=True))
         prev = store.conn.execute("SELECT * FROM segment WHERE episode_id = ? AND number < ? ORDER BY number DESC LIMIT 1",
                                   (seg["episode_id"], seg["number"])).fetchone()
         if prev is not None and prev["scene_id"] == seg["scene_id"] and prev["blocking_json"].strip():

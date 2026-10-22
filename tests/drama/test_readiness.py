@@ -202,3 +202,11 @@ def test_blocking_is_checked_and_seams_with_the_previous_segment_are_hinted(stor
     repo.bind_characters(store, seg2, [sample["lin"]])
     checks = _by_key(_check(store, seg2))
     assert checks["blocking"].ok and checks["blocking_seam"].warn and "没交代" in checks["blocking_seam"].msg
+
+
+def test_pose_words_next_to_a_blocking_table_are_warned(store, sample):
+    import json
+    repo.update(store, "segment", sample["seg"], image_prompt="@林小雨 跪在 @老宅庭院 捧着 @玉佩",
+                blocking_json=json.dumps([_entry()], ensure_ascii=False))
+    c = _by_key(_check(store, sample["seg"]))["blocking_dup"]
+    assert c.warn and "跪" in c.msg and "画两遍" in c.msg
