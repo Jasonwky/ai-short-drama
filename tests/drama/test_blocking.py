@@ -13,6 +13,11 @@ def test_phrase_spells_out_pose_facing_side_and_prop():
     assert got == "@沈玉瑶 跪着,面朝@萧珩,在画面左侧;@萧珩 坐着,面朝@沈玉瑶,在画面右侧,手里拿着@银针"
 
 
+def test_side_and_back_facing_read_naturally():
+    assert bk.phrase([_e("萧珩", "仰躺", "侧对镜头", "左")]).split(",")[-2:] == ["侧对镜头", "在画面左侧"]
+    assert ",背对镜头," in bk.phrase([_e("李福", "跪", "背对镜头", "左")])
+
+
 def test_lying_pose_is_written_by_code_not_left_to_the_model():
     assert "仰面平躺" in bk.phrase([_e("萧珩", "仰躺")]) and "全身" in bk.phrase([_e("萧珩", "仰躺")])
 

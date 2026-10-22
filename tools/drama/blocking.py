@@ -18,8 +18,8 @@ FIXED_FACING = ("镜头", "侧对镜头", "背对镜头")
 SIDES = ("左", "中", "右")
 NONE = "无"
 # 拼进首帧提示词的写法。躺姿写死「全身在画面里摆放自然」:实战只写「躺在床上」时人横出床沿、腿伸出床外
-POSE_PHRASE = {"站": "站着", "坐": "坐着", "跪": "跪着", "仰躺": "仰面平躺,全身舒展、完整地躺在身下的床或地面上",
-               "侧躺": "侧身躺着,全身完整地躺在身下的床或地面上", "趴": "趴着", "走": "正在走动"}
+POSE_PHRASE = {"站": "站着", "坐": "坐着", "跪": "跪着", "仰躺": "仰面平躺,全身完整地躺平,身体不横出床沿",
+               "侧躺": "侧身躺着,全身完整地躺平,身体不横出床沿", "趴": "趴着", "走": "正在走动"}
 # 姿态变成 X,前一段描述里要出现的动作词之一
 POSE_VERBS = {"站": ("起身", "站起", "站了起来", "起来"), "坐": ("坐",), "跪": ("跪",), "仰躺": ("躺", "倒"),
               "侧躺": ("躺", "倒"), "趴": ("趴", "扑倒", "倒"), "走": ("走", "上前", "迈", "冲")}
@@ -54,8 +54,8 @@ def phrase(entries: list[dict]) -> str:
     """拼进首帧提示词的那句(@名字,由 tags.expand 换成 Picture k)。"""
     parts = []
     for e in entries:
-        facing = e["facing"] if e["facing"] in FIXED_FACING else f"@{e['facing']}"
-        bits = [f"@{e['character']} {POSE_PHRASE[e['pose']]}", f"面朝{facing}" if e["facing"] != "背对镜头" else "背对镜头",
+        facing = {"镜头": "面朝镜头", "侧对镜头": "侧对镜头", "背对镜头": "背对镜头"}.get(e["facing"], f"面朝@{e['facing']}")
+        bits = [f"@{e['character']} {POSE_PHRASE[e['pose']]}", facing,
                 f"在画面{e['side']}侧" if e["side"] != "中" else "在画面中间"]
         if e["holding"] != NONE:
             bits.append(f"手里拿着@{e['holding']}")
