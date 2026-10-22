@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tools.drama import furnish, refs, repo, rules
+from tools.drama import blocking, furnish, refs, repo, rules
 from tools.drama.db import Store
 from tools.gen.capability import Capability
 
@@ -119,6 +119,17 @@ def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, i
         lack += [f"道具「{p['name']}」缺白底图" for p in props if not p["image_path"]]
         checks.append(Check("assets_bound", not lack, ";".join(lack) or "参考素材齐备"))
 
+    entries = blocking.parse(seg["blocking_json"])               # 场记表(spec 2026-10-22 第 4 项);空 = 老段落,不查
+    if entries:
+        bad = blocking.problems(entries, [c["name"] for c in chars], [p["name"] for p in props])
+        checks.append(Check("blocking", not bad, "场记表:" + ";".join(bad) if bad else "场记表与本段绑定一致"))
+        prev = store.conn.execute("SELECT * FROM segment WHERE episode_id = ? AND number < ? ORDER BY number DESC LIMIT 1",
+                                  (seg["episode_id"], seg["number"])).fetchone()
+        if prev is not None and prev["scene_id"] == seg["scene_id"] and prev["blocking_json"].strip():
+            before = blocking.parse(prev["blocking_json"])
+            hints = blocking.transition_problems(before, prev["description"], entries) + blocking.side_swaps(before, entries)
+            if hints:
+                checks.append(Check("blocking_seam", True, "和上一段接不上:" + ";".join(hints), warn=True))
     if scene is not None and scene["furnishings"].strip():      # 场景陈设表(spec 2026-10-22 第 3 项)
         odd = [f"{label}:{p}" for label, text in (("首帧图提示词", seg["image_prompt"]), ("尾帧图提示词", seg["last_image_prompt"]))
                for p in furnish.problems(text, scene["furnishings"])]

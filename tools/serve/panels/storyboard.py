@@ -8,10 +8,12 @@
 """
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from tools.drama import invalidation, repo, rules
+from tools.drama import blocking, invalidation, repo, rules
 from tools.drama.readiness import KEY_GAP_SEC, KEY_MARGIN_SEC, KEY_MAX, key_frame_index
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.llm import runs
@@ -111,7 +113,13 @@ def edit_page(request: Request, segment_id: int):
         for n, k in enumerate(keys, 1):
             idx = key_frame_index(k["time_sec"], MINIMAX_H3)
             marks.append((f"关键帧 {n}" if len(keys) > 1 else "关键帧", idx, min(100, round(100 * idx / (frames - 1)))))
+    saved = {e["character"]: e for e in blocking.parse(seg["blocking_json"])}
+    names = [c["name"] for c in assets["characters"]]
+    rows = [{"character": n, **{"pose": "站", "facing": "镜头", "side": "中", "holding": blocking.NONE}, **saved.get(n, {}),
+             "facing_options": [*[m for m in names if m != n], *blocking.FIXED_FACING],
+             "holding_options": [blocking.NONE, *[p["name"] for p in assets["props"]]]} for n in names]
     return render(request, "segment_edit.html", "storyboard", episode_id=seg["episode_id"], seg=seg, modes=MODES,
+                  bk=blocking, blocking_rows=rows, blocking_phrase=blocking.phrase(list(saved.values())) if saved else "",
                   frames=frames, marks=marks, margin=KEY_MARGIN_SEC, gap=KEY_GAP_SEC, keys=keys, key_max=KEY_MAX,
                   all_of=all_of, bound_chars={c["id"] for c in assets["characters"]},
                   bound_props={p["id"] for p in assets["props"]}, checks=readiness(runtime, segment_id))
@@ -172,6 +180,21 @@ async def save(request: Request, segment_id: int):
     for _, sec, prompt in added:
         repo.add_keyframe(store, segment_id, sec, prompt)
     return RedirectResponse(back, status_code=303)
+
+
+@router.post("/segment/{segment_id}/blocking")
+async def save_blocking(request: Request, segment_id: int):
+    """保存场记表:本段每个角色一行(表单按行同序提交)。闭集值、覆盖本段角色由 blocking.problems 判。"""
+    store = rt(request).store
+    form = await request.form()
+    cols = [form.getlist(k) for k in ("character", "pose", "facing", "side", "holding")]
+    entries = [dict(zip(("character", "pose", "facing", "side", "holding"), map(str, row))) for row in zip(*cols)]
+    assets = repo.segment_assets(store, segment_id)
+    bad = blocking.problems(entries, [c["name"] for c in assets["characters"]], [p["name"] for p in assets["props"]])
+    if bad:
+        raise ValueError("场记表:" + ";".join(bad))
+    repo.update(store, "segment", segment_id, blocking_json=json.dumps(entries, ensure_ascii=False))
+    return RedirectResponse(f"/segment/{segment_id}/edit", status_code=303)
 
 
 @router.post("/api/segment/check")

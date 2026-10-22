@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """分镜拆解的确定性部分:格式拼接、时长、判卷、写入。LLM 本身的行为由 test_contract_real.py 真跑验证。"""
+import json
 from pathlib import Path
 
 import pytest
@@ -21,7 +22,8 @@ def _seg(scene, chars, subshots, props=(), pace="normal", img=None, vid=None):
     bound = [*chars, scene, *props]
     return {"scene": scene, "characters": list(chars), "props": list(props), "subshots": subshots, "pace": pace,
             "image_prompt": img if img is not None else " ".join(f"@{b}" for b in bound),
-            "video_prompt": vid if vid is not None else f"@{chars[0]} 缓慢抬头"}
+            "video_prompt": vid if vid is not None else f"@{chars[0]} 缓慢抬头",
+            "blocking": [{"character": c, "pose": "站", "facing": "镜头", "side": "中", "holding": "无"} for c in chars]}
 
 
 def good_args():
@@ -161,6 +163,7 @@ def test_apply_creates_segments_with_bindings_and_computed_durations(store):
         s1["description"], s1["duration_sec"], MINIMAX_H3) == []
     assets = repo.segment_assets(store, ids[1])
     assert [c["name"] for c in assets["characters"]] == ["林小雨", "沈墨"] and assets["scene"]["name"] == "老宅庭院"
+    assert [e["character"] for e in json.loads(repo.get(store, "segment", ids[1])["blocking_json"])] == ["林小雨", "沈墨"]
     with pytest.raises(ValueError, match="已经有段落"):          # 批准前有人手工建了段落 → 不重复写
         sb.apply(store, ep, good_args(), CTX)
 
@@ -176,32 +179,26 @@ def test_apply_writes_back_the_scripts_own_wording(store):
     assert "这块玉佩，是我母亲留给我的。" in desc and "这块玉佩," not in desc
 
 
-def test_two_people_interacting_must_say_who_faces_whom():
-    """实战第 7 段:「沈玉瑶跪在地上求饶,萧珩俯视她」没写朝向,出图她背对着萧珩跪。"""
+def test_blocking_must_cover_the_segment_and_pose_changes_need_an_action():
+    """场记表(v13):本段每个角色一项;同场景相邻段姿态变了,上一段要交代动作(实战第 5 段李福从站到跪)。"""
     a = good_args()
-    a["segments"][1]["image_prompt"] = "@林小雨 跪在地上求饶,@沈墨 俯视她,@老宅庭院"
-    (msg,) = [p for p in sb.judge_factory(CTX)(a) if "朝向" in p]
-    assert msg.startswith("段落2")
-    a["segments"][1]["image_prompt"] = "@林小雨 面朝@沈墨 跪在地上求饶,@沈墨 俯视她,@老宅庭院"
-    assert not [p for p in sb.judge_factory(CTX)(a) if "朝向" in p]
-    a["segments"][0]["image_prompt"] = "@林小雨 跪在地上捧着 @玉佩,@老宅庭院"       # 一个人跪着不涉及朝谁
-    assert not [p for p in sb.judge_factory(CTX)(a) if "朝向" in p]
-
-
-def test_lying_must_say_how():
-    """实战第 3、6 段:只写「躺在床上」,出图人横在床沿、腿伸出床外。"""
+    a["segments"][1]["blocking"] = a["segments"][1]["blocking"][:1]
+    assert any(p.startswith("段落2") and "场记表缺「沈墨」" in p for p in sb.judge_factory(CTX)(a))
     a = good_args()
-    a["segments"][0]["image_prompt"] = "@林小雨 躺在床上,手里握着 @玉佩,@老宅庭院"
-    (msg,) = [p for p in sb.judge_factory(CTX)(a) if "躺" in p]
-    assert msg.startswith("段落1") and "仰面" in msg
-    a["segments"][0]["image_prompt"] = "@林小雨 仰面平躺在床上,全身在床内,手里握着 @玉佩,@老宅庭院"
-    assert not [p for p in sb.judge_factory(CTX)(a) if "躺" in p]
-    a["segments"][0]["image_prompt"] = "@林小雨 走进卧房,手里握着 @玉佩,@老宅庭院"   # 「卧房」不是躺
-    assert not [p for p in sb.judge_factory(CTX)(a) if "躺" in p]
+    a["segments"][1]["blocking"][0]["pose"] = "跪"           # 段落 1 开头林小雨站着,段落 1 里没写跪
+    (msg,) = [p for p in sb.judge_factory(CTX)(a) if "没交代" in p]
+    assert msg.startswith("段落2") and "林小雨" in msg
+    a["segments"][0]["subshots"][0]["visual"] = "林小雨捧着玉佩慢慢跪下"
+    assert not [p for p in sb.judge_factory(CTX)(a) if "没交代" in p]
 
 
-def test_prompt_teaches_facing_lying_and_prop_size():
-    assert "面朝" in sb.SYSTEM and "仰面" in sb.SYSTEM and "道具" in sb.SYSTEM and "大小" in sb.SYSTEM
+def test_prompt_asks_for_blocking_and_prop_size():
+    assert "blocking" in sb.SYSTEM and "面朝" not in sb.SYSTEM.split("blocking")[0]
+    assert "道具" in sb.SYSTEM and "大小" in sb.SYSTEM
+    entry = sb.schema(CTX)["properties"]["segments"]["items"]["properties"]["blocking"]["items"]
+    assert entry["properties"]["facing"]["enum"] == ["林小雨", "沈墨", "镜头", "侧对镜头", "背对镜头"]
+    assert entry["properties"]["holding"]["enum"] == ["玉佩", "无"]
+
 
 
 def test_furniture_outside_the_scene_list_is_sent_back():

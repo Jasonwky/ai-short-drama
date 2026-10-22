@@ -70,5 +70,26 @@
     <h2>还差什么</h2>
     {{ checklist(checks) }}
   </section>
+  <section class="card" style="flex: 1; min-width: 280px" data-blocking>
+    <h2>场记表(本段开头那一刻)</h2>
+    <p class="hint">姿态、朝向、站位、手里拿的东西由代码拼进首帧提示词(模型自己猜常出错:跪着背对对方、躺姿横出床外)。
+      改了要重出首帧才生效;和上一段接不上会在「还差什么」里提示。</p>
+    {% if blocking_rows %}
+    <form method="post" action="/segment/{{ seg.id }}/blocking">
+      {% for r in blocking_rows %}
+      <div class="row" data-blocking-row="{{ r.character }}">
+        <b style="min-width: 5em">{{ r.character }}</b>
+        <select name="pose" data-blocking-pose>{% for v in bk.POSES %}<option{{ " selected" if v == r.pose }}>{{ v }}</option>{% endfor %}</select>
+        <select name="facing">{% for v in r.facing_options %}<option{{ " selected" if v == r.facing }}>{{ v }}</option>{% endfor %}</select>
+        <select name="side">{% for v in bk.SIDES %}<option{{ " selected" if v == r.side }}>{{ v }}</option>{% endfor %}</select>
+        <select name="holding">{% for v in r.holding_options %}<option{{ " selected" if v == r.holding }}>{{ v }}</option>{% endfor %}</select>
+        <input type="hidden" name="character" value="{{ r.character }}">
+      </div>
+      {% endfor %}
+      <p class="hint" data-blocking-preview>拼进首帧的那句:{{ blocking_phrase or "(还没保存)" }}</p>
+      <button class="btn" type="submit" data-save-blocking>保存场记表</button>
+    </form>
+    {% else %}<p class="empty">本段还没绑定角色</p>{% endif %}
+  </section>
 </div>
 {% endblock %}

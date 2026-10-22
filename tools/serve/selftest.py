@@ -405,6 +405,11 @@ def run(out_dir: Path) -> dict:
                      {f"#seg-{seg3} [data-blank-reason]": "雪景,本来就白"}, [f"#seg-{seg3} [data-blank-confirm]"],
                      f"#seg-{seg3} [data-blank-override]", 20),
                     ("final:episode2", "放行后导出检查不再列这段白屏", {}, [_no_blank_problem], "[data-final-segment]", 20),
+                    ("storyboard", "段落编辑页场记表:改姿态为跪 → 保存 → 预览句出现「跪着」", {},
+                     [lambda pg: pg.goto(pg.url.split("/episode/")[0] + f"/segment/{seg}/edit"),
+                      lambda pg: pg.locator('[data-blocking-row] [data-blocking-pose]').first.select_option("跪"),
+                      "[data-save-blocking]"],
+                     '@[data-blocking-preview]:has-text("跪着")', 20),
                     # 放在最后:填了陈设,前面链路的提示词就要按它查
                     ("assets", "场景选用途、填固定陈设 → 保存", {f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]': "石桌、古井"},
                      [lambda pg: pg.locator(f'[data-asset="scene-{ids["yard"]}"] [data-scene-purpose]').select_option("庭院"),

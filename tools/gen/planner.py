@@ -17,7 +17,7 @@ worker 只负责把它原样交给云机 —— 这样「当时到底用了什�
 """
 from __future__ import annotations
 
-from tools.drama import refs, repo, rules, tags
+from tools.drama import blocking, refs, repo, rules, tags
 from tools.drama.db import Store
 from tools.drama.readiness import key_frame_index, segment_readiness
 from tools.drama.targets import KEY_WRITES
@@ -87,12 +87,26 @@ TEXT_ONLY_REFUSED = ("纯文字模式不支持出视频:实测场景和道具守
                      "spike-results/2026-10-14-开卡调研批次-运镜关键帧步数.md)")
 
 
+def frame_text(store: Store, segment_id: int, field: str) -> str:
+    """参考帧实际用的图提示词。首帧在人 / LLM 写的那句后面拼上场记表(姿态、朝向、站位、手持,由代码写 ——
+    spec 2026-10-22-连续性保障-design.md 第 4 项);场记表只描述段落开头,尾帧不拼。"""
+    seg = repo.get(store, "segment", segment_id)
+    text = seg[FRAMES[field][1]]
+    entries = blocking.parse(seg["blocking_json"]) if field == "first_frame_path" else []
+    return f"{text.rstrip('。;; ')}。{blocking.phrase(entries)}" if entries and text.strip() else text
+
+
 def _frame_problems(store: Store, segment_id: int, field: str) -> list[str]:
     modes, prompt_field, label = FRAMES[field]
     seg = repo.get(store, "segment", segment_id)
     if seg["reference_mode"] not in modes:
         return [f"参考模式 {seg['reference_mode']} 不用{label}"]
-    return _image_problems(store, segment_id, seg[prompt_field], label)
+    problems = []
+    if field == "first_frame_path" and seg["blocking_json"].strip():
+        a = repo.segment_assets(store, segment_id)
+        problems += [f"场记表与本段绑定对不上:{p}(到段落编辑页改场记表)" for p in blocking.problems(
+            blocking.parse(seg["blocking_json"]), [c["name"] for c in a["characters"]], [p["name"] for p in a["props"]])]
+    return problems or _image_problems(store, segment_id, frame_text(store, segment_id, field), label)
 
 
 def _image_problems(store: Store, segment_id: int, text: str, label: str) -> list[str]:
@@ -121,8 +135,7 @@ def _plan_frame(store: Store, segment_id: int, field: str, seed: int) -> int:
     problems = _frame_problems(store, segment_id, field)
     if problems:
         raise ValueError(";".join(problems))
-    seg = repo.get(store, "segment", segment_id)
-    return _plan_image(store, segment_id, seg[FRAMES[field][1]], seed, {"writes": field})
+    return _plan_image(store, segment_id, frame_text(store, segment_id, field), seed, {"writes": field})
 
 
 def _plan_image(store: Store, segment_id: int, text: str, seed: int, writes: dict) -> int:

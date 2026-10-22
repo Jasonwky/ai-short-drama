@@ -224,3 +224,30 @@ def test_region_replace_uses_the_character_styling_and_checks_tags_when_planning
     with pytest.raises(ValueError, match="第 3 张"):      # 补充说明里引了不存在的图:规划时就拒,不等到云机
         plan_region(store, sample["seg"], "first_frame_path", source="frames/s1.png", size=(928, 1664),
                     box=[0, 0, 400, 400], asset=("character", sample["lin"]), note="参照 Picture 3", seed=1)
+
+
+# ── 场记表(v13)────────────────────────────────────────
+
+def _blocking(**kw):
+    return json.dumps([{"character": "林小雨", "pose": "跪", "facing": "镜头", "side": "左", "holding": "玉佩", **kw}],
+                      ensure_ascii=False)
+
+
+def test_first_frame_appends_the_blocking_written_by_code(store, sample):
+    repo.update(store, "segment", sample["seg"], blocking_json=_blocking())
+    row, _ = _task(store, plan_first_frame(store, sample["seg"], seed=1))
+    assert row["prompt"] == ("Picture 1(林小雨) 站在 Picture 2(老宅庭院) 里,手里拿着 Picture 3(玉佩)。"
+                             "Picture 1(林小雨) 跪着,面朝镜头,在画面左侧,手里拿着Picture 3(玉佩)")
+
+
+def test_last_frame_does_not_use_the_blocking(store, sample):
+    repo.update(store, "segment", sample["seg"], blocking_json=_blocking(), reference_mode="first_last",
+                last_image_prompt="@林小雨 在 @老宅庭院 收起 @玉佩")
+    row, _ = _task(store, plan_last_frame(store, sample["seg"], seed=1))
+    assert "跪着" not in row["prompt"]
+
+
+def test_blocking_that_disagrees_with_bindings_refuses_the_frame(store, sample):
+    repo.update(store, "segment", sample["seg"], blocking_json=_blocking(character="沈墨"))
+    with pytest.raises(ValueError, match="场记表与本段绑定对不上"):
+        plan_first_frame(store, sample["seg"], seed=1)

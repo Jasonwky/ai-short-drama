@@ -19,7 +19,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
 from tools.cut import blankscan, cuts, keycheck, media, review, subtitles
-from tools.drama import repo
+from tools.drama import blocking, repo
 from tools.drama.tasks import producer, tasks_for
 from tools.gen.capability import MINIMAX_H3
 from tools.gen import estimate, presets
@@ -78,6 +78,7 @@ def page(request: Request, episode_id: int):
                      "align_problems": align_problems(store, s["id"]),
                      "keychecks": keycheck.check(store, runtime.data_root, s["id"]),
                      "cuts": cut, "cut_error": cut_error, "prev_last": prev.last_png if prev else None,
+                     "blocking": blocking.phrase(blocking.parse(s["blocking_json"])),
                      "review": review.review_for(store, runtime.data_root, s) if has_video else None,
                      "extra": aligner.extra_speech_for(store, runtime.data_root, s["id"]),
                      "cues": subtitles.parse_srt(sub.read_text(encoding="utf-8")) if sub and sub.is_file() else []})

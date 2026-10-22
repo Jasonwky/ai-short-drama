@@ -183,3 +183,22 @@ def test_furniture_outside_the_scene_list_blocks(store, sample):
     assert not c.ok and c.msg.startswith("首帧图提示词:「床」不在场景的固定陈设里")
     repo.update(store, "scene", sample["yard"], furnishings="石桌、古井、竹床")
     assert _by_key(_check(store, sample["seg"]))["furnishings"].ok
+
+
+def _entry(**kw):
+    return {"character": "林小雨", "pose": "站", "facing": "镜头", "side": "中", "holding": "无", **kw}
+
+
+def test_blocking_is_checked_and_seams_with_the_previous_segment_are_hinted(store, sample):
+    """场记表(v13):与绑定对不上拦生成;和上一段(同场景)姿态变了却没交代动作 → 提示(不拦)。"""
+    import json
+    repo.update(store, "segment", sample["seg"], blocking_json=json.dumps([_entry(character="沈墨")], ensure_ascii=False))
+    c = _by_key(_check(store, sample["seg"]))["blocking"]
+    assert not c.ok and "场记表缺「林小雨」" in c.msg
+    repo.update(store, "segment", sample["seg"], blocking_json=json.dumps([_entry()], ensure_ascii=False))
+    seg2 = repo.add_segment(store, sample["episode"], 2, scene_id=sample["yard"], duration_sec=8.0,
+                            description="【镜头1】林小雨把玉佩收进怀里。", image_prompt="@林小雨 在 @老宅庭院",
+                            video_prompt="@林小雨 在 @老宅庭院", blocking_json=json.dumps([_entry(pose="跪")], ensure_ascii=False))
+    repo.bind_characters(store, seg2, [sample["lin"]])
+    checks = _by_key(_check(store, seg2))
+    assert checks["blocking"].ok and checks["blocking_seam"].warn and "没交代" in checks["blocking_seam"].msg

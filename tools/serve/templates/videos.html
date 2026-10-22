@@ -78,6 +78,7 @@
         <div data-seam-last><p class="hint">本段末帧</p><img src="/media/{{ s.cuts.last_png }}" alt="本段末帧" style="max-height: 200px"></div>
       </div>
       {% endif %}
+      {% if s.blocking %}<p class="hint" data-review-blocking>场记表(本段开头应当是):{{ s.blocking }}</p>{% endif %}
       {% if s.review %}
         <p class="status-ok" data-reviewed>已看片确认 · {{ s.review.created_at }}{% if s.review.note %} · {{ s.review.note }}{% endif %}
           <span class="hint">(只对这条视频 sha256 <code>{{ s.review.sha256[:16] }}</code> 有效,换了视频要重新看)</span></p>

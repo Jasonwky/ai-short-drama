@@ -49,14 +49,13 @@ def test_storyboard_golden(client):
 
 
 def test_storyboard_with_kneeling_and_lying_converges(client):
-    """题甲第 1 集看片(2026-10-22):跪的朝向、躺姿没写 → 判卷打回。真模型要能在轮次上限内写清。"""
+    """题甲第 1 集看片(2026-10-22):场记表(姿态 / 朝向 / 站位)+ 相邻段对表,真模型要能在轮次上限内交齐。"""
     script = (GOLDEN / "tijia_ep1.txt").read_text(encoding="utf-8")
     ctx = {"script": script, "characters": ["沈青禾", "沈玉瑶", "李福", "萧珩"], "scenes": ["靖王府正堂", "靖王府寝殿"],
            "props": ["银针"]}
     res = _gate(client, "storyboard", storyboard, ctx)
-    segs = res.args["segments"]
-    assert any(storyboard._LYING.search(s["image_prompt"]) for s in segs)   # 规则真被触发过,不是绕开了
-    assert all(storyboard._POSTURE.search(s["image_prompt"]) for s in segs if storyboard._LYING.search(s["image_prompt"]))
+    poses = {e["pose"] for s in res.args["segments"] for e in s["blocking"]}
+    assert "跪" in poses and poses & {"仰躺", "侧躺"}                  # 场记表真记下了跪和躺,不是全填「站」
 
 
 def test_script_keeps_the_bed_out_of_the_hall(client):
