@@ -201,7 +201,10 @@ BEGIN SELECT RAISE(ABORT, '假 LLM 的产物不许通过审批闸门'); END""",
 _LLM_TARGETS_V3 = "('drama', 'episode', 'character')"
 _LLM_TARGETS_V5 = "('drama', 'episode', 'character', 'scene', 'prop')"
 LLM_RUN_DDL_V5 = [LLM_RUN_DDL[0].replace(_LLM_TARGETS_V3, _LLM_TARGETS_V5), *LLM_RUN_DDL[1:]]
-SCHEMA += "".join(f"{stmt};\n" for stmt in LLM_RUN_DDL_V5)
+# v13:视觉抽检的目标是段落(spec 2026-10-22-连续性保障-design.md 第 5 项),再重建一次(MIGRATIONS[12])
+_LLM_TARGETS_V13 = "('drama', 'episode', 'character', 'scene', 'prop', 'segment')"
+LLM_RUN_DDL_V13 = [LLM_RUN_DDL[0].replace(_LLM_TARGETS_V3, _LLM_TARGETS_V13), *LLM_RUN_DDL[1:]]
+SCHEMA += "".join(f"{stmt};\n" for stmt in LLM_RUN_DDL_V13)
 
 # v4:成片导出。ProduceID 与溯源报告绑定,身份字段不可改;导出结束(done / failed)后整行不可改。
 # setting 只收白名单里的键:服务提供者编码是★必答项,由运营方填,记住后下次预填。
@@ -369,7 +372,9 @@ MIGRATIONS: dict[int, list[str]] = {
     12: [*REVIEW_DDL,
          "ALTER TABLE scene ADD COLUMN purpose TEXT NOT NULL DEFAULT ''",
          "ALTER TABLE scene ADD COLUMN furnishings TEXT NOT NULL DEFAULT ''",
-         "ALTER TABLE segment ADD COLUMN blocking_json TEXT NOT NULL DEFAULT ''"],
+         "ALTER TABLE segment ADD COLUMN blocking_json TEXT NOT NULL DEFAULT ''",
+         "ALTER TABLE llm_run RENAME TO llm_run_v12", LLM_RUN_DDL_V13[0],
+         "INSERT INTO llm_run SELECT * FROM llm_run_v12", "DROP TABLE llm_run_v12", *LLM_RUN_DDL_V13[1:]],
 }
 
 

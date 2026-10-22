@@ -29,3 +29,24 @@ def test_confirm_review_is_tied_to_the_current_video(client, runtime, store, sam
     assert page.count("data-reviewed") == 1 and "接缝看过" in page
     done_task(store, runtime.data_root, seg2, "video", "outputs/tasks/v3/clip.mp4", sample_mp4() + b"\0")
     assert "data-reviewed" not in client.get(f"/episode/{sample['episode']}/videos").text    # 换了视频要重看
+
+
+def test_vision_check_button_and_result_on_the_card(client, runtime, store, sample):
+    """视觉抽检(第 5 项):有场记表才出按钮;结果只认这条视频;对不上的列成提示。"""
+    import json
+
+    from tools.llm import runs
+    from tools.serve.dispatch import sha256_file
+    _two(store, sample, runtime.data_root)
+    assert "data-vision-start" not in client.get(f"/episode/{sample['episode']}/videos").text
+    entry = {"character": "林小雨", "pose": "跪", "facing": "镜头", "side": "中", "holding": "无"}
+    repo.update(store, "segment", sample["seg"], blocking_json=json.dumps([entry], ensure_ascii=False))
+    assert "data-vision-start" in client.get(f"/episode/{sample['episode']}/videos").text
+    sha = sha256_file(runtime.data_root / repo.get(store, "segment", sample["seg"])["video_path"])
+    rid = runs.start(store, task="vision_check", target_type="segment", target_id=sample["seg"], model="m",
+                     input_sha="x", llm_mode="real", params={"video_sha256": sha})
+    runs.propose(store, rid, {"check_number": "1", "frames": [{"index": 1, "people": [
+        {"character": "林小雨", "visible": "是", "pose": "站", "facing": "镜头"}]}]}, "j")
+    page = client.get(f"/episode/{sample['episode']}/videos").text
+    assert "data-vision-mismatch" in page and "应当跪,模型看到的是站" in page
+    assert "应当跪,模型看到的是站" in client.get(f"/llm/run/{rid}").text

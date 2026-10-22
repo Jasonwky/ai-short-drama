@@ -48,6 +48,16 @@
       <div><label>现在的剧本</label><pre>{{ preview.current or "(空)" }}</pre></div>
       <div><label>LLM 生成的剧本</label><pre>{{ preview.script }}</pre></div>
     </div>
+  {% elif preview.vision is defined %}
+    <p class="hint">只提示、不写回;模型判断仅供看片参考(准不准没标定),不拦导出。</p>
+    {% if preview.mismatches %}{% for m in preview.mismatches %}<p class="status-bad" data-vision-mismatch>{{ m }}</p>{% endfor %}
+    {% else %}<p class="status-ok" data-vision-ok>首帧和场记表对得上(模型说看不出的不算)</p>{% endif %}
+    <table>
+      <tr><th>帧</th><th>角色</th><th>看得见</th><th>姿态</th><th>面朝</th></tr>
+      {% for f in preview.vision | sort(attribute="index") %}{% for p in f.people %}
+        <tr><td>{{ f.index }}</td><td>{{ p.character }}</td><td>{{ p.visible }}</td><td>{{ p.pose }}</td><td>{{ p.facing }}</td></tr>
+      {% endfor %}{% endfor %}
+    </table>
   {% elif preview.episodes %}
     {% for e in preview.episodes %}
       <div class="side-by-side"><div><label>第 {{ loop.index }} 集大纲</label><pre>{{ e.outline }}</pre></div>

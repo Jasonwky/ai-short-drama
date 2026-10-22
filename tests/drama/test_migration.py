@@ -307,4 +307,8 @@ def test_v12_database_gains_reviews_furnishings_and_blocking(tmp_path):
     assert repo.review(s, seg, "a" * 64)["id"] == rid and repo.review(s, seg, "b" * 64) is None
     with pytest.raises(sqlite3.IntegrityError, match="不可改"):
         s.conn.execute("UPDATE segment_review SET note = '别的' WHERE id = ?", (rid,))
+    from tools.llm import runs                                    # llm_run 重建:视觉抽检的目标是段落
+    rid = runs.start(s, task="vision_check", target_type="segment", target_id=seg, model="m", input_sha="x",
+                     llm_mode="fake", params={})
+    assert runs.get(s, rid)["target_type"] == "segment"
     s.close()

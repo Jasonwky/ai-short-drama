@@ -86,7 +86,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   白底灰底都有,不是整屏白;标定 spike-results/2026-10-21-平底背景检测标定.md),同样按 sha256 缓存、单测里被 conftest 换成「没白屏」。
   **切镜计数** `cut/cuts.py`(相邻帧差 > 30,面板渲染时算、按 sha256 缓存)+ **看片确认** `cut/review.py`(`segment_review` 表,v13,
   只认那条视频的 sha256):视频卡片列切镜后那一帧与上一段末帧 / 本段首帧的接缝,人点「看过,没有穿帮」,**没确认的段落拦导出**
-  (spec 2026-10-22-连续性保障-design.md)。
+  (spec 2026-10-22-连续性保障-design.md)。同一份 spec 还有:**场景陈设表**(`drama/furnish.py`,场景填了固定陈设,首帧提示词里清单外的陈设拦生成)、
+  **场记表**(`drama/blocking.py`,`segment.blocking_json`:分镜 LLM 填姿态 / 朝向 / 左右 / 手持闭集,首帧提示词这部分由代码拼,
+  同场景相邻段姿态变了要交代动作)、**视觉抽检**(LLM 任务 `vision_check`,视觉模型对照场记表看首帧,只提示不拦,llm_run 目标可以是段落)。
   白屏误报由人在视频卡片上**填理由放行**(`blank_override` 表,库结构 v12,写下不可改):只认那条视频的 sha256,换了视频自动失效;
   导出 begin 时快照进 `inputs_json` 每段一项,run 只认快照,溯源报告列「人工确认放行」。
   **配乐** `cut/music.py` + `music_cue` 表(库结构 v11):人上传**有许可**的音乐(license ★必填,不做 AI 生成配乐 —— 许可证红线),

@@ -148,3 +148,20 @@ def test_blind_model_is_caught_by_the_check_number(client):
     if isinstance(e.value, GateFailed):          # 它交了答卷的每一轮,都必须是被校验数字拦下的
         answered = [r for r in e.value.rounds if r.raw]
         assert all(any("check_number 读错了" in p for p in r.problems) for r in answered)
+
+
+def test_vision_check_sees_she_is_not_facing_him(client):
+    """视觉抽检(2026-10-22 看片第 6 条):第 7 段首帧沈玉瑶倒在地上、没有面朝萧珩。真视觉模型要读出校验数字,
+    且不能说她面朝萧珩 —— 说了就是这个抽检没用。"""
+    from tools.llm import vision_check
+    image, n = describe.marked(GOLDEN / "vision_seg7_first.jpg")
+    ctx = {"number": 7, "labels": ["首帧"], "characters": ["沈玉瑶", "萧珩"], "image": image, "check_number": n,
+           "expected": [], "video_sha256": ""}
+    res = run_gated(client=client, model=VISION_MODEL, task="vision_check", system=vision_check.SYSTEM,
+                    user=vision_check.user_message(ctx), tool_name=vision_check.TOOL, description=TASKS["vision_check"].label,
+                    schema=vision_check.schema(ctx), judge=vision_check.judge_factory(ctx), journal_dir=JOURNAL,
+                    max_rounds=TASKS["vision_check"].max_rounds, max_tokens=TASKS["vision_check"].max_tokens,
+                    images=[image])
+    (frame,) = res.args["frames"]
+    her = next(p for p in frame["people"] if p["character"] == "沈玉瑶")
+    assert her["facing"] != "萧珩"

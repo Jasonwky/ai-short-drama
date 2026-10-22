@@ -410,6 +410,9 @@ def run(out_dir: Path) -> dict:
                       lambda pg: pg.locator('[data-blocking-row] [data-blocking-pose]').first.select_option("跪"),
                       "[data-save-blocking]"],
                      '@[data-blocking-preview]:has-text("跪着")', 20),
+                    # 假 LLM 没有这个工具的样例 → 闸门判失败;演示的是「按钮 → 审阅页 → 失败原因写明」,真模型的行为由契约测试管
+                    ("videos", "有场记表 → 视觉抽检按钮 → 审阅页落成失败并写明原因(假 LLM)", {},
+                     [f"#seg-{seg} [data-vision-start]"], '[data-llm-state="failed"] [data-llm-error]', 30),
                     # 放在最后:填了陈设,前面链路的提示词就要按它查
                     ("assets", "场景选用途、填固定陈设 → 保存", {f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]': "石桌、古井"},
                      [lambda pg: pg.locator(f'[data-asset="scene-{ids["yard"]}"] [data-scene-purpose]').select_option("庭院"),

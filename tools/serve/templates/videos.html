@@ -78,7 +78,16 @@
         <div data-seam-last><p class="hint">本段末帧</p><img src="/media/{{ s.cuts.last_png }}" alt="本段末帧" style="max-height: 200px"></div>
       </div>
       {% endif %}
-      {% if s.blocking %}<p class="hint" data-review-blocking>场记表(本段开头应当是):{{ s.blocking }}</p>{% endif %}
+      {% if s.blocking %}<p class="hint" data-review-blocking>场记表(本段开头应当是):{{ s.blocking }}</p>
+        <form method="post" action="/llm/start/vision_check/{{ s.row.id }}" style="display:inline">
+          <input type="hidden" name="video_sha256" value="{{ s.video_sha }}">
+          <button class="btn small" type="submit" data-vision-start title="首帧与切镜帧会发送给视觉 LLM 服务">视觉抽检(模型对照场记表)</button></form>
+        {% if s.vision %}{% set v = s.vision %}
+          {% if v.mismatches is none %}<p class="hint" data-vision-state>抽检 <a href="/llm/run/{{ v.run.id }}">#{{ v.run.id }}</a>:{{ v.run.state }}{% if v.run.error %} · {{ v.run.error }}{% endif %}</p>
+          {% elif v.mismatches %}{% for m in v.mismatches %}<p class="status-bad" data-vision-mismatch>抽检提示(模型判断,仅供看片参考):{{ m }}</p>{% endfor %}
+          {% else %}<p class="hint" data-vision-ok>抽检 <a href="/llm/run/{{ v.run.id }}">#{{ v.run.id }}</a>:首帧和场记表对得上(模型判断)</p>{% endif %}
+        {% endif %}
+      {% endif %}
       {% if s.review %}
         <p class="status-ok" data-reviewed>已看片确认 · {{ s.review.created_at }}{% if s.review.note %} · {{ s.review.note }}{% endif %}
           <span class="hint">(只对这条视频 sha256 <code>{{ s.review.sha256[:16] }}</code> 有效,换了视频要重新看)</span></p>

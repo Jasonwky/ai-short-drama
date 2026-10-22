@@ -12,8 +12,8 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
-from tools.drama import repo
-from tools.llm import describe, outline, runs, script_writer, service, storyboard, voices
+from tools.drama import blocking, repo
+from tools.llm import describe, outline, runs, script_writer, service, storyboard, vision_check, voices
 from tools.serve.panels.common import confirm_page, render, rt
 
 router = APIRouter()
@@ -21,7 +21,7 @@ router = APIRouter()
 # 各任务从表单里取哪些参数、什么类型
 PARAMS = {"outline": {"novel": str, "n_episodes": int}, "script_synopsis": {"synopsis": str, "minutes": int},
           "script_adapt": {"minutes": int}, "storyboard": {}, "voice": {},
-          **{f"describe_{t}": {} for t in describe.FIELDS}}
+          **{f"describe_{t}": {} for t in describe.FIELDS}, "vision_check": {"video_sha256": str}}
 
 
 def _params(task: str, form) -> dict:
@@ -44,6 +44,9 @@ def _home(store, row) -> tuple[str, dict]:
     if t in ("character", "scene", "prop"):
         did = repo.get(store, t, tid)["drama_id"]
         return f"/drama/{did}/assets", {"panel_key": "assets", "drama_id": did}
+    if t == "segment":
+        eid = repo.get(store, "segment", tid)["episode_id"]
+        return f"/episode/{eid}/videos#seg-{tid}", {"panel_key": "videos", "episode_id": eid}
     if row["task"] == "storyboard":
         return f"/episode/{tid}/storyboard", {"panel_key": "storyboard", "episode_id": tid}
     did = repo.get(store, "episode", tid)["drama_id"]
@@ -69,6 +72,10 @@ def _preview(store, row) -> dict:
         cur = repo.get(store, table, row["target_id"])
         return {"describe": [{"field": k, "label": label.split(":")[0], "current": cur[k], "proposed": out[k]}
                              for k, label in describe.FIELDS[table].items()]}
+    if task == "vision_check":
+        seg = repo.get(store, "segment", row["target_id"])
+        expected = blocking.parse(seg["blocking_json"])
+        return {"vision": out["frames"], "mismatches": vision_check.mismatches(expected, out)}
     if task == "voice":
         return {"voice": voices.compose(out),
                 "current": repo.get(store, "character", row["target_id"])["voice_desc"]}

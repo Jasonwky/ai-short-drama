@@ -20,6 +20,7 @@ from fastapi.responses import RedirectResponse
 
 from tools.cut import blankscan, cuts, keycheck, media, review, subtitles
 from tools.drama import blocking, repo
+from tools.llm import runs, vision_check
 from tools.drama.tasks import producer, tasks_for
 from tools.gen.capability import MINIMAX_H3
 from tools.gen import estimate, presets
@@ -27,7 +28,7 @@ from tools.gen.align import align_problems, plan_align
 from tools.gen.planner import plan_video
 from tools.gen.workflows import DRAFT_STEPS, H3_STEPS
 from tools.serve import aligner
-from tools.serve.dispatch import FEW_STEPS_NOTE, steps_of
+from tools.serve.dispatch import FEW_STEPS_NOTE, sha256_file, steps_of
 from tools.serve.panels.common import new_seed, readiness, render, rt
 
 router = APIRouter()
@@ -37,6 +38,19 @@ def _override(store, root, seg) -> dict | None:
     """这段当前视频的白屏放行(按 sha256 对),带上溯源报告里那一行。"""
     o = blankscan.override_for(store, root, seg)
     return None if o is None else {**o, "note": blankscan.override_note(seg["number"], blankscan.snapshot(o))}
+
+
+def _vision(store, seg, root) -> dict | None:
+    """这条视频最近一次视觉抽检(参数里记着视频 sha256,换了视频就不认)。"""
+    sha = sha256_file(root / seg["video_path"])
+    for row in reversed(runs.history(store, "segment", seg["id"], task="vision_check")):
+        if runs.params(row).get("video_sha256") != sha:
+            continue
+        if row["state"] in ("proposed", "approved"):
+            out = runs.output(row)
+            return {"run": row, "mismatches": vision_check.mismatches(blocking.parse(seg["blocking_json"]), out)}
+        return {"run": row, "mismatches": None}
+    return None
 
 
 @router.get("/episode/{episode_id}/videos")
@@ -79,6 +93,8 @@ def page(request: Request, episode_id: int):
                      "keychecks": keycheck.check(store, runtime.data_root, s["id"]),
                      "cuts": cut, "cut_error": cut_error, "prev_last": prev.last_png if prev else None,
                      "blocking": blocking.phrase(blocking.parse(s["blocking_json"])),
+                     "video_sha": sha256_file(runtime.data_root / s["video_path"]) if has_video else None,
+                     "vision": _vision(store, s, runtime.data_root) if has_video else None,
                      "review": review.review_for(store, runtime.data_root, s) if has_video else None,
                      "extra": aligner.extra_speech_for(store, runtime.data_root, s["id"]),
                      "cues": subtitles.parse_srt(sub.read_text(encoding="utf-8")) if sub and sub.is_file() else []})
