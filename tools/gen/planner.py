@@ -93,12 +93,14 @@ def frame_text(store: Store, segment_id: int, field: str) -> str:
     场记表只描述段落开头,尾帧不拼。"""
     seg = repo.get(store, "segment", segment_id)
     text = seg[FRAMES[field][1]]
-    entries = blocking.parse(seg["blocking_json"]) if field == "first_frame_path" else []
-    if not (entries and text.strip()):
+    if field != "first_frame_path" or not text.strip():
         return text
-    tail = "。".join(x for x in (blocking.phrase(entries),
-                                 framing.phrase(_aspect(store, segment_id), entries, seg["shot_type"])) if x)
-    return f"{text.rstrip('。;; ')}。{tail}"
+    entries = blocking.parse(seg["blocking_json"])
+    close = framing.phrase(_aspect(store, segment_id), entries, seg["shot_type"]) if entries else ""
+    # 景别 + 机位也由代码拼进首帧(分镜方案挑的镜头要真到画面里);躺姿近景那句已经说了近景,就只补机位
+    shot = framing.shot_phrase("" if close else seg["shot_type"], seg["angle"])
+    tail = "。".join(x for x in (blocking.phrase(entries) if entries else "", close, shot) if x)
+    return f"{text.rstrip('。;; ')}。{tail}" if tail else text
 
 
 def _frame_problems(store: Store, segment_id: int, field: str) -> list[str]:
@@ -294,7 +296,8 @@ def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = 
     lines = "".join(f"{who}用普通话说:「{line}」" for who, line in rules.dialogue_lines(seg["description"], names))
     voices = "".join(f"{c['name']}的声音:{c['voice_desc']}。" for c in assets["characters"] if c["voice_desc"])
     who = "".join(f"<Picture {k}> 是{r.name}的四视图(正面、左侧、背面、右侧)。" for k, r in enumerate(views, 2))
-    prompt = f"<Picture 1> {intro}" + who + body + "".join(f" {part}" for part in (lines, voices) if part)
+    move = framing.move_phrase(seg["movement"])      # 运镜由代码写,没填不拼(老段落提示词不变)
+    prompt = f"<Picture 1> {intro}" + who + body + "".join(f" {part}" for part in (lines, voices, move) if part)
 
     image_refs = [seg[ref_field]] + [r.path for r in views]
     anchors = [[seg[f], idx] for f, idx in pins]

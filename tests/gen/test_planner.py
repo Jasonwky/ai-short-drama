@@ -287,6 +287,39 @@ def test_lying_beside_someone_in_a_wide_vertical_shot_refuses_the_first_frame(st
         plan_first_frame(store, sample["seg"], seed=1)
 
 
+def test_shot_design_reaches_the_first_frame_prompt(store, sample):
+    from tools.gen import planner
+    repo.update(store, "segment", sample["seg"], shot_type="中景", angle="俯拍")
+    assert planner.frame_text(store, sample["seg"], "first_frame_path").endswith("。中景镜头,俯拍")
+    row, _ = _task(store, plan_first_frame(store, sample["seg"], seed=1))
+    assert row["prompt"].endswith("中景镜头,俯拍")
+    before = json.loads(row["params_json"])["frame"]["text"]
+    repo.update(store, "segment", sample["seg"], angle="仰拍")          # 只改机位,快照也要变(帧面板据此提示旧方案)
+    assert planner.frame_text(store, sample["seg"], "first_frame_path") != before
+
+
+def test_shot_phrase_after_blocking_and_not_saying_close_twice(store, sample):
+    from tools.gen import planner
+    _lying_pair(store, sample, "近景")
+    repo.update(store, "segment", sample["seg"], angle="俯拍")
+    text = planner.frame_text(store, sample["seg"], "first_frame_path")
+    assert text.count("近景") == 1 and text.endswith("站着的人在画面上方。俯拍")
+
+
+def test_unset_shot_fields_leave_prompts_unchanged(store, sample):
+    from tools.gen import planner
+    seg = repo.get(store, "segment", sample["seg"])
+    assert planner.frame_text(store, sample["seg"], "first_frame_path") == seg["image_prompt"]
+
+
+def test_movement_is_appended_to_the_video_prompt(store, sample):
+    plain, _ = _task(store, plan_video(store, sample["seg"], seed=1))
+    assert "运镜" not in plain["prompt"]
+    repo.update(store, "segment", sample["seg"], movement="推")
+    row, _ = _task(store, plan_video(store, sample["seg"], seed=2))
+    assert row["prompt"].endswith(" 运镜:推镜头")
+
+
 def test_close_shot_phrase_is_appended_after_the_blocking(store, sample):
     _lying_pair(store, sample, "近景")
     row, _ = _task(store, plan_first_frame(store, sample["seg"], seed=1))

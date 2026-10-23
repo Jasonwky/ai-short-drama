@@ -16,6 +16,19 @@ VERTICAL = "9:16"
 CLOSE_PHRASE = "近景,画面只拍到躺着的人胸口以上,站着的人在画面上方"
 
 
+MOVE_PHRASES = {"推": "推镜头", "拉": "拉镜头", "摇": "摇镜头", "跟": "跟拍", "固定": "固定机位"}
+
+
+def shot_phrase(shot_type: str, angle: str) -> str:
+    """分镜方案里的景别 + 机位,由代码写成一句拼进首帧提示词(如「近景镜头,俯拍」);都没填为空。"""
+    return ",".join(x for x in (f"{shot_type}镜头" if shot_type else "", angle) if x)
+
+
+def move_phrase(movement: str) -> str:
+    """运镜拼进视频提示词的那句(如「运镜:推镜头」);没填为空。"""
+    return f"运镜:{MOVE_PHRASES.get(movement, movement)}" if movement else ""
+
+
 def _lying(entries: list[dict]) -> list[str]:
     return [e["character"] for e in entries if e["pose"] in LYING]
 
