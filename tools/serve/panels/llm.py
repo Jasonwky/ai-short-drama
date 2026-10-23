@@ -12,8 +12,9 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
-from tools.drama import blocking, repo
-from tools.llm import describe, diverge, outline, premise, runs, script_writer, service, storyboard, vision_check, voices
+from tools.drama import blocking, pacing, repo
+from tools.llm import (describe, diverge, outline, outline_variants, premise, runs, script_writer, service, shot_options,
+                       storyboard, vision_check, voices)
 from tools.serve.panels.common import confirm_page, render, rt
 
 router = APIRouter()
@@ -23,7 +24,8 @@ PARAMS = {"outline": {"novel": str, "n_episodes": int}, "script_synopsis": {"syn
           "script_adapt": {"minutes": int}, "storyboard": {}, "voice": {},
           **{f"describe_{t}": {} for t in describe.FIELDS}, "vision_check": {"video_sha256": str},
           "critique": {"role": str}, "rewrite": {"span": str, "intent": str, "note": str},
-          "premise": {"idea": str, "n": int, "constraint": str}}
+          "premise": {"idea": str, "n": int, "constraint": str},
+          "beats": {}, "outline_variants": {"n": int}, "shot_options": {"n": int}}
 
 
 def _params(task: str, form) -> dict:
@@ -50,10 +52,14 @@ def _home(store, row) -> tuple[str, dict]:
         return f"/drama/{did}/assets", {"panel_key": "assets", "drama_id": did}
     if t == "segment":
         eid = repo.get(store, "segment", tid)["episode_id"]
+        if row["task"] == "shot_options":
+            return f"/segment/{tid}/edit", {"panel_key": "storyboard", "episode_id": eid}
         return f"/episode/{eid}/videos#seg-{tid}", {"panel_key": "videos", "episode_id": eid}
     if row["task"] == "storyboard":
         return f"/episode/{tid}/storyboard", {"panel_key": "storyboard", "episode_id": tid}
     did = repo.get(store, "episode", tid)["drama_id"]
+    if row["task"] == "outline_variants":
+        return f"/drama/{did}/outline", {"panel_key": "outline", "drama_id": did}
     return f"/drama/{did}/script", {"panel_key": "script", "drama_id": did}
 
 
@@ -92,6 +98,19 @@ def _preview(store, row) -> dict:
         picked = dec["pick"] if dec else None
         return {"span": params["span"], "intent": params["intent"],
                 "candidates": [{"n": i, "picked": i == picked, **c} for i, c in enumerate(out["candidates"])]}
+    if task == "beats":
+        beats = {e["number"]: e for e in out["episodes"]}
+        return {"beats": sorted(beats.values(), key=lambda e: e["number"]), "hints": pacing.hints(beats)}
+    if task in ("outline_variants", "shot_options"):
+        dec = runs.decision(row) if row["state"] == "approved" else None
+        picked = dec["pick"] if dec else None
+        if task == "outline_variants":
+            vs = out["variants"]
+            routine = diverge.routine_index(vs)
+            return {"variants": [{"n": i, "picked": i == picked, "routine": i == routine, **v} for i, v in enumerate(vs)],
+                    "original": repo.get(store, "episode", row["target_id"])["outline"]}
+        return {"options": [{"n": i, "picked": i == picked, "phrase": blocking.phrase(o["blocking"]), **o}
+                            for i, o in enumerate(out["options"])]}
     if task == "premise":
         cands = out["candidates"]
         picked = (runs.decision(row) or {}).get("assemble", {}) if row["state"] == "approved" else {}
@@ -128,7 +147,7 @@ def _decision(task: str, form) -> dict | None:
                 stance[int(idx)] = str(v)
         return {"adopt": sorted(i for i, v in stance.items() if v == "adopt"),
                 "reject": sorted(i for i, v in stance.items() if v == "reject")}
-    if task == "rewrite":
+    if task in ("rewrite", "outline_variants", "shot_options"):
         raw = str(form.get("pick", ""))
         return {"pick": int(raw) if raw.isdigit() else -1}
     if task == "premise":

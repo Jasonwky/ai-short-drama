@@ -70,6 +70,16 @@
     <h2>还差什么</h2>
     {{ checklist(checks) }}
   </section>
+  <section class="card" style="flex: 1; min-width: 280px" data-shot-options>
+    <h2>分镜方案</h2>
+    <p class="hint">让 LLM 给本段出几个镜头方案(景别 / 机位 / 运镜 / 场记表 / 首帧提示词),你挑一个。
+      批准新方案不会作废已生成的首帧 / 视频;重出后在历史里「调用」才成为当前。</p>
+    <form method="post" action="/llm/start/shot_options/{{ seg.id }}" data-llm-shot-options>
+      <label>方案数(2–3)</label>
+      <select name="n">{% for k in (2, 3) %}<option{{ " selected" if k == 2 }}>{{ k }}</option>{% endfor %}</select>
+      <button class="btn" type="submit">出镜头方案</button>
+    </form>
+  </section>
   <section class="card" style="flex: 1; min-width: 280px" data-blocking>
     <h2>场记表(本段开头那一刻)</h2>
     <p class="hint">姿态、朝向、站位、手里拿的东西由代码拼进首帧提示词(模型自己猜常出错:跪着背对对方、躺姿横出床外)。

@@ -13,6 +13,19 @@
     <button class="btn primary" type="submit" data-llm-outline>下一步:看分批</button>
   </form>
   {% if eps %}
+    <h2>节拍与节奏
+      <form method="post" action="/llm/start/beats/{{ drama.id }}" style="display:inline">
+        <button class="btn small" type="submit" data-llm-beats>标注节拍</button></form></h2>
+    <p class="hint">LLM 逐集标注 钩子 / 反转 / 压放 / 卡点,代码按经验阈值统计节奏;批准后才写入。</p>
+    {% if beat_map %}
+      <div class="row" data-beats-bar>
+        {% for n, b in beat_map.items() %}
+          <div class="card" data-beat="{{ n }}" title="{{ b.quote }}" style="min-width: 5em">
+            <b>第 {{ n }} 集</b><br>钩{{ b.hook }} · 反{{ b.reversal }}<br>{{ b.emotion }} · 卡{{ b.paywall }}</div>
+        {% endfor %}
+      </div>
+      {% for h in pacing_hints %}<p class="hint" style="color: #b8860b" data-pacing-hint>{{ h }}(只提示,不拦)</p>{% endfor %}
+    {% endif %}
     <h2>各集大纲</h2>
     {% for e in eps %}
       <div class="card" data-episode="{{ e.id }}">
@@ -22,6 +35,14 @@
             <div><label>大纲</label><pre>{{ e.outline }}</pre></div>
             <div><label>对应原文</label><pre>{{ e.source_text or "(无)" }}</pre></div>
           </div>
+          {% if e.script.strip() %}<p class="hint">这集已有剧本,改大纲要先清剧本</p>
+          {% else %}
+          <form method="post" action="/llm/start/outline_variants/{{ e.id }}" data-llm-variants>
+            <label>换几种写法(2–4)</label>
+            <select name="n">{% for k in (2, 3, 4) %}<option{{ " selected" if k == 3 }}>{{ k }}</option>{% endfor %}</select>
+            <button class="btn small" type="submit">出大纲变体</button>
+          </form>
+          {% endif %}
         {% else %}<p class="empty">这一集不是从小说大纲建的(来源:{{ e.source_type }})</p>{% endif %}
       </div>
     {% endfor %}

@@ -6,7 +6,7 @@ from tools.drama import repo
 from tools.llm import runs
 from tools.llm.client import LLMUnavailable
 from tools.llm.fake import FakeLLM
-from tools.llm import service
+from tools.llm import outline_variants, service
 from tools.llm.service import LLMBackend
 
 VOICE = {"gender": "female", "age": "young_adult", "timbre": "清亮柔和", "pace": "slow"}
@@ -77,6 +77,71 @@ def _real_run(store, task, target_id, params, output):
                      input_sha=service.prepare(store, task, target_id, params).sha, llm_mode="real", params=params)
     runs.propose(store, rid, output, "j")
     return rid
+
+
+def _run_of(store, task, target_type, target_id, params, output):
+    rid = runs.start(store, task=task, target_type=target_type, target_id=target_id, model="m",
+                     input_sha=service.prepare(store, task, target_id, params).sha, llm_mode="real", params=params)
+    runs.propose(store, rid, output, "j")
+    return rid
+
+
+def _variants_out():
+    def v(i):
+        return {"outline": f"新大纲{i}", "hook_type": outline_variants.DIMS["hook_type"][i],
+                "reversal_type": outline_variants.DIMS["reversal_type"][i],
+                "cliff_type": outline_variants.DIMS["cliff_type"][i], "typicality": [0.2, 0.9, 0.5][i]}
+    return {"variants": [v(0), v(1), v(2)]}
+
+
+def test_outline_variants_review_page_and_approval(client, store, sample):
+    ep = repo.add_episode(store, sample["drama"], 2, "novel", outline="原大纲:林小雨回到老宅")
+    rid = _run_of(store, "outline_variants", "episode", ep, {"n": 3}, _variants_out())
+    page = client.get(f"/llm/run/{rid}").text
+    assert page.count("data-variant=") == 3 and page.count('name="pick"') == 3 and 'form="approve-form"' in page
+    assert page.count("data-routine") == 1 and "原大纲:林小雨回到老宅" in page
+    assert client.post(f"/llm/run/{rid}/approve").status_code == 400
+    r = client.post(f"/llm/run/{rid}/approve", data={"pick": "1"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == f"/drama/{sample['drama']}/outline"
+    assert repo.get(store, "episode", ep)["outline"] == "新大纲1"
+    page = client.get(f"/llm/run/{rid}").text
+    assert page.count("data-picked") == 1 and 'type="radio"' not in page
+    assert page.index("data-picked") > page.index('data-variant="1"')
+
+
+def _shot_out():
+    def o(shot, angle, why):
+        return {"shot_type": shot, "angle": angle, "movement": "固定",
+                "blocking": [{"character": "林小雨", "pose": "站", "facing": "镜头", "side": "中", "holding": "玉佩"}],
+                "image_prompt": "@林小雨 在 @老宅庭院 看着 @玉佩", "why": why}
+    return {"options": [o("中景", "平视", "稳"), o("近景", "俯拍", "压迫<b>x</b>")]}
+
+
+def test_shot_options_review_page_and_approval(client, store, sample):
+    seg = sample["seg"]
+    rid = _run_of(store, "shot_options", "segment", seg, {"n": 2}, _shot_out())
+    page = client.get(f"/llm/run/{rid}").text
+    assert page.count("data-shot-option=") == 2 and page.count('name="pick"') == 2
+    assert "@林小雨 站着,面朝镜头,在画面中间,手里拿着@玉佩" in page          # 场记表拼句
+    assert "&lt;b&gt;x" in page and "<b>x</b>" not in page                 # 模型输出自动转义
+    r = client.post(f"/llm/run/{rid}/approve", data={"pick": "1"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == f"/segment/{seg}/edit"
+    row = repo.get(store, "segment", seg)
+    assert (row["shot_type"], row["angle"]) == ("近景", "俯拍")
+    page = client.get(f"/llm/run/{rid}").text
+    assert page.count("data-picked") == 1 and 'type="radio"' not in page
+
+
+def test_beats_review_page_previews_hints_and_approves_without_a_choice(client, store, sample):
+    repo.update(store, "episode", sample["episode"], outline="林小雨回到老宅")
+    out = {"episodes": [{"number": 1, "hook": "无", "reversal": "小", "emotion": "压", "paywall": "否", "quote": "林小雨回到老宅"}]}
+    rid = _run_of(store, "beats", "drama", sample["drama"], {}, out)
+    page = client.get(f"/llm/run/{rid}").text
+    assert 'data-beat-row="1"' in page and "批准后会提示" in page and "data-pacing-hint" in page
+    assert 'name="pick"' not in page
+    r = client.post(f"/llm/run/{rid}/approve", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == f"/drama/{sample['drama']}/outline"
+    assert '"hook": "无"' in repo.get(store, "episode", sample["episode"])["beats_json"]
 
 
 def test_critique_review_page_asks_for_a_stance_on_every_issue(client, store, sample):

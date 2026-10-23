@@ -83,6 +83,42 @@
           候选 {{ c.n + 1 }}</label>{% else %}<label>候选 {{ c.n + 1 }}</label>{% if c.picked %} <b>已选用</b>{% endif %}{% endif %}<pre>{{ c.text }}</pre><p class="hint">{{ c.why }}</p></div>
     {% endfor %}
     </div></div>
+  {% elif preview.beats is defined %}
+    <table data-beats-table>
+      <tr><th>集</th><th>钩子</th><th>反转</th><th>情绪</th><th>卡点</th><th>依据(逐字引自大纲)</th></tr>
+      {% for b in preview.beats %}
+        <tr data-beat-row="{{ b.number }}"><td>{{ b.number }}</td><td>{{ b.hook }}</td><td>{{ b.reversal }}</td>
+          <td>{{ b.emotion }}</td><td>{{ b.paywall }}</td><td>{{ b.quote }}</td></tr>
+      {% endfor %}
+    </table>
+    <h2>节奏提示(批准后会提示,只提示,不拦)</h2>
+    {% for h in preview.hints %}<p class="hint" style="color: #b8860b" data-pacing-hint>{{ h }}</p>
+    {% else %}<p class="status-ok">按这份标注,没有触到经验阈值</p>{% endfor %}
+  {% elif preview.variants is defined %}
+    <p class="hint">挑一个版本替换这一集的大纲(批准后旧节拍会清掉,要重新标注)。「套路款」= 模型自评最常见的一个,仅供参考。</p>
+    <div class="side-by-side"><div><label>现在的大纲</label><pre>{{ preview.original }}</pre></div><div>
+    {% for v in preview.variants %}
+      <div class="card" data-variant="{{ v.n }}"{% if v.picked %} data-picked{% endif %}>
+        {% if run.state == "proposed" %}<label><input type="radio" name="pick" value="{{ v.n }}" form="approve-form">
+          版本 {{ v.n + 1 }}</label>{% else %}<label>版本 {{ v.n + 1 }}</label>{% if v.picked %} <b>已选用</b>{% endif %}{% endif %}
+        {% if v.routine %}<span class="tag" data-routine>套路款</span>{% endif %}
+        <p class="hint">开场钩子:{{ v.hook_type }} · 中段反转:{{ v.reversal_type }} · 结尾悬念:{{ v.cliff_type }}</p>
+        <pre>{{ v.outline }}</pre>
+      </div>
+    {% endfor %}
+    </div></div>
+  {% elif preview.options is defined %}
+    <p class="hint">挑一个镜头方案写回本段的景别 / 机位 / 运镜 / 场记表 / 首帧提示词。批准不会作废已生成的首帧和视频;重出首帧后在历史里「调用」才成为当前。</p>
+    {% for o in preview.options %}
+      <div class="card" data-shot-option="{{ o.n }}"{% if o.picked %} data-picked{% endif %}>
+        {% if run.state == "proposed" %}<label><input type="radio" name="pick" value="{{ o.n }}" form="approve-form">
+          方案 {{ o.n + 1 }}</label>{% else %}<label>方案 {{ o.n + 1 }}</label>{% if o.picked %} <b>已选用</b>{% endif %}{% endif %}
+        <p>景别 <b>{{ o.shot_type }}</b> · 机位 <b>{{ o.angle }}</b> · 运镜 <b>{{ o.movement }}</b></p>
+        <p>场记表:{{ o.phrase }}</p>
+        <label>首帧图提示词</label><pre>{{ o.image_prompt }}</pre>
+        <p class="hint">{{ o.why }}</p>
+      </div>
+    {% endfor %}
   {% elif preview.premise is defined %}
     {% set pm = preview.premise %}
     {% if pm.overlap > 0.5 %}<p class="status-bad" data-premise-overlap>本批方案趋同(维度重合 {{ pm.overlap }}),可以重跑或加约束</p>{% endif %}

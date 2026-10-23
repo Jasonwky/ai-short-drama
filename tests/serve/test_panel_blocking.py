@@ -15,6 +15,12 @@ def test_blocking_editor_saves_rows_and_previews_the_phrase(client, store, sampl
     assert "@林小雨 跪着,面朝镜头,在画面左侧,手里拿着@玉佩" in client.get(f"/segment/{sample['seg']}/edit").text
 
 
+def test_segment_edit_page_offers_shot_options(client, sample):
+    page = client.get(f"/segment/{sample['seg']}/edit").text
+    assert "data-llm-shot-options" in page and f"/llm/start/shot_options/{sample['seg']}" in page
+    assert 'name="n"' in page and "不会作废已生成的首帧" in page
+
+
 def test_blocking_with_values_outside_the_closed_set_is_refused(client, store, sample):
     form = {"character": "林小雨", "pose": "飘", "facing": "镜头", "side": "左", "holding": "无"}
     r = client.post(f"/segment/{sample['seg']}/blocking", data=form)

@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Form, Request
 
-from tools.drama import repo
-from tools.llm import outline, runs
+from tools.drama import pacing, repo
+from tools.llm import beats, outline, runs
 from tools.serve.panels.common import render, rt
 
 router = APIRouter()
+LLM_TASKS = ("outline", "beats", "outline_variants")
 
 
 @router.get("/drama/{drama_id}/outline")
@@ -20,8 +21,11 @@ def page(request: Request, drama_id: int):
     store = rt(request).store
     repo.get(store, "drama", drama_id)
     eps = store.conn.execute("SELECT * FROM episode WHERE drama_id = ? ORDER BY number", (drama_id,)).fetchall()
-    return render(request, "outline.html", "outline", drama_id=drama_id, eps=eps,
-                  llm_runs=runs.history(store, "drama", drama_id, "outline"))
+    beat_map = beats.load(store, drama_id)
+    rows = [r for t, tid in (("drama", drama_id), *(("episode", e["id"]) for e in eps))
+            for r in runs.history(store, t, tid) if r["task"] in LLM_TASKS]
+    return render(request, "outline.html", "outline", drama_id=drama_id, eps=eps, beat_map=beat_map,
+                  pacing_hints=pacing.hints(beat_map), llm_runs=sorted(rows, key=lambda r: r["id"]))
 
 
 @router.post("/drama/{drama_id}/outline/batches")
