@@ -11,7 +11,8 @@ from tools.llm import storyboard as sb
 from tools.llm.gate import schema_errors, strict_schema_problems
 
 GOLDEN = (Path(__file__).parent / "golden" / "jade_ep1.txt").read_text(encoding="utf-8")
-CTX = {"script": GOLDEN, "characters": ["林小雨", "沈墨"], "scenes": ["老宅庭院", "老宅书房"], "props": ["玉佩"]}
+CTX = {"script": GOLDEN, "characters": ["林小雨", "沈墨"], "scenes": ["老宅庭院", "老宅书房"], "props": ["玉佩"],
+       "aspect": "9:16"}
 
 
 def _sub(visual, speaker=None, line=None):
@@ -23,7 +24,8 @@ def _seg(scene, chars, subshots, props=(), pace="normal", img=None, vid=None):
     return {"scene": scene, "characters": list(chars), "props": list(props), "subshots": subshots, "pace": pace,
             "image_prompt": img if img is not None else " ".join(f"@{b}" for b in bound),
             "video_prompt": vid if vid is not None else f"@{chars[0]} 缓慢抬头",
-            "blocking": [{"character": c, "pose": "站", "facing": "镜头", "side": "中", "holding": "无"} for c in chars]}
+            "blocking": [{"character": c, "pose": "站", "facing": "镜头", "side": "中", "holding": "无"} for c in chars],
+            "shot_type": "中景"}
 
 
 def good_args():
@@ -220,3 +222,20 @@ def test_pose_words_in_image_prompt_are_sent_back_when_blocking_covers_them():
     a["segments"][1]["image_prompt"] = "@林小雨 跪在地上,@沈墨 站在她左侧,@老宅庭院"
     (msg,) = [p for p in sb.judge_factory(CTX)(a) if "画两遍" in p]
     assert msg.startswith("段落2") and "跪" in msg and "站在" in msg and "左侧" in msg
+
+
+def test_shot_type_is_a_closed_set_and_lying_pairs_need_a_close_shot():
+    """竖屏可拍性(spec 2026-10-23-不穿帮验收-design.md 第 2 节)。"""
+    entry = sb.schema(CTX)["properties"]["segments"]["items"]["properties"]["shot_type"]
+    assert entry["enum"] == ["特写", "近景", "中景", "全景"]
+    a = good_args()
+    a["segments"][1]["blocking"][0]["pose"] = "仰躺"
+    a["segments"][0]["subshots"][0]["visual"] = "林小雨躺倒在地"   # 交代动作,只让可拍性这一条出错
+    assert any("景别只能选近景或特写" in p for p in sb.judge_factory(CTX)(a))
+    a["segments"][1]["shot_type"] = "近景"
+    assert not any("景别" in p for p in sb.judge_factory(CTX)(a))
+
+
+def test_apply_writes_the_shot_type(store):
+    ids = sb.apply(store, _episode(store), good_args(), CTX)
+    assert [repo.get(store, "segment", i)["shot_type"] for i in ids] == ["中景"] * len(ids)

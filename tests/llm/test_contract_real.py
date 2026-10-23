@@ -36,7 +36,8 @@ def _gate(client, task, module, ctx):
 
 def test_storyboard_golden(client):
     script = (GOLDEN / "jade_ep1.txt").read_text(encoding="utf-8")
-    ctx = {"script": script, "characters": ["林小雨", "沈墨"], "scenes": ["老宅庭院", "老宅书房"], "props": ["玉佩"]}
+    ctx = {"script": script, "characters": ["林小雨", "沈墨"], "scenes": ["老宅庭院", "老宅书房"], "props": ["玉佩"],
+           "aspect": "9:16"}
     res = _gate(client, "storyboard", storyboard, ctx)
     lo, hi = rules.expected_segment_range(script)
     assert lo <= len(res.args["segments"]) <= hi
@@ -52,10 +53,14 @@ def test_storyboard_with_kneeling_and_lying_converges(client):
     """题甲第 1 集看片(2026-10-22):场记表(姿态 / 朝向 / 站位)+ 相邻段对表,真模型要能在轮次上限内交齐。"""
     script = (GOLDEN / "tijia_ep1.txt").read_text(encoding="utf-8")
     ctx = {"script": script, "characters": ["沈青禾", "沈玉瑶", "李福", "萧珩"], "scenes": ["靖王府正堂", "靖王府寝殿"],
-           "props": ["银针"]}
+           "props": ["银针"], "aspect": "9:16"}
     res = _gate(client, "storyboard", storyboard, ctx)
     poses = {e["pose"] for s in res.args["segments"] for e in s["blocking"]}
     assert "跪" in poses and poses & {"仰躺", "侧躺"}                  # 场记表真记下了跪和躺,不是全填「站」
+    # 竖屏可拍性(2026-10-23):躺着 + 多人的段落,真模型要能收敛到近景 / 特写
+    lying_pairs = [s for s in res.args["segments"]
+                   if len(s["blocking"]) >= 2 and any(e["pose"] in ("仰躺", "侧躺", "趴") for e in s["blocking"])]
+    assert all(s["shot_type"] in ("特写", "近景") for s in lying_pairs)
 
 
 def test_script_keeps_the_bed_out_of_the_hall(client):
