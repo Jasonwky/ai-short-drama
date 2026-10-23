@@ -13,7 +13,7 @@ import json
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from tools.drama import blocking, invalidation, repo, rules
+from tools.drama import blocking, framing, invalidation, repo, rules
 from tools.drama.readiness import KEY_GAP_SEC, KEY_MARGIN_SEC, KEY_MAX, key_frame_index
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.llm import runs
@@ -119,7 +119,7 @@ def edit_page(request: Request, segment_id: int):
              "facing_options": [*[m for m in names if m != n], *blocking.FIXED_FACING],
              "holding_options": [blocking.NONE, *[p["name"] for p in assets["props"]]]} for n in names]
     return render(request, "segment_edit.html", "storyboard", episode_id=seg["episode_id"], seg=seg, modes=MODES,
-                  bk=blocking, blocking_rows=rows, blocking_phrase=blocking.phrase(list(saved.values())) if saved else "",
+                  bk=blocking, shot_types=framing.SHOT_TYPES, blocking_rows=rows, blocking_phrase=blocking.phrase(list(saved.values())) if saved else "",
                   frames=frames, marks=marks, margin=KEY_MARGIN_SEC, gap=KEY_GAP_SEC, keys=keys, key_max=KEY_MAX,
                   all_of=all_of, bound_chars={c["id"] for c in assets["characters"]},
                   bound_props={p["id"] for p in assets["props"]}, checks=readiness(runtime, segment_id))
@@ -193,7 +193,13 @@ async def save_blocking(request: Request, segment_id: int):
     bad = blocking.problems(entries, [c["name"] for c in assets["characters"]], [p["name"] for p in assets["props"]])
     if bad:
         raise ValueError("场记表:" + ";".join(bad))
-    repo.update(store, "segment", segment_id, blocking_json=json.dumps(entries, ensure_ascii=False))
+    fields = {"blocking_json": json.dumps(entries, ensure_ascii=False)}
+    if "shot_type" in form:                     # 景别(spec 2026-10-23-不穿帮验收 第 2 节),空 = 没填
+        shot = str(form["shot_type"])
+        if shot and shot not in framing.SHOT_TYPES:
+            raise ValueError(f"景别「{shot}」不在 {'/'.join(framing.SHOT_TYPES)} 里")
+        fields["shot_type"] = shot
+    repo.update(store, "segment", segment_id, **fields)
     return RedirectResponse(f"/segment/{segment_id}/edit", status_code=303)
 
 

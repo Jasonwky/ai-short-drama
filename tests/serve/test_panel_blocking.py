@@ -20,3 +20,14 @@ def test_blocking_with_values_outside_the_closed_set_is_refused(client, store, s
     r = client.post(f"/segment/{sample['seg']}/blocking", data=form)
     assert r.status_code == 400 and "姿态「飘」" in r.text
     assert repo.get(store, "segment", sample["seg"])["blocking_json"] == ""
+
+
+def test_blocking_form_saves_the_shot_type(client, store, sample):
+    """竖屏可拍性(spec 2026-10-23-不穿帮验收-design.md 第 2 节):景别和场记表一起改。"""
+    seg = sample["seg"]
+    assert "data-shot-type" in client.get(f"/segment/{seg}/edit").text
+    form = {"character": "林小雨", "pose": "站", "facing": "镜头", "side": "中", "holding": "无", "shot_type": "近景"}
+    assert client.post(f"/segment/{seg}/blocking", data=form, follow_redirects=False).status_code == 303
+    assert repo.get(store, "segment", seg)["shot_type"] == "近景"
+    r = client.post(f"/segment/{seg}/blocking", data={**form, "shot_type": "大远景"})
+    assert r.status_code == 400 and repo.get(store, "segment", seg)["shot_type"] == "近景"

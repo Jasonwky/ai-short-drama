@@ -86,6 +86,10 @@
         <input type="hidden" name="character" value="{{ r.character }}">
       </div>
       {% endfor %}
+      <div class="row"><label>景别(首帧)</label>
+        <select name="shot_type" data-shot-type><option value="">(没填)</option>
+          {% for v in shot_types %}<option{{ " selected" if v == seg.shot_type }}>{{ v }}</option>{% endfor %}</select>
+        <span class="hint">竖屏里有人躺着、又不止一个人时只能选近景或特写</span></div>
       <p class="hint" data-blocking-preview>拼进首帧的那句:{{ blocking_phrase or "(还没保存)" }}</p>
       <button class="btn" type="submit" data-save-blocking>保存场记表</button>
     </form>
