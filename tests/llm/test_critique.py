@@ -68,3 +68,11 @@ def test_adopted_issues_are_listed_for_rewriting(store):
     runs.approve(store, rid, {"adopt": [1], "reject": [0]})
     (a,) = cq.adopted(store, ep)
     assert a["quote"] == "天快黑了，你还不进屋？" and a["role"] == "编剧" and a["run_id"] == rid
+
+
+def test_decision_must_reference_existing_issues_once(store):
+    out = {"issues": [_issue(), _issue()]}
+    assert cq.decision_problems(out, {"adopt": [0, 5], "reject": [1]}) == ["第 6 条不存在(只有 2 条)"]
+    assert cq.decision_problems(out, {"adopt": [0], "reject": [-1, 1]}) == ["第 0 条不存在(只有 2 条)"]
+    assert cq.decision_problems(out, {"adopt": [0, 0], "reject": [1]}) == ["采纳里第 1 条重复了"]
+    assert cq.decision_problems(out, {"adopt": [0], "reject": [1, "1"]}) == ["驳回里有不是序号的值:'1'"]
