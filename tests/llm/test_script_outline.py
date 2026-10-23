@@ -184,3 +184,37 @@ def test_bed_in_a_hall_is_sent_back():
     for place in ("靖王寝殿", "王府卧房", "老宅庭院"):        # 卧房 / 寝殿里有床天经地义;不是厅堂的不管
         args["scenes"][0]["place"] = place
         assert not [p for p in sw.judge_factory({"minutes": 1})(args) if "床" in p]
+
+
+_PREMISE = {"title": "替嫁王妃", "logline": "冲喜新娘一针救活王爷", "genre": "古装权谋", "payoff": "打脸",
+            "conflict": "身份错位", "hook_type": "直接冲突",
+            "protagonist": {"name": "顾长歌", "tag": "庶女神医", "contrast": "表面柔弱"}, "antagonist": "嫡姐",
+            "hook": "大婚夜她跪在堂中", "typicality": 0.4}
+
+
+def test_outline_prompt_carries_the_premise_when_there_is_one(store):
+    import json
+    from tools.llm import premise
+    d = repo.create_drama(store, "替嫁", "9:16")
+    novel = "\n".join(f"第{i}段。" + "字" * 30 for i in range(1, 12))
+    before = outline.user_message(outline.context(store, d, novel=novel, n_episodes=2))
+    assert "<premise>" not in before                      # 没做过立项:提示词不变(锁定版照旧可复用)
+    repo.update(store, "drama", d, premise_json=json.dumps(_PREMISE, ensure_ascii=False))
+    after = outline.user_message(outline.context(store, d, novel=novel, n_episodes=2))
+    assert "<premise>" in after and premise.render(_PREMISE) in after
+
+
+def test_script_prompt_carries_the_premise_when_there_is_one(store):
+    import json
+    from tools.llm import premise
+    d = repo.create_drama(store, "替嫁", "9:16")
+    ep = repo.add_episode(store, d, 1, "synopsis")
+    syn = "林小雨回到老宅,发现母亲留下的玉佩背面刻着邻居沈家的姓。" * 2
+    before = sw.user_message(sw.context_synopsis(store, ep, syn, 1))
+    assert "<premise>" not in before
+    repo.update(store, "drama", d, premise_json=json.dumps(_PREMISE, ensure_ascii=False))
+    after = sw.user_message(sw.context_synopsis(store, ep, syn, 1))
+    assert "<premise>" in after and premise.render(_PREMISE) in after
+    ctx = sw.context_synopsis(store, ep, syn, 1)
+    ctx.pop("premise")                                     # 手搭的 ctx(真 LLM 契约测试)没有这一项也要能用
+    assert "<premise>" not in sw.user_message(ctx)
