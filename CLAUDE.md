@@ -88,7 +88,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   `diverge.distinct_problems` 保证方案两两至少 2 个维度不同,典型度最高的标「套路款」(只当标签);
   片名 / 卖点过合规词表 `drama/compliance.py`(每个词标出处);人逐字段拼(`{"assemble": {字段: 方案号}}`),
   写回 `drama.premise_json`(v16),不改剧名;大纲 / 编剧提示词有立项时带 `<premise>`,没有时逐字节不变
-  (spec 2026-10-23-剧集脑爆系统-design.md;大纲节拍与变体、分镜方案是 P17c)。
+  (spec 2026-10-23-剧集脑爆系统-design.md)。
+  **大纲节拍** `beats`(P17c,目标是剧):逐集闭集字段(钩子 / 反转 / 压放 / 卡点)+ 逐字依据,批准写 `episode.beats_json`(v17);
+  节奏由 `drama/pacing.py` 统计(含开头、结尾两段的反转间隔),阈值只收 A / B 档并标出处,**只提示不拦**。
+  **单集变体** `outline_variants`:三个维度上真不一样的重写,和原大纲、彼此都不能一样;**本集已有剧本即拒**;批准时清掉这集的旧节拍。
+  **分镜方案** `shot_options`:景别 / 机位至少差一项,过场记表、陈设表、竖屏可拍性、同场景前后段的姿态衔接(打回);
+  **批准不作废已生成的首帧 / 视频**(用户原则),景别 + 机位由代码拼进首帧(`framing.shot_phrase`)、运镜拼进视频(`move_phrase`),
+  首帧任务记 `frame` 快照,镜头改过时首帧卡片提示「当前首帧还是旧方案」。
   ⚠️ 模板里拿不到的变量 Jinja 会悄悄渲染成空串(P17b 自测抓到过表单地址缺剧号):`render()` 把 `drama_id` 留给导航,模板里用 `drama.id` / 自己传的对象
 - 增量补全 `tools/gen/fill.py` 与单条生成共用规划器的纯检查函数(`*_problems`);**一律两态**,确认时只认确认页列出的目标。
   工程包 `tools/drama/bundle.py`:导入永远新建一部剧(id 重映射、路径加 `imports/<编号>/` 前缀、逐文件校验 sha256)
