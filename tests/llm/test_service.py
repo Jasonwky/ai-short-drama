@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 """调度层的确定性路径(假 LLM)。不声称覆盖 LLM 契约 —— 那是 test_contract_real.py 的事。"""
+import json
+from dataclasses import replace
+
 import pytest
 
 from tools.drama import repo
@@ -95,3 +98,46 @@ def test_preconditions_are_checked_before_any_run_exists(store, sample):
 def test_voice_without_any_basis_is_refused(store, sample):
     with pytest.raises(ValueError, match="没有依据定声音"):
         service.begin(store, "voice", sample["shen"], {}, _real({}))
+
+
+def _proposed_voice_run(store, sample, tmp_path):
+    llm = _real({"submit_voice": VOICE})
+    rid, _ = service.begin(store, "voice", sample["lin"], {}, llm)
+    service.finish(store, rid, llm, tmp_path)
+    return rid
+
+
+def test_tasks_without_choices_refuse_a_decision(store, sample, tmp_path):
+    """只有评审团 / 局部改写这类要人挑的任务收选择;别的任务给了选择是调用方写错了,当场报错。"""
+    rid = _proposed_voice_run(store, sample, tmp_path)
+    with pytest.raises(ValueError, match="不需要选择"):
+        service.approve(store, rid, decision={"pick": 0})
+    assert runs.get(store, rid)["state"] == "proposed"
+
+
+def test_tasks_with_choices_require_and_record_a_valid_decision(store, sample, tmp_path, monkeypatch):
+    calls = []
+
+    class PickingVoice:
+        """借 voices 的一切,只多出「要人挑」的两个口子。"""
+        def __getattr__(self, name):
+            return getattr(service.voices, name)
+
+        @staticmethod
+        def decision_problems(args, decision):
+            return [] if decision == {"pick": 0} else ["要从候选里挑一个"]
+
+        @staticmethod
+        def apply(store, target_id, args, ctx, decision):
+            calls.append(decision)
+
+    monkeypatch.setitem(service.TASKS, "voice", replace(service.TASKS["voice"], module=PickingVoice()))
+    rid = _proposed_voice_run(store, sample, tmp_path)
+    with pytest.raises(ValueError, match="先做选择"):
+        service.approve(store, rid)
+    with pytest.raises(ValueError, match="要从候选里挑一个"):
+        service.approve(store, rid, decision={"pick": 9})
+    assert not calls and runs.get(store, rid)["state"] == "proposed"
+    service.approve(store, rid, decision={"pick": 0})
+    assert calls == [{"pick": 0}]
+    assert json.loads(runs.get(store, rid)["decision_json"]) == {"pick": 0}

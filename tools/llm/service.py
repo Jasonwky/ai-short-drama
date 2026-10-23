@@ -147,7 +147,8 @@ def reset_cost(store: Store, run_id: int) -> tuple[int, Impact] | None:
     return n, invalidation.impact(store, "script", row["target_id"], video_cap=MINIMAX_H3, image_cap=QWEN_IMAGE_EDIT_2511)
 
 
-def approve(store: Store, run_id: int, data_root: Path | None = None, confirm_reset: bool = False):
+def approve(store: Store, run_id: int, data_root: Path | None = None, confirm_reset: bool = False,
+            decision: dict | None = None):
     row = runs.get(store, run_id)
     if row["state"] != "proposed":
         raise ValueError(f"这条 LLM 产物是 {row['state']} 状态,只有待审的能批准")
@@ -156,11 +157,23 @@ def approve(store: Store, run_id: int, data_root: Path | None = None, confirm_re
     p = prepare(store, row["task"], row["target_id"], runs.params(row), data_root)   # 重新核对前提
     if p.sha != row["input_sha"]:
         raise ValueError("生成之后输入已经变了(剧本 / 资产名单 / 参考图 / 参数有改动)—— 这一版对不上现在的数据,请重跑")
+    module = spec(row["task"]).module
+    picks = hasattr(module, "decision_problems")           # 要人挑的任务(评审团 / 局部改写)
+    if picks:
+        if decision is None:
+            raise ValueError("这条 LLM 产物要你先做选择(采纳哪些问题 / 挑哪个候选)才能批准")
+        bad = module.decision_problems(runs.output(row), decision)
+        if bad:
+            raise ValueError(";".join(bad))
+    elif decision is not None:
+        raise ValueError(f"任务 {row['task']} 不需要选择,批准时不该带 decision")
     cost = reset_cost(store, run_id)
     if cost is not None:
         if not confirm_reset:
             raise ValueError(f"批准会删除本集已有的 {cost[0]} 个段落({cost[1].summary()})—— 需要人确认代价")
         repo.delete_segments(store, row["target_id"])
-    result = spec(row["task"]).module.apply(store, row["target_id"], runs.output(row), p.ctx)
-    runs.approve(store, run_id)
+    args = runs.output(row)
+    result = module.apply(store, row["target_id"], args, p.ctx, decision) if picks else \
+        module.apply(store, row["target_id"], args, p.ctx)
+    runs.approve(store, run_id, decision)
     return result
