@@ -169,3 +169,16 @@ def test_critique_quotes_the_script_verbatim(client):
     res = _gate(client, "critique", critique, ctx)
     assert 1 <= len(res.args["issues"]) <= 8
     assert all(restore(i["quote"], script) is not None for i in res.args["issues"])
+
+
+def test_rewrite_gives_distinct_candidates_in_script_format(client):
+    """局部改写(2026-10-23):真模型给 2–3 个不同写法,台词格式和角色名都过判卷。"""
+    from tools.llm import rewrite
+    script = (GOLDEN / "tijia_ep1.txt").read_text(encoding="utf-8")
+    span = "李福说：「你、你胡说！」"
+    assert script.count(span) == 1
+    ctx = {"script": script, "span": span, "intent": "加强冲突", "note": "",
+           "characters": ["沈青禾", "沈玉瑶", "李福", "萧珩"]}
+    res = _gate(client, "rewrite", rewrite, ctx)
+    texts = [c["text"] for c in res.args["candidates"]]
+    assert 2 <= len(texts) <= 3 and len(set(texts)) == len(texts) and span not in texts
