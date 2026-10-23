@@ -32,3 +32,18 @@ def test_script_edit_without_generated_products_saves_directly(client, store):
     r = client.post(f"/episode/{ep}/script", data={"script": "字" * 600})
     assert repo.get(store, "episode", ep)["script"] == "字" * 600
     assert "应拆" in r.text
+
+
+def test_script_card_has_critique_rewrite_and_adoption(client, store, sample):
+    from tools.llm import critique, runs
+    page = client.get(f"/drama/{sample['drama']}/script").text
+    assert "data-llm-critique" in page and all(f"<option>{r}</option>" in page for r in critique.ROLES)
+    assert "data-llm-rewrite" in page and "data-adoption" not in page          # 还没评审过,不显示采纳率
+    repo.update(store, "episode", sample["episode"], script="林小雨说：「这块玉佩，是我母亲留给我的。」\n")
+    issue = {"quote": "这块玉佩，是我母亲留给我的", "category": "动机不足", "severity": "中", "suggestion": "加一句"}
+    rid = runs.start(store, task="critique", target_type="episode", target_id=sample["episode"], model="m",
+                     input_sha="x", llm_mode="real", params={"role": "编剧"})
+    runs.propose(store, rid, {"issues": [issue]}, "j")
+    runs.approve(store, rid, {"adopt": [0], "reject": []})
+    page = client.get(f"/drama/{sample['drama']}/script").text
+    assert "编剧 1/1" in page and "data-adopted-issue" in page and "按这条改" in page

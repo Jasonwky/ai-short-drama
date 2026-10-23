@@ -37,6 +37,32 @@
           </form>
         {% endif %}
       </div>
+    {% if e.row.script.strip() %}
+      <div class="row" data-brainstorm>
+        <form method="post" action="/llm/start/critique/{{ e.row.id }}" style="flex: 1; min-width: 220px" data-llm-critique>
+          <label>评审团(LLM,一个视角一次)</label>
+          <select name="role">{% for r in roles %}<option>{{ r }}</option>{% endfor %}</select>
+          <button class="btn" type="submit">请这位评审挑毛病</button>
+          {% if adoption %}<p class="hint" data-adoption>各视角历史采纳:{% for r, v in adoption.items() %}{{ r }} {{ v[0] }}/{{ v[1] }}{{ " · " if not loop.last }}{% endfor %}</p>{% endif %}
+          <p class="hint">剧本会发送给 LLM;只出问题清单,不打分,你逐条采纳或驳回。</p>
+        </form>
+        <form method="post" action="/llm/start/rewrite/{{ e.row.id }}" style="flex: 2; min-width: 320px" data-llm-rewrite>
+          <label>局部改写:从上面剧本里原样复制要改的一段</label>
+          <textarea name="span" data-rewrite-span></textarea>
+          <select name="intent">{% for i in intents %}<option>{{ i }}</option>{% endfor %}</select>
+          <input type="text" name="note" placeholder="补充说明(可空)">
+          <button class="btn" type="submit">出几个写法</button>
+        </form>
+      </div>
+      {% for a in e.adopted %}
+        <form method="post" action="/llm/start/rewrite/{{ e.row.id }}" class="row" data-adopted-issue>
+          <span class="hint">[{{ a.role }} · {{ a.category }}] {{ a.quote }} —— {{ a.suggestion }}</span>
+          <input type="hidden" name="span" value="{{ a.quote }}"><input type="hidden" name="intent" value="按评审意见改">
+          <input type="hidden" name="note" value="{{ a.suggestion }}">
+          <button class="btn small" type="submit">按这条改</button>
+        </form>
+      {% endfor %}
+    {% endif %}
     {{ llm_run_list(e.llm_runs, llm_state) }}
   </section>
 {% else %}
