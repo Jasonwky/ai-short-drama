@@ -20,7 +20,7 @@ from tools.drama import invalidation, repo
 from tools.drama.db import Store
 from tools.drama.invalidation import Impact
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
-from tools.llm import beats, critique, describe, outline, outline_variants, premise, rewrite, runs, script_writer, storyboard, vision_check, voices
+from tools.llm import beats, critique, describe, outline, outline_variants, premise, rewrite, runs, script_writer, shot_options, storyboard, vision_check, voices
 from tools.llm.client import LLMError
 from tools.llm.gate import GateFailed, input_sha, run_gated
 
@@ -70,6 +70,8 @@ TASKS: dict[str, Spec] = {
     "beats": Spec(beats, "drama", beats.context, 8000, "大纲节拍:逐集标注钩子、反转、情绪、卡点"),
     # 单集大纲变体(第 2b 节):本集已有剧本时拒绝
     "outline_variants": Spec(outline_variants, "episode", outline_variants.context, 8000, "单集变体:把这集大纲换几种写法"),
+    # 分镜方案(第 4 节):景别 / 机位至少差一项;批准不作废已生成的(用户 2026-10-23 原则)
+    "shot_options": Spec(shot_options, "segment", shot_options.context, 6000, "分镜方案:给这段出几个镜头方案"),
 }
 
 

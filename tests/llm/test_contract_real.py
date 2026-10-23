@@ -210,3 +210,13 @@ def test_outline_variants_really_differ(client):
     res = _gate(client, "outline_variants", outline_variants, ctx)
     vs = res.args["variants"]
     assert len(vs) == 3 and diverge.distinct_problems(vs, tuple(outline_variants.DIMS)) == []
+
+
+def test_shot_options_pass_the_existing_checks(client):
+    """分镜方案(2026-10-23):真模型给的镜头方案过场记表 / 陈设表 / 竖屏可拍性 / 差异判卷。"""
+    from tools.llm import shot_options
+    ctx = {"description": "【镜头1】萧珩躺在床上昏睡。【镜头2】沈青禾俯身,把银针刺入他眉心。", "aspect": "9:16",
+           "scene": "靖王府寝殿", "furnishings": "雕花拔步床榻、床帐、烛台", "characters": ["沈青禾", "萧珩"],
+           "props": ["银针"], "n": 2}
+    res = _gate(client, "shot_options", shot_options, ctx)
+    assert len(res.args["options"]) == 2
