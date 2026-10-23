@@ -76,7 +76,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `tools/llm/`:LLM 一律经 `gate.run_gated` —— 只用 strict 工具调用、客户端 JSON Schema 再校验、代码判卷、带错误回炉、
   轮次上限 fail-loud、每轮落 `journal/llm/`。产物进 `llm_run`(落盘不可改、批准即锁定、假产物触发器拦审批),
   **人在审阅页批准才写回**。新增 LLM 任务 = 在 `service.TASKS` 登记一个模块(SYSTEM / schema / user_message / judge_factory / apply)
-  + 一条真 LLM 契约测试
+  + 一条真 LLM 契约测试。
+  **人在批准时的选择**存 `llm_run.decision_json`(v15,批准后不可改):模块定义了 `decision_problems(args, decision)` 的任务
+  批准必须带选择(序号严格校验),`apply` 多收 `decision`;审阅页批准后回显当时的选择。
+  **评审团** `critique`:一个视角一次、只出带逐字引用的问题清单,人逐条采纳 / 驳回,按视角统计采纳率,不打分不排序。
+  **局部改写** `rewrite`:选中片段须在剧本里恰好出现一次,2–3 个候选,判卷认说话人与 `rules.dialogue_lines` 同一口径;
+  **不删段落**(用户 2026-10-23 定):只把对得上的那一个段落的台词按位置换新,已生成的首帧 / 视频 / 字幕都保留,新视频由人「调用」才成为当前。
+  **视频台本快照**:视频任务参数 `script` 记生成时的描述、逐句台词、声音、提示词、时长(改参重跑沿用),
+  视频卡片列各版本台词,`rules.stale_lines / dropped_lines` 判「台词改过,当前视频还是旧台词」
+  (spec 2026-10-23-剧集脑爆系统-design.md;立项发散、大纲节拍与变体、分镜方案是 P17b / P17c)
 - 增量补全 `tools/gen/fill.py` 与单条生成共用规划器的纯检查函数(`*_problems`);**一律两态**,确认时只认确认页列出的目标。
   工程包 `tools/drama/bundle.py`:导入永远新建一部剧(id 重映射、路径加 `imports/<编号>/` 前缀、逐文件校验 sha256)
 - `tools/cut/`:成片与合规。只调本机 ffmpeg(找不到就 400 报原因,ffmpeg 失败抛 `CutError`,不吞)。
