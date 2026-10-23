@@ -233,10 +233,29 @@ def _blank_video(store: Store, root: Path, segment_id: int):
 
 
 def _review(seg_id: int):
-    """点这段的「看过,没有穿帮」,等页面刷新出已确认(两段连着点,第二下要在新页面上点)。"""
+    """逐项勾选这段的验收清单,再点确认,等页面刷新出已确认(两段连着点,第二下要在新页面上点)。"""
     def act(page) -> None:
+        for box in page.locator(f"#seg-{seg_id} [data-check-box]").all():
+            box.check()
         page.locator(f"#seg-{seg_id} [data-review-confirm]").click()
         page.wait_for_selector(f"#seg-{seg_id} [data-reviewed]", timeout=20000)
+    return act
+
+
+def _partial_ticks(seg_id: int):
+    """验收清单少勾一项,确认按钮不可点;勾上最后一项才可点(spec 2026-10-23-不穿帮验收 第 1 节)。不提交。"""
+    def act(page) -> None:
+        boxes = page.locator(f"#seg-{seg_id} [data-check-box]").all()
+        btn = page.locator(f"#seg-{seg_id} [data-review-confirm]")
+        for box in boxes[:-1]:
+            box.check()
+        if not btn.is_disabled():
+            raise RuntimeError("验收清单少勾一项,确认按钮却可以点")
+        boxes[-1].check()
+        if btn.is_disabled():
+            raise RuntimeError("验收清单勾全了,确认按钮还是不能点")
+        for box in boxes:
+            box.uncheck()
     return act
 
 
@@ -335,7 +354,9 @@ def run(out_dir: Path) -> dict:
                     ("videos", "字幕区出现台词外多说提醒", {}, [], f"#seg-{seg} [data-extra-speech]", 20),
                     ("videos", "看片区:切镜计数 + 上一段末帧 / 本段首帧并排", {}, [], f"#seg-{seg2} [data-seam] img", 30),
                     ("final", "没看片确认的段落列在导出检查的问题里", {}, [], 'li.bad:has-text("还没看片确认")', 20),
-                    ("videos", "段落 1、2 点「看过,没有穿帮」→ 卡片显示已确认", {},
+                    ("videos", "验收清单少勾一项 → 确认按钮不可点;勾全 → 可点", {},
+                     [_partial_ticks(seg2)], f"#seg-{seg2} [data-check-item]", 20),
+                    ("videos", "段落 1、2 逐项勾选验收清单 → 确认 → 卡片显示已确认", {},
                      [_review(seg), _review(seg2)], f"#seg-{seg2} [data-reviewed]", 20),
                     ("final", "导出成片", {"[data-producer]": "SELFTEST-ONLY"}, ["[data-export]"],
                      '[data-export-state="done"] [data-export-video]', 90),
