@@ -83,7 +83,7 @@ def test_task_page_shows_the_whole_task(client, runtime, store, two_segments):
     tid = provenance.node(store, s["root"], repo.get(store, "segment", s["seg1"])["video_path"])["task"]["id"]
     journal.append(s["root"], [f"task {tid}: queued → done"], prefix="host=1 ")
     page = client.get(f"/task/{tid}").text
-    assert "video prompt" in page and "outputs/tasks/f1/frame.png" in page and f'<a href="/task/{tid}">task {tid}</a>: queued → done' in page
+    assert "林小雨低头看着玉佩" in page and "outputs/tasks/f1/frame.png" in page and f'<a href="/task/{tid}">task {tid}</a>: queued → done' in page
     assert json.dumps("video_path") in html.unescape(page)                  # 参数(浏览器里看到的)
     assert client.get("/task/99999").status_code == 404
 

@@ -44,7 +44,6 @@ def test_card_warns_when_a_line_was_deleted_and_stays_quiet_when_unchanged(clien
     set_task_state(store, t, "queued", external_id=f"p{t}")
     set_task_state(store, t, "done", result_path=rel, result_sha256=sha256_file(root / rel))
     repo.update(store, "segment", seg2, video_path=rel)
-    repo.update(store, "segment", sample["seg"], description="【镜头1】林小雨低头。")    # 第 1 段不带台词,免得它也报
     repo.update(store, "segment", seg2, description="【镜头1】林小雨低头。")
     page = client.get(f"/episode/{sample['episode']}/videos").text
     assert "data-stale-lines" in page and "已删的台词" in page and "旧台词一句。" in page

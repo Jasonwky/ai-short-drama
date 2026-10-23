@@ -23,8 +23,10 @@ def done_task(store, root, seg_id, kind, rel, data, refs=()):  # noqa: F811
     (root / rel).parent.mkdir(parents=True, exist_ok=True)
     (root / rel).write_bytes(data)
     writes = {"video": "video_path", "image": "first_frame_path", "align": "subtitle_path"}[kind]
+    prompt = (repo.get(store, "segment", seg_id)["description"] if kind == "video"       # 视频提示词带着当时的台词
+              else f"{kind} prompt")
     t = create_task(store, kind=kind, target_type="segment", target_id=seg_id, model=f"m-{kind}",
-                    params={"writes": writes}, seed=7, prompt=f"{kind} prompt", refs=list(refs))
+                    params={"writes": writes}, seed=7, prompt=prompt, refs=list(refs))
     set_task_state(store, t, "queued", external_id=f"p{t}")
     set_task_state(store, t, "done", result_path=rel, result_sha256=sha256_file(root / rel))
     repo.update(store, "segment", seg_id, **{writes: rel})

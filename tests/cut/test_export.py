@@ -408,6 +408,20 @@ def test_unreviewed_segment_blocks_export_and_review_is_tied_to_the_video(store,
     assert [v["review"]["note"] for v in snap] == ["", "接缝看过"]
 
 
+def test_description_lines_differing_from_the_current_video_block_export(store, two_segments):
+    """台词改过(局部改写不删段落)而当前视频还是旧台词:溯源与烧字幕检测都按新描述,和实际视频对不上,要拦。"""
+    s, root = two_segments, two_segments["root"]
+    assert export.readiness(store, root, s["episode"]) == []              # 描述与视频提示词一致:不拦
+    desc = repo.get(store, "segment", s["seg1"])["description"]
+    repo.update(store, "segment", s["seg1"], description=desc.replace("这块玉佩，是我母亲留给我的", "玉佩是我娘的"))
+    (msg,) = [p for p in export.readiness(store, root, s["episode"]) if "台词改过" in p]
+    assert msg.startswith("段落 1") and "新:玉佩是我娘的" in msg and "删:这块玉佩，是我母亲留给我的" in msg
+    with pytest.raises(ValueError, match="台词改过"):
+        export.begin(store, root, s["episode"], PRODUCER)
+    repo.update(store, "segment", s["seg1"], description=desc)             # 改回去就放行
+    assert export.readiness(store, root, s["episode"]) == []
+
+
 def test_review_must_tick_every_manual_item(store, two_segments, mp4_bytes):
     """验收清单(spec 2026-10-23-不穿帮验收-design.md 第 1 节):人勾项缺一项不能确认。"""
     from tools.cut import checklist, review

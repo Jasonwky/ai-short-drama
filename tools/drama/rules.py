@@ -15,6 +15,7 @@ description 的写法约定:按【镜头1】【镜头2】…逐子镜头写;
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 
@@ -62,6 +63,14 @@ def dialogue_by_speaker(description: str, names=()) -> dict[str, int]:
 def dialogue_lines(description: str, names=()) -> list[tuple[str, str]]:
     """按出现顺序的 (说话人, 台词原文)。旁白不在内 —— 它不在画面里说,由配音/字幕环节处理。"""
     return [(_speaker(raw, names), line) for raw, line in _SPEAKER.findall(description)]
+
+
+def said_lines(task) -> list:
+    """这条视频当时说的台词:有台本快照用快照;本功能上线前的旧视频从提示词里的「…」取。task:task 表的一行。"""
+    p = json.loads(task["params_json"])
+    if "script" in p:
+        return p["script"]["lines"]
+    return [["", line] for line in re.findall(r"「([^」]+)」", task["prompt"])]
 
 
 def stale_lines(description: str, said: list) -> list[str]:

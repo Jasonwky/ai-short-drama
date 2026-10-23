@@ -23,6 +23,7 @@ from pathlib import Path
 from tools.cut import aigc, blankscan, media, music, provenance, review, subtitles, textscan
 from tools.drama import repo, rules
 from tools.drama.db import Store, now
+from tools.drama.tasks import producer
 from tools.serve.dispatch import sha256_file
 
 SETTING = "content_producer"
@@ -80,6 +81,13 @@ def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
             blank = blankscan.cached(data_root, s["video_path"])                                # 同上:只读缓存
             if blank and blankscan.override_for(store, data_root, s) is None:                   # 人工确认放行过这条视频的不拦
                 problems.append(blankscan.problem(s["number"], blank))
+            cur = producer(store, "video", s["video_path"])
+            if cur is not None:                                                                 # 台词改过而视频没重出:溯源与烧字幕检测都按新描述,和视频对不上
+                said = rules.said_lines(cur)
+                new, gone = rules.stale_lines(s["description"], said), rules.dropped_lines(s["description"], said)
+                if new or gone:
+                    problems.append(f"段落 {s['number']} 的台词改过、当前视频还是旧台词(新:{' / '.join(new) or '无'}"
+                                    f" / 删:{' / '.join(gone) or '无'})—— 重出后在历史里「调用」新视频,或把段落描述改回去")
             r = review.review_for(store, data_root, s)
             if r is None or not review.complete(r):                                           # 人逐项看过才许导
                 problems.append(review.problem(s["number"], r))

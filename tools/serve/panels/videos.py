@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import json
-import re
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
@@ -62,14 +61,6 @@ def _vision(store, seg, root) -> dict | None:
     return None
 
 
-def _said(task) -> list:
-    """这条视频当时说的台词:有台本快照用快照;本功能上线前的旧视频从提示词里的「…」取。"""
-    p = json.loads(task["params_json"])
-    if "script" in p:
-        return p["script"]["lines"]
-    return [["", line] for line in re.findall(r"「([^」]+)」", task["prompt"])]
-
-
 @router.get("/episode/{episode_id}/videos")
 def page(request: Request, episode_id: int):
     runtime = rt(request)
@@ -105,9 +96,9 @@ def page(request: Request, episode_id: int):
                      "blank": blankscan.problem(s["number"], blank) if blank else None,
                      "blank_override": _override(store, runtime.data_root, s) if blank else None,
                      "tasks": videos,
-                     "stale_lines": rules.stale_lines(s["description"], _said(cur)) if cur else [],
-                     "dropped_lines": rules.dropped_lines(s["description"], _said(cur)) if cur else [],
-                     "said": {t["id"]: _said(t) for t in videos if t["state"] == "done"},
+                     "stale_lines": rules.stale_lines(s["description"], rules.said_lines(cur)) if cur else [],
+                     "dropped_lines": rules.dropped_lines(s["description"], rules.said_lines(cur)) if cur else [],
+                     "said": {t["id"]: rules.said_lines(t) for t in videos if t["state"] == "done"},
                      "align_tasks": [t for t in tasks if t["kind"] == "align"],
                      "align_problems": align_problems(store, s["id"]),
                      "keychecks": keycheck.check(store, runtime.data_root, s["id"]),
