@@ -21,7 +21,8 @@ router = APIRouter()
 # 各任务从表单里取哪些参数、什么类型
 PARAMS = {"outline": {"novel": str, "n_episodes": int}, "script_synopsis": {"synopsis": str, "minutes": int},
           "script_adapt": {"minutes": int}, "storyboard": {}, "voice": {},
-          **{f"describe_{t}": {} for t in describe.FIELDS}, "vision_check": {"video_sha256": str}}
+          **{f"describe_{t}": {} for t in describe.FIELDS}, "vision_check": {"video_sha256": str},
+          "critique": {"role": str}, "rewrite": {"span": str, "intent": str, "note": str}}
 
 
 def _params(task: str, form) -> dict:
@@ -76,6 +77,11 @@ def _preview(store, row) -> dict:
         seg = repo.get(store, "segment", row["target_id"])
         expected = blocking.parse(seg["blocking_json"])
         return {"vision": out["frames"], "mismatches": vision_check.mismatches(expected, out)}
+    if task == "critique":
+        return {"issues": [{"n": i, **it} for i, it in enumerate(out["issues"])], "role": params["role"]}
+    if task == "rewrite":
+        return {"span": params["span"], "intent": params["intent"],
+                "candidates": [{"n": i, **c} for i, c in enumerate(out["candidates"])]}
     if task == "voice":
         return {"voice": voices.compose(out),
                 "current": repo.get(store, "character", row["target_id"])["voice_desc"]}
@@ -94,6 +100,22 @@ def _rounds(row) -> list[dict]:
     doc = json.loads(Path(row["journal_path"]).read_text(encoding="utf-8"))
     return [{"n": r["n"], "problems": r["problems"], "seconds": r["seconds"],
              "tokens": (r.get("usage") or {}).get("total_tokens")} for r in doc["rounds"]]
+
+
+def _decision(task: str, form) -> dict | None:
+    """审阅页上人做的选择 → decision(service.approve 再按模块规则核一遍)。不要选择的任务返回 None。"""
+    if task == "critique":
+        stance = {}
+        for k, v in form.items():
+            idx = k.split("-", 1)[1] if k.startswith("issue-") else ""
+            if idx.isdigit():                       # 序号不是整数的键直接忽略,缺的表态由 decision_problems 报
+                stance[int(idx)] = str(v)
+        return {"adopt": sorted(i for i, v in stance.items() if v == "adopt"),
+                "reject": sorted(i for i, v in stance.items() if v == "reject")}
+    if task == "rewrite":
+        raw = str(form.get("pick", ""))
+        return {"pick": int(raw) if raw.isdigit() else -1}
+    return None
 
 
 @router.post("/llm/start/{task}/{target_id}")
@@ -125,7 +147,8 @@ async def approve(request: Request, run_id: int):
         return confirm_page(request, summary=f"批准会删除本集已有的 {n} 个段落(生成历史保留,可在溯源里查到);"
                                              + imp.summary(),
                             action=f"/llm/run/{run_id}/approve", fields={}, back=f"/llm/run/{run_id}", **ctx)
-    service.approve(store, run_id, rt(request).data_root, confirm_reset=cost is not None)
+    decision = _decision(runs.get(store, run_id)["task"], form)
+    service.approve(store, run_id, rt(request).data_root, confirm_reset=cost is not None, decision=decision)
     return RedirectResponse(_home(store, runs.get(store, run_id))[0], status_code=303)
 
 

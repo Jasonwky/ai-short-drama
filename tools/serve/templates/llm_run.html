@@ -58,6 +58,26 @@
         <tr><td>{{ f.index }}</td><td>{{ p.character }}</td><td>{{ p.visible }}</td><td>{{ p.pose }}</td><td>{{ p.facing }}</td></tr>
       {% endfor %}{% endfor %}
     </table>
+  {% elif preview.issues is defined %}
+    <p class="hint">视角:<b>{{ preview.role }}</b>。每条都要选「采纳」或「驳回」才能批准;采纳的问题可以在剧本面板「按这条改」。
+      模型的判断只是提示,不打分、不排序。</p>
+    {% for it in preview.issues %}
+      <div class="card" data-issue="{{ it.n }}">
+        <p><b>{{ it.n + 1 }}. [{{ it.severity }}] {{ it.category }}</b></p>
+        <pre>{{ it.quote }}</pre>
+        <p>改法:{{ it.suggestion }}</p>
+        <label><input type="radio" name="issue-{{ it.n }}" value="adopt" form="approve-form"> 采纳</label>
+        <label><input type="radio" name="issue-{{ it.n }}" value="reject" form="approve-form"> 驳回</label>
+      </div>
+    {% endfor %}
+  {% elif preview.candidates is defined %}
+    <p class="hint">意图:<b>{{ preview.intent }}</b>。挑一个替换原文,只改这一段。</p>
+    <div class="side-by-side"><div><label>原文</label><pre>{{ preview.span }}</pre></div><div>
+    {% for c in preview.candidates %}
+      <div data-candidate="{{ c.n }}"><label><input type="radio" name="pick" value="{{ c.n }}" form="approve-form">
+        候选 {{ c.n + 1 }}</label><pre>{{ c.text }}</pre><p class="hint">{{ c.why }}</p></div>
+    {% endfor %}
+    </div></div>
   {% elif preview.episodes %}
     {% for e in preview.episodes %}
       <div class="side-by-side"><div><label>第 {{ loop.index }} 集大纲</label><pre>{{ e.outline }}</pre></div>
@@ -73,7 +93,7 @@
     <p class="hint">假 LLM 的产物不许通过审批闸门(只用于测试控制台本身)。</p>
     <button class="btn primary" type="button" disabled data-approve>批准并写回</button>
   {% else %}
-    <form method="post" action="/llm/run/{{ run.id }}/approve" style="display:inline">
+    <form method="post" action="/llm/run/{{ run.id }}/approve" id="approve-form" style="display:inline">
       <button class="btn primary" type="submit" data-approve>批准并写回</button>
     </form>
   {% endif %}
