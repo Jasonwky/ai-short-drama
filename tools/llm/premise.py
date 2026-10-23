@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+from itertools import combinations
 
 from tools.drama import compliance, repo
 from tools.drama.db import Store
@@ -77,13 +78,19 @@ def judge_factory(ctx: dict):
         problems = [] if len(cands) == ctx["n"] else [f"要 {ctx['n']} 个方案,给了 {len(cands)} 个"]
         problems += diverge.distinct_problems(cands, tuple(DIMS), min_diff=2)
         for i, c in enumerate(cands, 1):
-            problems += [f"方案 {i} 的片名 / 卖点:{p}" for p in compliance.problems(c["title"] + c["logline"])]
-            if c["protagonist"]["name"] in taken:
-                problems.append(f"方案 {i} 的主角「{c['protagonist']['name']}」和本剧已有角色重名")
+            hero = c["protagonist"]
+            blanks = {"片名": c["title"], "一句话卖点": c["logline"], "对手": c["antagonist"], "开场 3 秒钩子": c["hook"],
+                      "主角名字": hero["name"], "主角身份标签": hero["tag"], "主角反差点": hero["contrast"]}
+            problems += [f"方案 {i} 的「{k}」是空的" for k, v in blanks.items() if not v.strip()]
+            for field in ("title", "logline"):                      # 分开查,免得禁词跨两段拼出来
+                problems += [f"方案 {i} 的{LABELS[field]}:{p}" for p in compliance.problems(c[field])]
+            if hero["name"].strip() in taken:
+                problems.append(f"方案 {i} 的主角「{hero['name']}」和本剧已有角色重名")
             if not 0 <= c["typicality"] <= 1:
                 problems.append(f"方案 {i} 的典型度 {c['typicality']} 不在 0–1 之间")
-            if not c["title"].strip() or not c["hook"].strip():
-                problems.append(f"方案 {i} 缺片名或开场钩子")
+        for (i, a), (j, b) in combinations(enumerate(cands, 1), 2):
+            if a["protagonist"]["name"].strip() and a["protagonist"]["name"].strip() == b["protagonist"]["name"].strip():
+                problems.append(f"方案 {i} 和 {j} 的主角同名")
         return problems
     return judge
 

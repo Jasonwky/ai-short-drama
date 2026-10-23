@@ -64,6 +64,32 @@ def test_judge_counts_distinctness_compliance_and_name_clashes(store):
     assert any("典型度" in p for p in judge(out))
 
 
+def test_judge_rejects_blank_fields_and_duplicate_protagonists(store):
+    judge = pm.judge_factory(pm.context(store, _drama(store), idea="替嫁冲喜的庶女其实是神医", n=3, constraint=""))
+    out = _three()
+    out["candidates"][1]["protagonist"]["name"] = " "
+    assert any("方案 2" in p and "主角名字" in p and "空" in p for p in judge(out))
+    out = _three()
+    out["candidates"][2]["logline"] = ""
+    assert any("方案 3" in p and "一句话卖点" in p and "空" in p for p in judge(out))
+    out = _three()
+    out["candidates"][0]["antagonist"] = ""
+    assert any("方案 1" in p and "对手" in p for p in judge(out))
+    out = _three()
+    out["candidates"][2]["protagonist"]["name"] = "林知夏"                            # 和方案 2 主角同名
+    assert any("方案 2 和 3 的主角同名" in p for p in judge(out))
+
+
+def test_decision_rejects_malformed_picks():
+    out = _three()
+    full = {f: 0 for f in pm.FIELDS}
+    assert pm.decision_problems(out, {"assemble": {**full, "nope": 0}}) != []
+    assert pm.decision_problems(out, {"assemble": {**full, "title": 1.0}}) != []
+    assert pm.decision_problems(out, {"assemble": {**full, "title": -1}}) != []
+    assert pm.decision_problems(out, {"assemble": [0]}) != []
+    assert pm.decision_problems(out, {}) != []
+
+
 def test_decision_picks_one_candidate_per_field():
     out = _three()
     full = {f: 0 for f in pm.FIELDS}
