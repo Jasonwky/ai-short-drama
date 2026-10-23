@@ -82,3 +82,10 @@ def test_expected_segment_range():
 def test_check_episode():
     assert rules.check_episode("字" * 1000, 10) == []
     assert rules.check_episode("字" * 1000, 15) == ["剧本 1000 字(约 120 秒),段落数应在 8–12,当前 15"]
+
+
+def test_stale_lines_compare_the_description_with_what_the_video_said():
+    desc = "【镜头1】林小雨说：「玉佩是我母亲的。」【镜头2】沈墨说：「天快黑了。」"
+    said = [["林小雨", "这块玉佩，是我母亲留给我的。"], ["沈墨", "天快黑了。"]]
+    assert rules.stale_lines(desc, said) == ["玉佩是我母亲的。"]
+    assert rules.stale_lines("【镜头1】林小雨低头。", said) == []

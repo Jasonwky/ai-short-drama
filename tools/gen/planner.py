@@ -304,6 +304,12 @@ def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = 
         "size": list(VIDEO_SIZE[_aspect(store, segment_id)]),
         "image_refs": image_refs, "anchors": anchors, "audio_ref": None,
         "writes": "video_path", "expect_ext": ".mp4", **({"steps": steps} if steps else {}),
+        # 台本快照(用户 2026-10-23):这条视频生成时的描述、逐句台词、声音、提示词、时长 —— 任务参数不可改,就是记录;
+        # 挑历史版本时看得到每一版说的是什么,台词改过也比得出来(rules.stale_lines)
+        "script": {"description": seg["description"],
+                   "lines": [[w, line] for w, line in rules.dialogue_lines(seg["description"], names)],
+                   "voices": {c["name"]: c["voice_desc"] for c in assets["characters"] if c["voice_desc"]},
+                   "video_prompt": seg["video_prompt"], "duration_sec": seg["duration_sec"]},
     }
     params = presets.stamp(store, "video", params)
     try:            # 规划时就试拼一次(内置拼法叠上当前预设):拼不出就拒绝规划,不等到交给云机时才失败

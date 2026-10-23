@@ -64,6 +64,13 @@ def dialogue_lines(description: str, names=()) -> list[tuple[str, str]]:
     return [(_speaker(raw, names), line) for raw, line in _SPEAKER.findall(description)]
 
 
+def stale_lines(description: str, said: list) -> list[str]:
+    """描述里现在有、当前视频当时没说的台词 —— 台词改过、视频还是旧的(局部改写不删段落,用户 2026-10-23 定)。
+    said:视频任务台本快照里的 [[说话人, 台词], …]。"""
+    old = {line for _, line in said}
+    return [line for _, line in dialogue_lines(description) if line not in old]
+
+
 def min_duration_sec(description: str) -> float:
     return dialogue_chars(description) / SPEECH_CHARS_PER_SEC + PERFORMANCE_PAD_SEC
 

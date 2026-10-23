@@ -60,6 +60,16 @@ def test_video_task_carries_voice_description_not_reference_audio(store, sample)
     assert p["anchors"] == [["frames/s1.png", 0]]           # 首帧既是参考图,又钉在第 0 帧
 
 
+def test_video_task_records_the_script_snapshot(store, sample):
+    """用户 2026-10-23:视频对应的台词、声音等配置都要记下来(任务参数不可改,就是记录)。"""
+    row, params = _task(store, plan_video(store, sample["seg"], seed=1))
+    snap = params["script"]
+    assert snap["description"] == repo.get(store, "segment", sample["seg"])["description"]
+    assert snap["lines"] == [["林小雨", "这块玉佩，是我母亲留给我的。"]]
+    assert snap["voices"] == {"林小雨": "清亮女声"} and snap["duration_sec"] == 8.0
+    assert snap["video_prompt"] == repo.get(store, "segment", sample["seg"])["video_prompt"]
+
+
 def test_video_prompt_names_speaker_even_when_glued_to_action(store, sample):
     # 实战第 6 段:「说」前没有标点,整串动作描写曾被当成说话人写进提示词,H3 把它烧成了画面字幕
     repo.update(store, "segment", sample["seg"],

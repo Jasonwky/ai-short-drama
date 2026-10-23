@@ -54,6 +54,7 @@
           <button class="btn" type="submit">出几个写法</button>
         </form>
       </div>
+      {% for t in e.unsynced %}<p class="hint" data-rewrite-unsynced>局部改写「{{ t }}」没对上任何段落,分镜没跟着改 —— 要的话去段落编辑页改描述</p>{% endfor %}
       {% for a in e.adopted %}
         <form method="post" action="/llm/start/rewrite/{{ e.row.id }}" class="row" data-adopted-issue>
           <span class="hint">[{{ a.role }} · {{ a.category }}] {{ a.quote }} —— {{ a.suggestion }}</span>

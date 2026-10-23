@@ -22,6 +22,13 @@ def test_review_section_shows_cuts_and_the_seam(client, runtime, store, sample):
     assert f'id="seg-{seg2}"' in page and "data-review-confirm" in page
 
 
+def test_card_warns_when_the_lines_changed_after_the_video(client, runtime, store, sample):
+    seg2 = _two(store, sample, runtime.data_root)
+    repo.update(store, "segment", seg2, description="【镜头1】林小雨说：「谁敢碰我的玉佩？」")
+    page = client.get(f"/episode/{sample['episode']}/videos").text
+    assert "data-stale-lines" in page and "谁敢碰我的玉佩？" in page
+
+
 def test_confirm_review_is_tied_to_the_current_video(client, runtime, store, sample):
     seg2 = _two(store, sample, runtime.data_root)
     r = client.post(f"/segment/{seg2}/review", data={"note": "接缝看过", "check": list(checklist.MANUAL)},

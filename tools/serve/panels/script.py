@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
@@ -17,6 +19,22 @@ router = APIRouter()
 CAPS = {"video_cap": MINIMAX_H3, "image_cap": QWEN_IMAGE_EDIT_2511}
 
 
+def _unsynced(store, episode_id: int) -> list[str]:
+    """批准过的局部改写里没对上任何段落的(本集有段落时才有意义):提示人分镜没跟着改。"""
+    descs = [r[0] for r in store.conn.execute("SELECT description FROM segment WHERE episode_id = ?", (episode_id,))]
+    if not descs:
+        return []
+    out = []
+    for r in runs.history(store, "episode", episode_id, "rewrite"):
+        if r["state"] != "approved":
+            continue
+        text = runs.output(r)["candidates"][json.loads(r["decision_json"])["pick"]]["text"]
+        lines = [line for _, line in rules.dialogue_lines(text)]
+        if not lines or not any(f"「{line}」" in d for d in descs for line in lines):
+            out.append(text.strip()[:40])
+    return out
+
+
 @router.get("/drama/{drama_id}/script")
 def page(request: Request, drama_id: int):
     store = rt(request).store
@@ -27,7 +45,7 @@ def page(request: Request, drama_id: int):
         lo, hi = rules.expected_segment_range(e["script"]) if e["script"].strip() else (0, 0)
         eps.append({"row": e, "n_segments": n, "range": (lo, hi),
                     "problems": rules.check_episode(e["script"], n) if e["script"].strip() and n else [],
-                    "adopted": critique.adopted(store, e["id"]),
+                    "adopted": critique.adopted(store, e["id"]), "unsynced": _unsynced(store, e["id"]),
                     "llm_runs": [r for r in runs.history(store, "episode", e["id"])
                                  if r["task"].startswith("script_") or r["task"] in ("critique", "rewrite")]})
     return render(request, "script.html", "script", drama_id=drama_id, eps=eps, roles=list(critique.ROLES),

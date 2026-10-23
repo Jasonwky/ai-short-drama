@@ -11,6 +11,17 @@ def test_add_episodes_numbered_in_order(client, store):
     assert numbers == [1, 2]
 
 
+def test_script_card_says_when_a_rewrite_did_not_reach_any_segment(client, store, sample):
+    from tools.llm import runs
+    repo.update(store, "episode", sample["episode"], script="林小雨低头。\n林小雨沉默不语。\n")
+    rid = runs.start(store, task="rewrite", target_type="episode", target_id=sample["episode"], model="m",
+                     input_sha="x", llm_mode="real",
+                     params={"span": "林小雨沉默不语。", "intent": "加强冲突", "note": ""})
+    runs.propose(store, rid, {"candidates": [{"text": "林小雨冷笑。", "why": "a"}, {"text": "林小雨转身。", "why": "b"}]}, "j")
+    runs.approve(store, rid, {"pick": 0})
+    assert "data-rewrite-unsynced" in client.get(f"/drama/{sample['drama']}/script").text
+
+
 def test_missing_drama_is_a_404_page_not_500(client):
     r = client.get("/drama/999/script")
     assert r.status_code == 404 and "找不到" in r.text
