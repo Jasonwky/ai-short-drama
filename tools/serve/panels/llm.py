@@ -107,8 +107,10 @@ def _preview(store, row) -> dict:
         if task == "outline_variants":
             vs = out["variants"]
             routine = diverge.routine_index(vs)
+            # 批准后这集的大纲就是选中的那版,批准前的原文已不在库里 —— 只在待审时并排显示现在的大纲
+            original = repo.get(store, "episode", row["target_id"])["outline"] if row["state"] == "proposed" else ""
             return {"variants": [{"n": i, "picked": i == picked, "routine": i == routine, **v} for i, v in enumerate(vs)],
-                    "original": repo.get(store, "episode", row["target_id"])["outline"]}
+                    "original": original}
         return {"options": [{"n": i, "picked": i == picked, "phrase": blocking.phrase(o["blocking"]), **o}
                             for i, o in enumerate(out["options"])]}
     if task == "premise":

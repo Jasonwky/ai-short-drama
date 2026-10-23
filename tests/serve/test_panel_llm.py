@@ -107,6 +107,7 @@ def test_outline_variants_review_page_and_approval(client, store, sample):
     page = client.get(f"/llm/run/{rid}").text
     assert page.count("data-picked") == 1 and 'type="radio"' not in page
     assert page.index("data-picked") > page.index('data-variant="1"')
+    assert "data-variant-original" not in page and "已换成标「已选」的那版" in page    # 批准后不再把选中版冒充「现在的大纲」
 
 
 def _shot_out():

@@ -91,12 +91,12 @@
           <td>{{ b.emotion }}</td><td>{{ b.paywall }}</td><td>{{ b.quote }}</td></tr>
       {% endfor %}
     </table>
-    <h2>节奏提示(批准后会提示,只提示,不拦)</h2>
+    <h2>节奏提示({{ "已写入,大纲面板会显示" if run.state == "approved" else "批准后会提示" }};只提示,不拦)</h2>
     {% for h in preview.hints %}<p class="hint" style="color: #b8860b" data-pacing-hint>{{ h }}</p>
     {% else %}<p class="status-ok">按这份标注,没有触到经验阈值</p>{% endfor %}
   {% elif preview.variants is defined %}
     <p class="hint">挑一个版本替换这一集的大纲(批准后旧节拍会清掉,要重新标注)。「套路款」= 模型自评最常见的一个,仅供参考。</p>
-    <div class="side-by-side"><div><label>现在的大纲</label><pre>{{ preview.original }}</pre></div><div>
+    <div class="side-by-side"><div>{% if preview.original %}<label>现在的大纲</label><pre data-variant-original>{{ preview.original }}</pre>{% else %}<p class="hint">已批准:这集的大纲已换成标「已选」的那版</p>{% endif %}</div><div>
     {% for v in preview.variants %}
       <div class="card" data-variant="{{ v.n }}"{% if v.picked %} data-picked{% endif %}>
         {% if run.state == "proposed" %}<label><input type="radio" name="pick" value="{{ v.n }}" form="approve-form">
