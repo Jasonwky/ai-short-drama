@@ -154,6 +154,7 @@ def _plan_image(store: Store, segment_id: int, text: str, seed: int, writes: dic
         "workflow": "qwen_image", "preset": "fast", "size": list(FRAME_SIZE[_aspect(store, segment_id)]),
         "image_refs": [r.path for r in kept], **writes, "expect_ext": ".png",
         "dropped": [r.name for r in dropped],   # 退化成文字的素材,溯源里要看得到(就绪清单提示用局部替换补)
+        "frame": {"text": text},                # 生成时的图提示词拼句:镜头改过时比对用;改参重跑沿用(serve/rerun.py)
     }
     if added:                                   # 第一遍留位、第二遍加入(spike-results/2026-10-20-多人同框留位加人实测.md)
         params["second_pass"] = {"image_refs": [r.path for r in added], "names": [r.name for r in added],

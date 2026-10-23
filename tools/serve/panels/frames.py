@@ -16,9 +16,9 @@ from fastapi.responses import RedirectResponse
 from tools.cut import tailframe
 from tools.drama import repo, targets
 from tools.drama.readiness import KIND_LABEL
-from tools.drama.tasks import tasks_for
+from tools.drama.tasks import producer, tasks_for
 from tools.gen import compose
-from tools.gen.planner import FRAMES, REGION_KINDS, plan_first_frame, plan_key_frame, plan_last_frame, plan_region
+from tools.gen.planner import FRAMES, frame_text, REGION_KINDS, plan_first_frame, plan_key_frame, plan_last_frame, plan_region
 from tools.serve.panels.common import confirm_page, needs_confirm, new_seed, readiness, render, rt
 
 router = APIRouter()
@@ -37,6 +37,16 @@ def region_assets(store, segment_id: int) -> list[tuple[str, str]]:
     return [(f"{k}:{r['id']}", f"{KIND_LABEL[k]} · {r['name']}") for k, r in rows if r[REGION_KINDS[k][1]]]
 
 
+def frame_stale(store, seg) -> bool:
+    """当前首帧画出来时的图提示词拼句,与现在的不一样 = 镜头改过、首帧还是旧方案。
+    没有首帧、不是自己出的图、或任务没记快照(旧任务)→ 不知道当时用的什么,不提示。"""
+    if not (seg["reference_mode"] in FRAMES["first_frame_path"][0] and seg["first_frame_path"]):
+        return False
+    task = producer(store, "image", seg["first_frame_path"])
+    snap = json.loads(task["params_json"]).get("frame") if task else None
+    return bool(snap) and snap["text"] != frame_text(store, seg["id"], "first_frame_path")
+
+
 @router.get("/episode/{episode_id}/frames")
 def page(request: Request, episode_id: int):
     runtime = rt(request)
@@ -51,7 +61,7 @@ def page(request: Request, episode_id: int):
         keys = [{"row": k, "tasks": [t for t in by_field[targets.KEY_WRITES] if targets.slot(store, t)[1] == k["id"]],
                  "region_assets": region_assets(store, s["id"])}
                 for k in repo.keyframes(store, s["id"])]
-        segs.append({"row": s, "prev": rows[i - 1] if i else None, "tasks": by_field["first_frame_path"],
+        segs.append({"row": s, "frame_stale": frame_stale(store, s), "prev": rows[i - 1] if i else None, "tasks": by_field["first_frame_path"],
                      "last_tasks": by_field["last_frame_path"], "keyframes": keys,
                      "uses_first": s["reference_mode"] in FRAMES["first_frame_path"][0],
                      "uses_last": s["reference_mode"] in FRAMES["last_frame_path"][0],

@@ -169,6 +169,14 @@ def test_more_than_three_references_leave_a_spot_then_add(store, sample):
     assert frame_passes(store, sample["seg"]) == 2
 
 
+def test_frame_task_records_the_text_it_was_drawn_from(store, sample):
+    """用户 2026-10-23:生成用的配置都要记下来;镜头方案改过时据此提示「当前首帧还是旧方案」。"""
+    from tools.gen import planner
+    row, _ = _task(store, plan_first_frame(store, sample["seg"], seed=1))
+    p = json.loads(row["params_json"])
+    assert p["frame"]["text"] == planner.frame_text(store, sample["seg"], "first_frame_path")
+
+
 def test_nothing_to_add_means_one_pass_as_before(store, sample):
     from tools.gen.planner import frame_passes
     _crowd(store, sample, "@林小雨 把 @玉佩 递给 @沈墨,@王五 和 @沈墨 对视,@老宅庭院 黄昏")

@@ -27,7 +27,8 @@ def test_keyframe_image_goes_the_same_way_as_the_first_frame(store, sample):
     assert (row["kind"], row["model"], row["seed"], row["target_id"]) == ("image", QWEN_MODEL, 7, sample["seg"])
     assert row["prompt"] == "Picture 1(林小雨) 在 Picture 2(老宅庭院) 转身,背对镜头,握着 Picture 3(玉佩)"
     assert (p["writes"], p["keyframe_id"]) == ("key_frame_path", k)              # 任务挂在段落上,参数里记写回哪一张
-    skip = ("writes", "keyframe_id")
+    assert p["frame"]["text"] == TURN                                            # 快照记的是这张关键帧自己的句子
+    skip = ("writes", "keyframe_id", "frame")
     assert {a: v for a, v in p.items() if a not in skip} == {a: v for a, v in fp.items() if a not in skip}
 
 

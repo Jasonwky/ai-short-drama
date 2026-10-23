@@ -44,6 +44,7 @@
       <div class="current-media">
         {% if s.row.first_frame_path %}<img src="/media/{{ s.row.first_frame_path }}" alt="首帧">
         {% else %}<p class="empty">还没有首帧</p>{% endif %}
+        {% if s.frame_stale %}<p class="status-bad" data-frame-stale>镜头改过,当前首帧还是旧方案 —— 重出后新首帧进历史,要不要换成当前由你在历史里「调用」</p>{% endif %}
       </div>
       {% if s.row.first_frame_path %}{{ region_form(s.row.id, "first_frame_path", s.row.first_frame_path, s.region_first, seed + 300 + loop.index) }}{% endif %}
       <form method="post" action="/segment/{{ s.row.id }}/frame">

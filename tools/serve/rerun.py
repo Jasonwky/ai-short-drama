@@ -85,8 +85,8 @@ def plan_rerun(store: Store, data_root: Path, task_id: int, graph: dict, object_
     refs = list(dict.fromkeys(graphs.load_images(graph).values()))
     # 台本快照原样带上:重跑用的是原任务的提示词(prompt=src["prompt"]),不重读段落当前内容,
     # 所以「它被要求说什么」仍是原任务那份快照;现取的话反而会记成它没被要求说的台词
-    snap = {"script": p["script"]} if "script" in p else {}
-    params = {**snap,"workflow": "custom", "family": fam, "graph": graph, "from_task": task_id, "image_refs": refs,
+    snap = {k: p[k] for k in ("script", "frame") if k in p}      # 参考帧同理:带上当时的图提示词拼句
+    params = {**snap, "workflow": "custom", "family": fam, "graph": graph, "from_task": task_id, "image_refs": refs,
               "writes": p["writes"], **key, "expect_ext": p["expect_ext"], "size": p.get("size"), "frames": p.get("frames")}
     tid = create_task(store, kind=src["kind"], target_type=src["target_type"], target_id=src["target_id"],
                       model=src["model"], params=params, seed=found[0][2], prompt=src["prompt"], refs=refs)

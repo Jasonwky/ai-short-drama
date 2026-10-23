@@ -44,3 +44,32 @@ def test_videos_panel_shows_estimate_and_host_state(client, store, sample):
     add_host(store, label="a", ssh_host="h", ssh_port=1, ssh_user="root", key_ref="k", local_port=8188,
              vram_gb=24.0, models_dir="/m", gpu="RTX 4090")
     assert "预计生成约 15 分钟(按 RTX 4090 估算)" in client.get(f"/episode/{sample['episode']}/videos").text
+
+
+def test_frame_drawn_from_an_older_shot_design_is_flagged(client, store, sample, runtime):
+    """首帧任务记了当时的拼句;段落的图提示词改过 → 提示;改回去 → 消失;没有快照的旧首帧不提示。"""
+    from tools.drama.tasks import create_task, set_task_state
+    from tools.gen import planner
+    seg = sample["seg"]
+    rel = "frames/old.png"
+    (runtime.data_root / rel).parent.mkdir(parents=True, exist_ok=True)
+    (runtime.data_root / rel).write_bytes(b"png")
+    repo.update(store, "segment", seg, first_frame_path=rel)
+    url = f"/episode/{sample['episode']}/frames"
+
+    def done(params):
+        t = create_task(store, kind="image", target_type="segment", target_id=seg, model="m", params=params,
+                        seed=1, prompt="p", refs=[])
+        set_task_state(store, t, "queued", external_id=f"p{t}")
+        set_task_state(store, t, "done", result_path=rel, result_sha256="x")
+
+    done({"writes": "first_frame_path"})                          # 没快照
+    repo.update(store, "segment", seg, image_prompt="改过的首帧句")
+    assert "data-frame-stale" not in client.get(url).text
+    repo.update(store, "segment", seg, image_prompt="旧方案的句子")
+    done({"writes": "first_frame_path", "frame": {"text": planner.frame_text(store, seg, "first_frame_path")}})
+    assert "data-frame-stale" not in client.get(url).text
+    repo.update(store, "segment", seg, image_prompt="镜头改了")
+    assert "data-frame-stale" in client.get(url).text
+    repo.update(store, "segment", seg, image_prompt="旧方案的句子")
+    assert "data-frame-stale" not in client.get(url).text
