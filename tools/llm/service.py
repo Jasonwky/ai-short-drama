@@ -158,11 +158,12 @@ def approve(store: Store, run_id: int, data_root: Path | None = None, confirm_re
     if p.sha != row["input_sha"]:
         raise ValueError("生成之后输入已经变了(剧本 / 资产名单 / 参考图 / 参数有改动)—— 这一版对不上现在的数据,请重跑")
     module = spec(row["task"]).module
-    picks = hasattr(module, "decision_problems")           # 要人挑的任务(评审团 / 局部改写)
-    if picks:
+    args = runs.output(row)
+    needs_decision = hasattr(module, "decision_problems")    # 要人挑的任务(评审团 / 局部改写)
+    if needs_decision:
         if decision is None:
             raise ValueError("这条 LLM 产物要你先做选择(采纳哪些问题 / 挑哪个候选)才能批准")
-        bad = module.decision_problems(runs.output(row), decision)
+        bad = module.decision_problems(args, decision)
         if bad:
             raise ValueError(";".join(bad))
     elif decision is not None:
@@ -172,8 +173,7 @@ def approve(store: Store, run_id: int, data_root: Path | None = None, confirm_re
         if not confirm_reset:
             raise ValueError(f"批准会删除本集已有的 {cost[0]} 个段落({cost[1].summary()})—— 需要人确认代价")
         repo.delete_segments(store, row["target_id"])
-    args = runs.output(row)
-    result = module.apply(store, row["target_id"], args, p.ctx, decision) if picks else \
-        module.apply(store, row["target_id"], args, p.ctx)
+    extra = (decision,) if needs_decision else ()
+    result = module.apply(store, row["target_id"], args, p.ctx, *extra)
     runs.approve(store, run_id, decision)
     return result
