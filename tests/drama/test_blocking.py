@@ -24,8 +24,11 @@ def test_bending_over_someone_is_a_pose():
     assert bk.transition_problems([_e("沈青禾", "站")], "沈青禾俯身取出银针", [_e("沈青禾", "俯身")]) == []
 
 
-def test_lying_pose_is_written_by_code_not_left_to_the_model():
-    assert "仰面平躺" in bk.phrase([_e("萧珩", "仰躺")]) and "全身" in bk.phrase([_e("萧珩", "仰躺")])
+def test_lying_pose_is_written_by_code_without_negations():
+    got = bk.phrase([_e("萧珩", "仰躺")])
+    assert "仰面平躺" in got and "全身" in got
+    # 10-23:「身体不横出床沿」写了照样横出(4/4),否定句可能反而提到了它 —— 不再写
+    assert "不" not in bk.POSE_PHRASE["仰躺"] and "不" not in bk.POSE_PHRASE["侧躺"]
 
 
 def test_table_must_cover_each_character_once_with_closed_values():
