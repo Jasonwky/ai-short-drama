@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -350,6 +350,10 @@ BEGIN SELECT RAISE(ABORT, '批准时的选择一经写下不可改 —— 要改
 ]
 SCHEMA += "".join(f"{stmt};\n" for stmt in DECISION_DDL)
 
+# v16:立项发散(spec 2026-10-23-剧集脑爆系统-design.md 第 1 节)—— 人挑 / 拼出的立项,空 = 没做过
+PREMISE_DDL = ["ALTER TABLE drama ADD COLUMN premise_json TEXT NOT NULL DEFAULT ''"]
+SCHEMA += "".join(f"{stmt};\n" for stmt in PREMISE_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -395,6 +399,8 @@ MIGRATIONS: dict[int, list[str]] = {
     13: ["ALTER TABLE segment_review ADD COLUMN checks_json TEXT NOT NULL DEFAULT ''"],
     # v15:llm_run 记下批准时人的选择(评审团采纳 / 局部改写挑哪个)
     14: DECISION_DDL,
+    # v16:剧的立项发散结果
+    15: PREMISE_DDL,
 }
 
 

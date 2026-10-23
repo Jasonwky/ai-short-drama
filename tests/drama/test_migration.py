@@ -8,8 +8,15 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v16(s):
+    """退回 v15:删掉 v16 新增的 drama.premise_json。"""
+    if "premise_json" in _cols(s, "drama"):         # 更老的造库流程里列可能已经不在
+        s.conn.execute("ALTER TABLE drama DROP COLUMN premise_json")
+
+
 def _drop_v15(s):
-    """退回 v14:删掉 v15 新增的 llm_run.decision_json 与它的触发器。"""
+    """退回 v14:删掉 v15 新增的 llm_run.decision_json 与它的触发器;v16 的也一并退掉。"""
+    _drop_v16(s)
     s.conn.execute("DROP TRIGGER IF EXISTS llm_run_decision_locked")
     if "decision_json" in _cols(s, "llm_run"):      # 更老的造库流程会先把 llm_run 整张删掉 / 换成旧表
         s.conn.execute("ALTER TABLE llm_run DROP COLUMN decision_json")
@@ -369,4 +376,20 @@ def test_v14_to_v15_llm_runs_gain_a_locked_decision(tmp_path):
     assert runs.get(s, rid)["decision_json"] == '{"adopt": [], "reject": []}'
     with pytest.raises(sqlite3.IntegrityError, match="不可改"):
         s.conn.execute("UPDATE llm_run SET decision_json = '{}' WHERE id = ?", (rid,))
+    s.close()
+
+
+def test_v15_to_v16_dramas_gain_an_empty_premise(tmp_path):
+    """v16:立项发散的结果写进 drama.premise_json;老剧为空。"""
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "玉佩", "9:16")
+    _drop_v16(s)
+    s.conn.execute("UPDATE meta SET value = '15' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    assert repo.get(s, "drama", d)["premise_json"] == ""
+    repo.update(s, "drama", d, premise_json='{"title": "替嫁"}')
+    assert repo.get(s, "drama", d)["premise_json"] == '{"title": "替嫁"}'
     s.close()
