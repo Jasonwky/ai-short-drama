@@ -10,7 +10,7 @@
 </section>
 <section class="card">
   <h2>想一批方案</h2>
-  <form method="post" action="/llm/start/premise/{{ drama_id }}" data-llm-premise>
+  <form method="post" action="/llm/start/premise/{{ d.id }}" data-llm-premise>
     <label>一句话想法</label><textarea name="idea" required placeholder="例:替嫁冲喜的庶女其实是神医"></textarea>
     <label>方案数</label>
     <select name="n">{% for k in range(n_range[0], n_range[1] + 1) %}<option{% if k == 3 %} selected{% endif %}>{{ k }}</option>{% endfor %}</select>

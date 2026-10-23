@@ -441,6 +441,11 @@ def run(out_dir: Path) -> dict:
                      {f'[data-episode="{ids["episode"]}"] [data-rewrite-span]': "林小雨说：「这块玉佩，是我母亲留给我的。」"},
                      [f'[data-episode="{ids["episode"]}"] [data-llm-rewrite] button'],
                      "[data-llm-preview] [data-candidate]", 40),
+                    ("projects", "脑爆立项:一句话想法 → 三个方案、套路款标签、逐字段单选(假 LLM 不能批准)", {},
+                     [f'a[href="/drama/{ids["drama"]}/premise"]',
+                      lambda pg: pg.locator("[data-llm-premise] textarea[name=idea]").fill("替嫁冲喜的庶女其实是神医"),
+                      "[data-llm-premise] button[type=submit]"],
+                     "[data-llm-preview] [data-premise-candidate]", 40),
                     # 放在最后:填了陈设,前面链路的提示词就要按它查
                     ("assets", "场景选用途、填固定陈设 → 保存", {f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]': "石桌、古井"},
                      [lambda pg: pg.locator(f'[data-asset="scene-{ids["yard"]}"] [data-scene-purpose]').select_option("庭院"),
@@ -471,7 +476,7 @@ def run(out_dir: Path) -> dict:
                     appeared = False
                 shot = out_dir / f"flow_{n}_{key}.png"
                 page.screenshot(path=str(shot), full_page=True)
-                problems = list(errors) + ([] if appeared else [f"{timeout}s 内没等到 {wait_sel}"])
+                problems = list(errors) + ([] if appeared else [f"{timeout}s 内没等到 {wait_sel}(停在 {page.url})"])
                 report["flows"].append({"flow": f"{key}: 点「{label}」→ 产物出现在面板上", "ok": not problems,
                                         "problems": problems, "screenshot": str(shot)})
             browser.close()

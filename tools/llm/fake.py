@@ -23,7 +23,30 @@ CANNED = {
     "submit_candidates": {"candidates": [
         {"text": "林小雨说：「这块玉佩，是娘留给我唯一的念想。」", "why": "更有情感"},
         {"text": "林小雨攥紧玉佩。\n林小雨说：「这是我母亲的东西，谁也拿不走。」", "why": "加强冲突"}]},
+    "submit_premises": lambda schema: premise_sample(schema),
 }
+
+
+def premise_sample(schema: dict) -> dict:
+    """立项脑爆样例:三个方案,每个维度分别取 enum 的第 0 / 1 / 2 个(两两 4 维全不同),典型度 0.2 / 0.9 / 0.5;
+    主角名避开自测演示剧的角色(林小雨、沈墨、周伯)。方案数固定 3 —— 自测用默认 n=3。"""
+    props = schema["properties"]["candidates"]["items"]["properties"]
+    heroes = [("顾清岚", "落魄医女", "看似柔弱却懂得救人"), ("陆长风", "边关少将", "战场上冷峻,家里怕猫"),
+              ("苏晚棠", "替嫁新娘", "表面温顺,心里算得极清")]
+    titles = [("寒门医女", "替嫁冲喜的医女,一针救活夫君,也救了自己"), ("少将归来", "少将军奉旨回京,一进门就撞破阴谋"),
+              ("嫁衣之下", "新娘盖头一掀,才发现夫君早已知道她的底细")]
+    typicality = [0.2, 0.9, 0.5]
+    out = []
+    for i in range(3):
+        c = {"title": titles[i][0], "logline": titles[i][1], "antagonist": f"府中管事{'甲乙丙'[i]}",
+             "hook": f"第 {i + 1} 号开场:一声瓷碗摔碎,所有人同时回头",
+             "protagonist": dict(zip(("name", "tag", "contrast"), heroes[i])), "typicality": typicality[i]}
+        for dim in ("genre", "payoff", "conflict", "hook_type"):
+            c[dim] = props[dim]["enum"][i]
+        out.append(c)
+    return {"candidates": out}
+
+
 DESCRIBE_SAMPLE = {
     "appearance": "年轻女性,黑色中分长直发", "styling": "米白色长袖上衣,深蓝色长裙,黑色平底鞋",
     "location": "中式老宅庭院", "time": "黄昏", "lighting": "低角度暖光,红灯笼点亮",
