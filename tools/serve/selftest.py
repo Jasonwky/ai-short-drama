@@ -124,10 +124,13 @@ def seed_demo(store: Store, data_root: Path) -> dict:
         image_prompt="@林小雨 和 @周伯 站在 @老宅庭院 里,@沈墨 站在一旁",      # 沈墨单独一句:第二遍加入
         video_prompt="@林小雨 、@沈墨 和 @周伯 在 @老宅庭院 相见,@周伯 开口说话")
     repo.bind_characters(store, seg4, [lin, shen, zhou])
+    # 第 3 集:有大纲、没剧本(单集大纲变体只在没剧本的集上出),放最后,不影响前面各集的链路
+    ep3 = repo.add_episode(store, d, 3, "novel", source_text="原文:林小雨回到老宅。",
+                           outline="林小雨回到老宅,在庭院里发现母亲留下的玉佩,管家神色慌张。")
     add_host(store, label="假云机", ssh_host="fake.local", ssh_port=1, ssh_user="root", key_ref="C:/fake/key",
              local_port=8188, vram_gb=24.0, models_dir="/fake/models", gpu="RTX 4090")
     return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2, "photo": photo, "lin": lin,
-            "episode2": ep2, "segment3": seg3, "segment4": seg4, "zhou": zhou, "yard": yard}
+            "episode2": ep2, "episode3": ep3, "segment3": seg3, "segment4": seg4, "zhou": zhou, "yard": yard}
 
 
 def _free_port() -> int:
@@ -446,6 +449,16 @@ def run(out_dir: Path) -> dict:
                       lambda pg: pg.locator("[data-llm-premise] textarea[name=idea]").fill("替嫁冲喜的庶女其实是神医"),
                       "[data-llm-premise] button[type=submit]"],
                      "[data-llm-preview] [data-premise-candidate]", 40),
+                    # 假 LLM 读不到大纲,节拍的逐字依据对不上 → 判卷失败页(演示「编造的依据被拦住」)
+                    ("outline", "标注节拍 → 编造的依据被拦住(假 LLM)", {}, ["[data-llm-beats]"],
+                     '[data-llm-state="failed"] [data-llm-error]', 40),
+                    ("outline", "第 3 集(有大纲没剧本)出大纲变体 → 审阅页三个版本并排(假 LLM 不能批准)", {},
+                     [f'[data-episode="{ids["episode3"]}"] [data-llm-variants] button'],
+                     "[data-llm-preview] [data-variant]", 40),
+                    # 第 2 集第 1 段:单角色、同场景下一段没有场记表,假方案的姿态不会撞相邻段对表
+                    ("storyboard", "段落编辑页出镜头方案 → 审阅页两个方案并排(假 LLM 不能批准)", {},
+                     [lambda pg: pg.goto(base + f"/segment/{seg3}/edit"), "[data-llm-shot-options] button"],
+                     "[data-llm-preview] [data-shot-option]", 40),
                     # 放在最后:填了陈设,前面链路的提示词就要按它查
                     ("assets", "场景选用途、填固定陈设 → 保存", {f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]': "石桌、古井"},
                      [lambda pg: pg.locator(f'[data-asset="scene-{ids["yard"]}"] [data-scene-purpose]').select_option("庭院"),

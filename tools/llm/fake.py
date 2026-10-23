@@ -24,7 +24,46 @@ CANNED = {
         {"text": "林小雨说：「这块玉佩，是娘留给我唯一的念想。」", "why": "更有情感"},
         {"text": "林小雨攥紧玉佩。\n林小雨说：「这是我母亲的东西，谁也拿不走。」", "why": "加强冲突"}]},
     "submit_premises": lambda schema: premise_sample(schema),
+    # P17c:节拍 / 单集变体 / 分镜方案。样例取自自测演示剧(selftest.seed_demo)
+    "submit_beats": lambda schema: beats_sample(schema),
+    "submit_outline_variants": lambda schema: variants_sample(schema),
+    "submit_shot_options": lambda schema: shot_options_sample(schema),
 }
+
+
+def beats_sample(schema: dict) -> dict:
+    """节拍样例:按 schema 里 number 的 enum 逐集一项。假 LLM 读不到大纲,依据必然对不上原文 ——
+    逐字依据的判卷会拦下它,自测演示的就是「编造的依据被拦住」(预期是失败页)。"""
+    item = schema["properties"]["episodes"]["items"]["properties"]
+    return {"episodes": [{"number": n, "hook": "有", "reversal": "小", "emotion": "压", "paywall": "否",
+                          "quote": "(假 LLM 读不到大纲)"} for n in item["number"]["enum"]]}
+
+
+def variants_sample(schema: dict) -> dict:
+    """单集变体样例:3 个版本,三个维度各取 enum 第 0 / 1 / 2 个(两两 3 维全不同),大纲互不相同也不同于原大纲。
+    版本数固定 3 —— 自测用默认 n=3。"""
+    props = schema["properties"]["variants"]["items"]["properties"]
+    texts = ["开场就是祖宅起火,林小雨冲进去抢出玉佩,中途才发现纵火的是她最信任的人。",
+             "林小雨按母亲遗嘱回到老宅,管家当众否认她的身份,她拿出玉佩反将一军,结尾又收到一封匿名信。",
+             "玉佩在拍卖会上被人高价拍走,林小雨追查买家,最后在门口撞见一个不该出现的人。"]
+    return {"variants": [{"outline": texts[i], **{d: props[d]["enum"][i] for d in ("hook_type", "reversal_type", "cliff_type")},
+                          "typicality": (0.8, 0.3, 0.5)[i]} for i in range(3)]}
+
+
+def shot_options_sample(schema: dict) -> dict:
+    """分镜方案样例:2 个方案,景别 / 机位不同。角色名与道具名取自 schema 的 enum;
+    场景名不在 schema 里,这里写死演示剧的「老宅庭院」。图提示词不写任何姿态 / 站位 / 朝向 / 手持词。
+    方案数固定 2 —— 自测用默认 n=2;只适用单角色段落。"""
+    item = schema["properties"]["options"]["items"]["properties"]
+    who = item["blocking"]["items"]["properties"]["character"]["enum"][0]
+    prop = next(p for p in item["blocking"]["items"]["properties"]["holding"]["enum"] if p != "无")
+    entry = {"character": who, "pose": "站", "facing": "镜头", "side": "中", "holding": prop}
+    prompt = f"@{who} 与 @{prop} 在 @老宅庭院 ,黄昏暖光"
+    return {"options": [
+        {"shot_type": "近景", "angle": "平视", "movement": "推", "blocking": [entry], "image_prompt": prompt,
+         "why": "近景推进,看清神情"},
+        {"shot_type": "全景", "angle": "俯拍", "movement": "拉", "blocking": [entry], "image_prompt": prompt,
+         "why": "全景俯拍,交代环境"}]}
 
 
 def premise_sample(schema: dict) -> dict:
