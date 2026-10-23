@@ -32,6 +32,31 @@ def test_span_must_be_in_the_script_exactly_once(store):
         rw.context(store, ep, span=SPAN, intent="随便改改", note="")
 
 
+def test_partial_line_span_is_expanded_to_whole_lines(store):
+    ep = _ep(store)
+    ctx = rw.context(store, ep, span="这块玉佩，是我母亲留给我的", intent="按评审意见改", note="")
+    assert ctx["span"] == SPAN                                             # 半句台词扩成整行,不会套出两层「说：「」
+    two = rw.context(store, ep, span="低头凝视。\n林小雨说：「这块", intent="加强冲突", note="")
+    assert two["span"] == "林小雨捧着玉佩低头凝视。\n" + SPAN              # 跨行:首尾各扩到整行,不含换行
+
+
+def test_half_line_span_in_two_lines_is_refused(store):
+    ep = _ep(store, SCRIPT + "沈墨说：「这块玉佩，是我母亲留给我的。」\n")
+    with pytest.raises(ValueError, match="出现了 2 次"):                   # 半句出现在两行里:位置不确定
+        rw.context(store, ep, span="这块玉佩，是我母亲留给我的", intent="加强冲突", note="")
+
+
+def test_mid_line_quote_rewrite_stays_well_formed_end_to_end(store):
+    ep = _ep(store)
+    ctx = rw.context(store, ep, span="这块玉佩，是我母亲留给我的", intent="按评审意见改", note="")
+    out = {"candidates": [_c("林小雨说：「玉佩是我母亲的。你们，谁敢碰？」"), _c("林小雨攥紧玉佩，一言不发。")]}
+    assert rw.judge_factory(ctx)(out) == []
+    rw.apply(store, ep, out, ctx, {"pick": 0})
+    got = repo.get(store, "episode", ep)["script"]
+    assert "说：「林小雨说" not in got and got.count("「") == got.count("」") == 2
+    assert got == SCRIPT.replace(SPAN, "林小雨说：「玉佩是我母亲的。你们，谁敢碰？」")
+
+
 def test_candidates_are_distinct_new_and_keep_the_dialogue_format(store):
     judge = rw.judge_factory(rw.context(store, _ep(store), span=SPAN, intent="加强冲突", note=""))
     good = [_c("林小雨攥紧玉佩。\n林小雨说：「这是我娘留下的唯一念想，谁也别想拿走。」"),

@@ -40,6 +40,13 @@ def context(store: Store, episode_id: int, span: str, intent: str, note: str) ->
     n = ep["script"].count(original)
     if n != 1:
         raise ValueError(f"选中的片段在剧本里出现了 {n} 次 —— 多选几个字,让它只出现一次")
+    script = ep["script"]                       # 扩成整行:只选半句台词时,候选是整行写法,按原样替换半句会套出两层「说：「」
+    i = script.index(original)
+    start = script.rfind("\n", 0, i) + 1
+    end = script.find("\n", i + len(original))
+    original = script[start:len(script) if end < 0 else end]
+    if script.count(original) != 1:
+        raise ValueError("选中的片段所在的整行在剧本里不止出现一次 —— 多选几个字,让它只出现一次")
     names = [r[0] for r in store.conn.execute("SELECT name FROM character WHERE drama_id = ? ORDER BY id",
                                               (ep["drama_id"],))]
     return {"script": ep["script"], "span": original, "intent": intent, "note": note.strip(), "characters": names}
