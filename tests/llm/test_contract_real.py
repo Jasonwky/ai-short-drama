@@ -188,7 +188,7 @@ def test_premise_candidates_really_differ(client):
     """立项发散(2026-10-23):真模型给的方案两两至少 2 个维度不同、过合规词表、典型度在 0–1(判卷口径)。"""
     from tools.llm import diverge, premise
     ctx = {"idea": "替嫁冲喜的庶女,大婚夜发现王爷是被下毒,她其实是隐世神医", "n": 3, "constraint": "",
-           "characters": []}
+           "characters": [], "current": "(还没有)"}
     res = _gate(client, "premise", premise, ctx)
     cands = res.args["candidates"]
     assert len(cands) == 3 and diverge.distinct_problems(cands, tuple(premise.DIMS)) == []
@@ -217,6 +217,12 @@ def test_shot_options_pass_the_existing_checks(client):
     from tools.llm import shot_options
     ctx = {"description": "【镜头1】萧珩躺在床上昏睡。【镜头2】沈青禾俯身,把银针刺入他眉心。", "aspect": "9:16",
            "scene": "靖王府寝殿", "furnishings": "雕花拔步床榻、床帐、烛台", "characters": ["沈青禾", "萧珩"],
-           "props": ["银针"], "n": 2}
+           "props": ["银针"], "n": 2,
+           # 上一段同场景:萧珩仰躺、沈青禾站着 —— 真模型的方案不能无交代地改姿态
+           "prev": {"description": "萧珩躺在床上昏睡,沈青禾站在床边把脉。",
+                    "blocking": [{"character": "萧珩", "pose": "仰躺", "facing": "镜头", "side": "中", "holding": "无"},
+                                 {"character": "沈青禾", "pose": "站", "facing": "萧珩", "side": "右", "holding": "无"}]},
+           "next": None,
+           "current": {"shot_type": "", "angle": "", "movement": "", "image_prompt": "", "blocking_json": ""}}
     res = _gate(client, "shot_options", shot_options, ctx)
     assert len(res.args["options"]) == 2
