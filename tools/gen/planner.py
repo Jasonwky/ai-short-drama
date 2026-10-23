@@ -97,7 +97,7 @@ def frame_text(store: Store, segment_id: int, field: str) -> str:
         return text
     entries = blocking.parse(seg["blocking_json"])
     close = framing.phrase(_aspect(store, segment_id), entries, seg["shot_type"]) if entries else ""
-    # 景别 + 机位也由代码拼进首帧(分镜方案挑的镜头要真到画面里);躺姿近景那句已经说了近景,就只补机位
+    # 景别 + 机位也由代码拼进首帧(分镜方案挑的镜头要真到画面里);躺姿那句已经说了景别(近景 / 特写),就只补机位
     shot = framing.shot_phrase("" if close else seg["shot_type"], seg["angle"])
     tail = "。".join(x for x in (blocking.phrase(entries) if entries else "", close, shot) if x)
     return f"{text.rstrip('。;; ')}。{tail}" if tail else text

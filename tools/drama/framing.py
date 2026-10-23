@@ -52,5 +52,5 @@ def hints(aspect: str, entries: list[dict]) -> list[str]:
 def phrase(aspect: str, entries: list[dict], shot_type: str) -> str:
     """拼进首帧提示词的那句(由代码写,LLM 不写);规则不适用时为空。"""
     if aspect == VERTICAL and len(entries) >= 2 and _lying(entries) and shot_type in CLOSE:
-        return CLOSE_PHRASE
+        return shot_type + CLOSE_PHRASE.removeprefix("近景")      # 选了特写就写特写
     return ""

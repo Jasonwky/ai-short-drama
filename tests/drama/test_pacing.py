@@ -30,7 +30,7 @@ def test_hints_compare_against_sourced_thresholds_only():
 def test_end_gaps_count_from_the_start_and_to_the_last_episode():
     none = {n: _b() for n in range(1, 21)}
     assert pacing.stats(none)["leading_gap"] == 20 and pacing.stats(none)["trailing_gap"] is None
-    assert any("全剧 20 集一次反转都没有" in h for h in pacing.hints(none))
+    assert any("已标注的 20 集里一次反转都没有" in h for h in pacing.hints(none))   # 只标了一部分时不能说成「全剧」
     late = {n: _b(reversal="大" if n == 15 else "无") for n in range(1, 21)}
     s = pacing.stats(late)
     assert s["reversal_gaps"] == [] and s["leading_gap"] == 15 and s["trailing_gap"] == 5

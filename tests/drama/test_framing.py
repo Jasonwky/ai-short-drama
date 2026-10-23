@@ -37,3 +37,5 @@ def test_close_shot_phrase_is_written_by_code():
     assert framing.phrase("9:16", LYING_PAIR, "近景") == "近景,画面只拍到躺着的人胸口以上,站着的人在画面上方"
     assert framing.phrase("9:16", LYING_PAIR, "全景") == ""
     assert framing.phrase("16:9", LYING_PAIR, "近景") == ""
+    # 选了特写就写特写(以前一律写「近景」,特写这个词进不了提示词)
+    assert framing.phrase("9:16", LYING_PAIR, "特写").startswith("特写,画面只拍到")

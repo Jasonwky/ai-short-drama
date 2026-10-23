@@ -52,7 +52,7 @@ def hints(beats: dict[int, dict]) -> list[str]:
         src = _src("max_reversal_gap")
         if not reversals:
             if nums[-1] > limit:
-                out.append(f"全剧 {nums[-1]} 集一次反转都没有 {src}")
+                out.append(f"已标注的 {nums[-1]} 集里一次反转都没有 {src}")
         else:
             if reversals[0] > limit:
                 out.append(f"开头到第 {reversals[0]} 集都没有反转 {src}")
