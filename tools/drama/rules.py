@@ -71,6 +71,12 @@ def stale_lines(description: str, said: list) -> list[str]:
     return [line for _, line in dialogue_lines(description) if line not in old]
 
 
+def dropped_lines(description: str, said: list) -> list[str]:
+    """当前视频说了、描述里现在已经没有的台词(删台词的另一半:视频里还留着旧话)。"""
+    now = {line for _, line in dialogue_lines(description)}
+    return [line for _, line in said if line not in now]
+
+
 def min_duration_sec(description: str) -> float:
     return dialogue_chars(description) / SPEECH_CHARS_PER_SEC + PERFORMANCE_PAD_SEC
 

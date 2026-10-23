@@ -62,8 +62,8 @@
     </div>
     {% endfor %}
     {% endif %}
-    {% if s.stale_lines %}<p class="status-bad" data-stale-lines>台词改过,当前视频还是旧台词:{{ s.stale_lines | join(" / ") }}
-      —— 重出后新视频进历史,要不要换成当前视频由你在历史里「调用」</p>{% endif %}
+    {% if s.stale_lines or s.dropped_lines %}<p class="status-bad" data-stale-lines>台词改过,当前视频还是旧台词:{% if s.stale_lines %}新台词:{{ s.stale_lines | join(" / ") }}{% endif %}{% if s.stale_lines and s.dropped_lines %} / {% endif %}{% if s.dropped_lines %}已删的台词:{{ s.dropped_lines | join(" / ") }}{% endif %}
+      ——重出后新视频进历史,要不要换成当前视频由你在历史里「调用」</p>{% endif %}
     {% if s.said | length > 1 %}<details data-version-lines><summary>各版本当时的台词</summary>
       {% for tid, lines in s.said.items() %}<p class="hint">任务 {{ tid }}:{% for who, line in lines %}{{ who ~ ":" if who }}「{{ line }}」{% endfor %}{% if not lines %}(无台词){% endif %}</p>{% endfor %}
     </details>{% endif %}

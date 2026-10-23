@@ -11,6 +11,23 @@ def test_add_episodes_numbered_in_order(client, store):
     assert numbers == [1, 2]
 
 
+def _approved_rewrite(store, sample, text):
+    from tools.llm import runs
+    rid = runs.start(store, task="rewrite", target_type="episode", target_id=sample["episode"], model="m",
+                     input_sha="x", llm_mode="real", params={"span": "x", "intent": "加强冲突", "note": ""})
+    runs.propose(store, rid, {"candidates": [{"text": text, "why": "a"}, {"text": "别的。", "why": "b"}]}, "j")
+    runs.approve(store, rid, {"pick": 0})
+
+
+def test_unsynced_ignores_rewrites_whose_text_reached_a_description(client, store, sample):
+    repo.update(store, "segment", sample["seg"], description="【镜头1】林小雨冷笑一声，转身离去。")
+    _approved_rewrite(store, sample, "林小雨冷笑一声，转身离去。")
+    assert "data-rewrite-unsynced" not in client.get(f"/drama/{sample['drama']}/script").text
+    _approved_rewrite(store, sample, "沈墨推门而入。")
+    page = client.get(f"/drama/{sample['drama']}/script").text
+    assert page.count("data-rewrite-unsynced") == 1 and "沈墨推门而入。" in page
+
+
 def test_script_card_says_when_a_rewrite_did_not_reach_any_segment(client, store, sample):
     from tools.llm import runs
     repo.update(store, "episode", sample["episode"], script="林小雨低头。\n林小雨沉默不语。\n")

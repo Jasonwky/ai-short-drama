@@ -30,8 +30,9 @@ def _unsynced(store, episode_id: int) -> list[str]:
             continue
         text = runs.output(r)["candidates"][json.loads(r["decision_json"])["pick"]]["text"]
         lines = [line for _, line in rules.dialogue_lines(text)]
-        if not lines or not any(f"「{line}」" in d for d in descs for line in lines):
-            out.append(text.strip()[:40])
+        if any(text.strip() in d for d in descs) or any(f"「{line}」" in d for d in descs for line in lines):
+            continue
+        out.append(text.strip()[:40])
     return out
 
 

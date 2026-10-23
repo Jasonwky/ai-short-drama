@@ -59,6 +59,16 @@ def test_rerun_with_a_new_seed_and_sampler_becomes_a_new_version(store, sample, 
     assert len(tasks_for(store, "segment", sample["seg"])) == 2                     # 旧版还在,新版并列
 
 
+def test_video_rerun_keeps_the_script_snapshot(store, sample, world):
+    from tools.gen.planner import plan_video
+    src = plan_video(store, sample["seg"], seed=3)
+    graph, _ = rerun.source_graph(world["root"], repo.get(store, "task", src))
+    tid, problems = rerun.plan_rerun(store, world["root"], src, graph, OBJECT_INFO)
+    assert problems == []
+    new = json.loads(repo.get(store, "task", tid)["params_json"])
+    assert new["script"] == json.loads(repo.get(store, "task", src)["params_json"])["script"]
+
+
 def test_keyframe_rerun_writes_back_to_the_same_keyframe(store, sample, world):
     """关键帧的新版本写回同一张;那一张删了就不让再出。"""
     k = repo.add_keyframe(store, sample["seg"], 3.0, "@林小雨 在 @老宅庭院 转身,握着 @玉佩")

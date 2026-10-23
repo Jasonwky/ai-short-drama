@@ -106,6 +106,7 @@ def page(request: Request, episode_id: int):
                      "blank_override": _override(store, runtime.data_root, s) if blank else None,
                      "tasks": videos,
                      "stale_lines": rules.stale_lines(s["description"], _said(cur)) if cur else [],
+                     "dropped_lines": rules.dropped_lines(s["description"], _said(cur)) if cur else [],
                      "said": {t["id"]: _said(t) for t in videos if t["state"] == "done"},
                      "align_tasks": [t for t in tasks if t["kind"] == "align"],
                      "align_problems": align_problems(store, s["id"]),

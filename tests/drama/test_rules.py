@@ -89,3 +89,12 @@ def test_stale_lines_compare_the_description_with_what_the_video_said():
     said = [["林小雨", "这块玉佩，是我母亲留给我的。"], ["沈墨", "天快黑了。"]]
     assert rules.stale_lines(desc, said) == ["玉佩是我母亲的。"]
     assert rules.stale_lines("【镜头1】林小雨低头。", said) == []
+
+
+def test_dropped_lines_are_what_the_video_said_but_the_description_no_longer_has():
+    said = [["林小雨", "这块玉佩，是我母亲留给我的。"], ["沈墨", "天快黑了。"]]
+    desc = "【镜头1】沈墨说：「天快黑了。」"
+    assert rules.dropped_lines(desc, said) == ["这块玉佩，是我母亲留给我的。"]
+    assert rules.stale_lines(desc, said) == []                       # 只删不加:没有新台词
+    same = "【镜头1】林小雨说：「这块玉佩，是我母亲留给我的。」【镜头2】沈墨说：「天快黑了。」"
+    assert rules.dropped_lines(same, said) == [] and rules.stale_lines(same, said) == []

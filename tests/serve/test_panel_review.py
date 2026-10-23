@@ -29,6 +29,29 @@ def test_card_warns_when_the_lines_changed_after_the_video(client, runtime, stor
     assert "data-stale-lines" in page and "谁敢碰我的玉佩？" in page
 
 
+def test_card_warns_when_a_line_was_deleted_and_stays_quiet_when_unchanged(client, runtime, store, sample):
+    from tools.drama import rules
+    seg2 = _two(store, sample, runtime.data_root)
+    row = repo.get(store, "segment", seg2)
+    # 当前视频带台本快照,当时说了「旧台词一句。」
+    from tools.drama.tasks import create_task, set_task_state
+    from tools.serve.dispatch import sha256_file
+    rel, root = "outputs/tasks/v9/clip.mp4", runtime.data_root
+    (root / rel).parent.mkdir(parents=True, exist_ok=True)
+    (root / rel).write_bytes(sample_mp4())
+    t = create_task(store, kind="video", target_type="segment", target_id=seg2, model="m-video", seed=7, prompt="p",
+                    params={"writes": "video_path", "script": {"lines": [["林小雨", "旧台词一句。"]]}}, refs=[])
+    set_task_state(store, t, "queued", external_id=f"p{t}")
+    set_task_state(store, t, "done", result_path=rel, result_sha256=sha256_file(root / rel))
+    repo.update(store, "segment", seg2, video_path=rel)
+    repo.update(store, "segment", sample["seg"], description="【镜头1】林小雨低头。")    # 第 1 段不带台词,免得它也报
+    repo.update(store, "segment", seg2, description="【镜头1】林小雨低头。")
+    page = client.get(f"/episode/{sample['episode']}/videos").text
+    assert "data-stale-lines" in page and "已删的台词" in page and "旧台词一句。" in page
+    repo.update(store, "segment", seg2, description="【镜头1】林小雨说：「旧台词一句。」")
+    assert "data-stale-lines" not in client.get(f"/episode/{sample['episode']}/videos").text
+
+
 def test_confirm_review_is_tied_to_the_current_video(client, runtime, store, sample):
     seg2 = _two(store, sample, runtime.data_root)
     r = client.post(f"/segment/{seg2}/review", data={"note": "接缝看过", "check": list(checklist.MANUAL)},
