@@ -42,6 +42,53 @@ def test_lying_pair_must_be_close_in_vertical_frames(store, sample):
     assert any("近景或特写" in p for p in judge({"options": [wide, close]}))
 
 
+def _stand():
+    return json.dumps([{"character": "林小雨", "pose": "站", "facing": "镜头", "side": "中", "holding": "玉佩"}],
+                      ensure_ascii=False)
+
+
+def _neighbour(store, sample, number, description, scene=None):
+    seg = repo.add_segment(store, sample["episode"], number, scene_id=scene or sample["yard"], duration_sec=8.0,
+                           description=description, blocking_json=_stand())
+    repo.bind_characters(store, seg, [sample["lin"]])
+    repo.bind_props(store, seg, [sample["jade"]])
+    return seg
+
+
+def test_context_carries_same_scene_neighbours(store, sample):
+    ctx = so.context(store, sample["seg"], n=2)
+    assert ctx["prev"] is None and ctx["next"] is None
+    nxt = _neighbour(store, sample, 2, "林小雨转身离开。")
+    ctx = so.context(store, sample["seg"], n=2)
+    assert ctx["prev"] is None and ctx["next"]["description"] == "林小雨转身离开。"
+    assert ctx["next"]["blocking"][0]["pose"] == "站"
+    assert "林小雨转身离开。" in so.user_message(ctx)
+    other = repo.add_scene(store, sample["drama"], "书房")
+    repo.set_scene(store, nxt, other)                       # 下一段换了场景 -> 不算邻居
+    assert so.context(store, sample["seg"], n=2)["next"] is None
+
+
+def test_judge_rejects_pose_jump_into_the_next_segment(store, sample):
+    _neighbour(store, sample, 2, "林小雨转身离开。")
+    kneel = _opt(pose="跪", shot="近景", angle="俯拍")
+    # 本段跪着开头、下一段站着开头,而本段描述里没有起身 -> 打回
+    assert any("这一段开头站" in p for p in so.judge_factory(so.context(store, sample["seg"], n=2))(
+        {"options": [_opt(), kneel]}))
+    repo.update(store, "segment", sample["seg"], description="林小雨跪着,随后起身。")
+    assert so.judge_factory(so.context(store, sample["seg"], n=2))({"options": [_opt(), kneel]}) == []
+
+
+def test_judge_rejects_pose_jump_from_the_previous_segment(store, sample):
+    repo.update(store, "segment", sample["seg"], blocking_json=_stand())
+    cur = _neighbour(store, sample, 2, "林小雨回到原地。")
+    ctx = so.context(store, cur, n=2)
+    assert ctx["prev"]["description"] == repo.get(store, "segment", sample["seg"])["description"]
+    kneel = _opt(pose="跪", shot="近景", angle="俯拍")
+    assert any("上一段开头站" in p for p in so.judge_factory(ctx)({"options": [kneel, _opt()]}))
+    repo.update(store, "segment", sample["seg"], description="林小雨站着,然后跪下。")
+    assert so.judge_factory(so.context(store, cur, n=2))({"options": [kneel, _opt()]}) == []
+
+
 def test_pick_writes_shot_fields_and_keeps_generated_media(store, sample):
     """用户 2026-10-23 原则:已生成的保留 —— 批准新镜头方案不作废首帧 / 视频指针。"""
     ctx = so.context(store, sample["seg"], n=2)

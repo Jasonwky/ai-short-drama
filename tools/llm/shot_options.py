@@ -43,7 +43,18 @@ def context(store: Store, segment_id: int, n: int) -> dict:
                                 (seg["episode_id"],)).fetchone()[0]
     return {"description": seg["description"], "aspect": aspect, "scene": a["scene"]["name"],
             "furnishings": a["scene"]["furnishings"], "characters": [c["name"] for c in a["characters"]],
-            "props": [p["name"] for p in a["props"]], "n": n}
+            "props": [p["name"] for p in a["props"]], "n": n,
+            "prev": _neighbour(store, seg, -1), "next": _neighbour(store, seg, 1)}
+
+
+def _neighbour(store: Store, seg, step: int) -> dict | None:
+    """同一集里紧挨着的上 / 下一段,且同一场景(换场景不用对姿态);没有就是 None。"""
+    segs = store.conn.execute("SELECT id, scene_id, description, blocking_json FROM segment WHERE episode_id = ? "
+                              "ORDER BY number", (seg["episode_id"],)).fetchall()
+    i = next(k for k, r in enumerate(segs) if r["id"] == seg["id"]) + step
+    if not 0 <= i < len(segs) or segs[i]["scene_id"] != seg["scene_id"]:
+        return None
+    return {"description": segs[i]["description"], "blocking": blocking.parse(segs[i]["blocking_json"])}
 
 
 def schema(ctx: dict) -> dict:
@@ -64,9 +75,18 @@ def schema(ctx: dict) -> dict:
 
 def user_message(ctx: dict) -> str:
     furn = ctx["furnishings"] or "(没填)"
+    near = ""
+    for key, label in (("prev", "上一段"), ("next", "下一段")):
+        n = ctx[key]
+        if n is not None:
+            near += (f"{label}(同一场景)开头的场记表:{json.dumps(n['blocking'], ensure_ascii=False) if n['blocking'] else '(没有)'}\n"
+                     f"<{key}_segment>\n{n['description']}\n</{key}_segment>\n")
+    if near:
+        near += ("相邻段两边都在场的人姿态变了,前一段的描述里要交代这个动作:本段姿态与上一段不同,上一段描述里要有;"
+                 "与下一段不同,本段描述里要有。\n")
     return (f"要 {ctx['n']} 个方案。画幅 {ctx['aspect']}。场景:@{ctx['scene']}(固定陈设:{furn})\n"
             f"角色:{'、'.join(ctx['characters']) or '(无)'};道具:{'、'.join(ctx['props']) or '(无)'}\n"
-            f"<segment>\n{ctx['description']}\n</segment>")
+            f"{near}<segment>\n{ctx['description']}\n</segment>")
 
 
 def judge_factory(ctx: dict):
@@ -87,6 +107,13 @@ def judge_factory(ctx: dict):
             found, unknown = refs.find_mentions(o["image_prompt"], bound)
             problems += [f"{where}:image_prompt 没有 @{b}" for b in bound if b not in found]
             problems += [f"{where}:@{u} 不是本段绑定的素材" for u in unknown]
+            # 同场景相邻段:姿态变了要有交代(与分镜 storyboard 的判卷同一把尺)
+            if ctx["prev"] is not None:
+                problems += [f"{where}:{p}" for p in blocking.transition_problems(
+                    ctx["prev"]["blocking"], ctx["prev"]["description"], o["blocking"])]
+            if ctx["next"] is not None:
+                problems += [f"{where}:{p}" for p in blocking.transition_problems(
+                    o["blocking"], ctx["description"], ctx["next"]["blocking"])]
         return problems
     return judge
 
