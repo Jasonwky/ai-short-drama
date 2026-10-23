@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tools.drama import blocking, furnish, refs, repo, rules
+from tools.drama import blocking, framing, furnish, refs, repo, rules
 from tools.drama.db import Store
 from tools.gen.capability import Capability
 
@@ -127,6 +127,13 @@ def segment_readiness(store: Store, segment_id: int, *, video_cap: Capability, i
         if dup:
             checks.append(Check("blocking_dup", True, f"首帧图提示词里也写了姿态 / 站位 / 朝向({'、'.join(dup)}):"
                                 "和场记表说法不一样时,模型会把人画两遍或不理场记表 —— 最好删掉,交给场记表", warn=True))
+        aspect = store.conn.execute("SELECT d.aspect_ratio FROM drama d JOIN episode e ON e.drama_id = d.id WHERE e.id = ?",
+                                    (seg["episode_id"],)).fetchone()[0]
+        odd = framing.problems(aspect, entries, seg["shot_type"])     # spec 2026-10-23-不穿帮验收 第 2 节
+        checks.append(Check("framing", not odd, ";".join(odd) + "(在段落编辑页改景别)" if odd else "构图竖屏放得下"))
+        crowd = framing.hints(aspect, entries)
+        if crowd:
+            checks.append(Check("framing_crowd", True, ";".join(crowd), warn=True))
         prev = store.conn.execute("SELECT * FROM segment WHERE episode_id = ? AND number < ? ORDER BY number DESC LIMIT 1",
                                   (seg["episode_id"], seg["number"])).fetchone()
         if prev is not None and prev["scene_id"] == seg["scene_id"] and prev["blocking_json"].strip():

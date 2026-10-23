@@ -210,3 +210,16 @@ def test_pose_words_next_to_a_blocking_table_are_warned(store, sample):
                 blocking_json=json.dumps([_entry()], ensure_ascii=False))
     c = _by_key(_check(store, sample["seg"]))["blocking_dup"]
     assert c.warn and "跪" in c.msg and "画两遍" in c.msg
+
+
+def test_framing_blocks_lying_beside_someone_in_a_wide_vertical_shot(store, sample):
+    """竖屏可拍性(spec 2026-10-23-不穿帮验收-design.md 第 2 节):躺着 + 多人只许近景 / 特写。"""
+    import json
+    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])
+    rows = [{"character": "林小雨", "pose": "仰躺", "facing": "镜头", "side": "左", "holding": "无"},
+            {"character": "沈墨", "pose": "站", "facing": "林小雨", "side": "右", "holding": "无"}]
+    repo.update(store, "segment", sample["seg"], shot_type="全景", blocking_json=json.dumps(rows, ensure_ascii=False))
+    c = _by_key(_check(store, sample["seg"]))["framing"]
+    assert not c.ok and not c.warn and "近景" in c.msg
+    repo.update(store, "segment", sample["seg"], shot_type="近景")
+    assert _by_key(_check(store, sample["seg"]))["framing"].ok
