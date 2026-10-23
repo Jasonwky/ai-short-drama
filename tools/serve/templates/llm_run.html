@@ -66,16 +66,21 @@
         <p><b>{{ it.n + 1 }}. [{{ it.severity }}] {{ it.category }}</b></p>
         <pre>{{ it.quote }}</pre>
         <p>改法:{{ it.suggestion }}</p>
+        {% if run.state == "proposed" %}
         <label><input type="radio" name="issue-{{ it.n }}" value="adopt" form="approve-form"> 采纳</label>
         <label><input type="radio" name="issue-{{ it.n }}" value="reject" form="approve-form"> 驳回</label>
+        {% elif it.stance %}
+        <p data-stance="{{ it.stance }}"><b>{{ "已采纳" if it.stance == "adopt" else "已驳回" }}</b></p>
+        {% endif %}
       </div>
     {% endfor %}
   {% elif preview.candidates is defined %}
     <p class="hint">意图:<b>{{ preview.intent }}</b>。挑一个替换原文,只改这一段。</p>
     <div class="side-by-side"><div><label>原文</label><pre>{{ preview.span }}</pre></div><div>
     {% for c in preview.candidates %}
-      <div data-candidate="{{ c.n }}"><label><input type="radio" name="pick" value="{{ c.n }}" form="approve-form">
-        候选 {{ c.n + 1 }}</label><pre>{{ c.text }}</pre><p class="hint">{{ c.why }}</p></div>
+      <div data-candidate="{{ c.n }}"{% if c.picked %} data-picked{% endif %}>
+        {% if run.state == "proposed" %}<label><input type="radio" name="pick" value="{{ c.n }}" form="approve-form">
+          候选 {{ c.n + 1 }}</label>{% else %}<label>候选 {{ c.n + 1 }}</label>{% if c.picked %} <b>已选用</b>{% endif %}{% endif %}<pre>{{ c.text }}</pre><p class="hint">{{ c.why }}</p></div>
     {% endfor %}
     </div></div>
   {% elif preview.episodes %}

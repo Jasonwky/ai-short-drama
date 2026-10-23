@@ -106,3 +106,35 @@ def test_rewrite_review_page_shows_candidates_against_the_span(client, store, sa
     assert r.status_code == 400
     r = client.post(f"/llm/run/{rid}/approve", data={"pick": "1"}, follow_redirects=False)
     assert r.status_code == 303 and "一言不发" in repo.get(store, "episode", sample["episode"])["script"]
+
+
+def test_critique_model_output_is_html_escaped(client, store, sample):
+    repo.update(store, "episode", sample["episode"], script="林小雨说：「这块玉佩，是我母亲留给我的。」\n")
+    issue = {"quote": "<b>x</b>", "category": "动机不足", "severity": "中", "suggestion": "加一句"}
+    rid = _real_run(store, "critique", sample["episode"], {"role": "编剧"}, {"issues": [issue]})
+    page = client.get(f"/llm/run/{rid}").text
+    assert "&lt;b&gt;" in page and "<b>x</b>" not in page
+
+
+def test_approved_critique_shows_recorded_stance_without_radios(client, store, sample):
+    repo.update(store, "episode", sample["episode"], script="林小雨说：「这块玉佩，是我母亲留给我的。」\n")
+    issue = {"quote": "这块玉佩，是我母亲留给我的", "category": "动机不足", "severity": "中", "suggestion": "加一句"}
+    rid = _real_run(store, "critique", sample["episode"], {"role": "编剧"}, {"issues": [issue, issue]})
+    assert 'value="adopt"' in client.get(f"/llm/run/{rid}").text
+    client.post(f"/llm/run/{rid}/approve", data={"issue-0": "adopt", "issue-1": "reject"})
+    page = client.get(f"/llm/run/{rid}").text
+    assert 'value="adopt"' not in page and 'type="radio"' not in page
+    assert 'data-stance="adopt"' in page and "已采纳" in page
+    assert 'data-stance="reject"' in page and "已驳回" in page
+
+
+def test_approved_rewrite_marks_the_picked_candidate(client, store, sample):
+    span = "林小雨说：「这块玉佩，是我母亲留给我的。」"
+    repo.update(store, "episode", sample["episode"], script=f"林小雨低头。\n{span}\n")
+    out = {"candidates": [{"text": "林小雨说：「玉佩是我母亲的。谁敢碰？」", "why": "冲突"},
+                          {"text": "林小雨攥紧玉佩，一言不发。", "why": "留白"}]}
+    rid = _real_run(store, "rewrite", sample["episode"], {"span": span, "intent": "加强冲突", "note": ""}, out)
+    client.post(f"/llm/run/{rid}/approve", data={"pick": "1"})
+    page = client.get(f"/llm/run/{rid}").text
+    assert page.count("data-picked") == 1 and "已选用" in page and 'type="radio"' not in page
+    assert page.index("data-picked") > page.index('data-candidate="1"')

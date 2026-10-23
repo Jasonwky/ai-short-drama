@@ -78,10 +78,16 @@ def _preview(store, row) -> dict:
         expected = blocking.parse(seg["blocking_json"])
         return {"vision": out["frames"], "mismatches": vision_check.mismatches(expected, out)}
     if task == "critique":
-        return {"issues": [{"n": i, **it} for i, it in enumerate(out["issues"])], "role": params["role"]}
+        stance = {}                     # 批准后的记录:序号 → adopt / reject(没批准为空)
+        if row["state"] == "approved" and row["decision_json"]:
+            dec = json.loads(row["decision_json"])
+            stance = {**{i: "adopt" for i in dec["adopt"]}, **{i: "reject" for i in dec["reject"]}}
+        return {"issues": [{"n": i, "stance": stance.get(i), **it} for i, it in enumerate(out["issues"])],
+                "role": params["role"]}
     if task == "rewrite":
+        picked = json.loads(row["decision_json"])["pick"] if row["state"] == "approved" and row["decision_json"] else None
         return {"span": params["span"], "intent": params["intent"],
-                "candidates": [{"n": i, **c} for i, c in enumerate(out["candidates"])]}
+                "candidates": [{"n": i, "picked": i == picked, **c} for i, c in enumerate(out["candidates"])]}
     if task == "voice":
         return {"voice": voices.compose(out),
                 "current": repo.get(store, "character", row["target_id"])["voice_desc"]}
