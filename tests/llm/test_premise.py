@@ -109,3 +109,14 @@ def test_apply_writes_the_assembled_premise_and_keeps_the_title(store):
     assert saved["title"] == "丙" and saved["genre"] == "都市逆袭" and saved["payoff"] == "打脸"
     assert repo.get(store, "drama", d)["title"] == "替嫁"                           # 剧名不动(spec 差异见计划)
     assert "丙" in pm.render(saved) and "都市逆袭" in pm.render(saved)
+
+
+def test_rerun_after_approval_sees_the_current_premise(store):
+    from tools.llm import service
+    d = _drama(store)
+    params = {"idea": "替嫁冲喜的庶女其实是神医", "n": 3, "constraint": ""}
+    before = service.prepare(store, "premise", d, params)
+    assert "当前立项:(还没有)" in before.user
+    pm.apply(store, d, _three(), before.ctx, {"assemble": {f: 0 for f in pm.FIELDS}})
+    after = service.prepare(store, "premise", d, params)
+    assert "替嫁王妃" in after.user and before.sha != after.sha

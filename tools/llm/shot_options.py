@@ -39,12 +39,16 @@ def context(store: Store, segment_id: int, n: int) -> dict:
     a = repo.segment_assets(store, segment_id)
     if a["scene"] is None:
         raise ValueError("这一段还没绑定场景")
+    if not a["characters"]:
+        raise ValueError("这一段没有绑定角色,没有场记表可出")
     aspect = store.conn.execute("SELECT d.aspect_ratio FROM drama d JOIN episode e ON e.drama_id = d.id WHERE e.id = ?",
                                 (seg["episode_id"],)).fetchone()[0]
     return {"description": seg["description"], "aspect": aspect, "scene": a["scene"]["name"],
             "furnishings": a["scene"]["furnishings"], "characters": [c["name"] for c in a["characters"]],
             "props": [p["name"] for p in a["props"]], "n": n,
-            "prev": _neighbour(store, seg, -1), "next": _neighbour(store, seg, 1)}
+            "prev": _neighbour(store, seg, -1), "next": _neighbour(store, seg, 1),
+            # 当前方案进输入:批准后再跑,输入指纹变了,才会出新方案而不是复用已批准的那次
+            "current": {k: seg[k] for k in ("shot_type", "angle", "movement", "image_prompt", "blocking_json")}}
 
 
 def _neighbour(store: Store, seg, step: int) -> dict | None:
@@ -84,8 +88,11 @@ def user_message(ctx: dict) -> str:
     if near:
         near += ("相邻段两边都在场的人姿态变了,前一段的描述里要交代这个动作:本段姿态与上一段不同,上一段描述里要有;"
                  "与下一段不同,本段描述里要有。\n")
+    cur = ctx["current"]
+    now = "、".join(f"{k}={v}" for k, v in cur.items() if v) or "(还没有)"
     return (f"要 {ctx['n']} 个方案。画幅 {ctx['aspect']}。场景:@{ctx['scene']}(固定陈设:{furn})\n"
             f"角色:{'、'.join(ctx['characters']) or '(无)'};道具:{'、'.join(ctx['props']) or '(无)'}\n"
+            f"当前方案:{now}(新方案要和它不一样)\n"
             f"{near}<segment>\n{ctx['description']}\n</segment>")
 
 

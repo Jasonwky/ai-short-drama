@@ -28,10 +28,11 @@ def test_episode_with_a_script_is_refused(store):
 
 def test_judge_counts_distinct_and_non_empty(store):
     judge = ov.judge_factory(ov.context(store, _ep(store), n=3))
-    good = {"variants": [_v(), _v("强悬念", "身份反转", "身份待揭"), _v("极致反差", "立场反转", "抉择")]}
+    good = {"variants": [_v(text="甲"), _v("强悬念", "身份反转", "身份待揭", text="乙"),
+                         _v("极致反差", "立场反转", "抉择", text="丙")]}
     assert judge(good) == []
     assert any("要 3 个" in p for p in judge({"variants": good["variants"][:2]}))
-    same = {"variants": [_v(), _v(), _v("极致反差", "立场反转", "抉择")]}
+    same = {"variants": [_v(text="甲"), _v(text="乙"), _v("极致反差", "立场反转", "抉择", text="丙")]}
     assert any("方案 1 和 2" in p for p in judge(same))
     blank = {"variants": [_v(text=" "), *good["variants"][1:]]}
     assert any("空" in p for p in judge(blank))
@@ -56,3 +57,11 @@ def test_pick_clears_stale_beats(store):
     out = {"variants": [_v(text="甲"), _v("强悬念", "身份反转", "身份待揭", text="乙")]}
     ov.apply(store, e, out, ctx, {"pick": 0})
     assert repo.get(store, "episode", e)["beats_json"] == ""
+
+
+def test_judge_rejects_variants_that_repeat_the_original_or_each_other(store):
+    judge = ov.judge_factory(ov.context(store, _ep(store), n=2))
+    other = _v("强悬念", "身份反转", "身份待揭", text="乙")
+    assert any("原大纲" in p for p in judge({"variants": [_v(text=" " + OUTLINE + " "), other]}))
+    assert any("方案 1 和 2" in p and "大纲一样" in p for p in judge({"variants": [_v(text="甲"), {**other, "outline": "甲 "}]}))
+    assert judge({"variants": [_v(text="甲"), other]}) == []

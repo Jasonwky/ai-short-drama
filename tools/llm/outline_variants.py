@@ -58,9 +58,13 @@ def judge_factory(ctx: dict):
         vs = args["variants"]
         problems = [] if len(vs) == ctx["n"] else [f"要 {ctx['n']} 个版本,给了 {len(vs)} 个"]
         problems += diverge.distinct_problems(vs, tuple(DIMS), min_diff=2)
+        texts = [v["outline"].strip() for v in vs]
         for i, v in enumerate(vs, 1):
             if not v["outline"].strip():
                 problems.append(f"方案 {i} 的大纲是空的")
+            elif texts[i - 1] == ctx["outline"].strip():
+                problems.append(f"方案 {i} 的大纲和原大纲一样 —— 要真的重写")
+            problems += [f"方案 {j} 和 {i} 的大纲一样" for j in range(1, i) if texts[j - 1] and texts[j - 1] == texts[i - 1]]
             if not 0 <= v["typicality"] <= 1:
                 problems.append(f"方案 {i} 的典型度 {v['typicality']} 不在 0–1 之间")
         return problems

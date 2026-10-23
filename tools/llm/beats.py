@@ -65,8 +65,10 @@ def judge_factory(ctx: dict):
 
 def apply(store: Store, drama_id: int, args: dict, ctx: dict) -> None:
     ids = {r["number"]: r["id"] for r in store.conn.execute("SELECT id, number FROM episode WHERE drama_id = ?", (drama_id,))}
+    outlines = dict(ctx["episodes"])
     for e in args["episodes"]:
-        beat = {k: e[k] for k in (*FIELDS, "quote")}
+        beat = {k: e[k] for k in FIELDS}
+        beat["quote"] = restore(e["quote"], outlines[e["number"]])     # 存大纲里的原写法,不存模型改过标点宽度的抄本
         repo.update(store, "episode", ids[e["number"]], beats_json=json.dumps(beat, ensure_ascii=False))
 
 

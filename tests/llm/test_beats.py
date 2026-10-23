@@ -49,3 +49,10 @@ def test_apply_writes_each_episode(store):
     assert json.loads(repo.get(store, "episode", e1)["beats_json"])["reversal"] == "大"
     assert json.loads(repo.get(store, "episode", e2)["beats_json"])["paywall"] == "是"
     assert "number" not in json.loads(repo.get(store, "episode", e1)["beats_json"])
+
+
+def test_apply_stores_the_original_spelling_of_the_quote(store):
+    d, e1, _ = _drama(store)
+    out = {"episodes": [_ep(1, "大婚夜被嫡姐羞辱，她一针救活王爷"), _ep(2, "王爷追问她的身份")]}   # 模型把半角逗号写成了全角
+    bt.apply(store, d, out, bt.context(store, d))
+    assert json.loads(repo.get(store, "episode", e1)["beats_json"])["quote"] == "大婚夜被嫡姐羞辱,她一针救活王爷"

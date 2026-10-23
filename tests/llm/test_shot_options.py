@@ -100,3 +100,19 @@ def test_pick_writes_shot_fields_and_keeps_generated_media(store, sample):
     assert (s["shot_type"], s["angle"], s["movement"]) == ("近景", "俯拍", "推")
     assert json.loads(s["blocking_json"])[0]["holding"] == "玉佩" and s["image_prompt"] == _opt()["image_prompt"]
     assert (s["first_frame_path"], s["video_path"]) == (before["first_frame_path"], before["video_path"])
+
+
+def test_segment_without_characters_is_refused(store, sample):
+    repo.bind_characters(store, sample["seg"], [])
+    with pytest.raises(ValueError, match="没有绑定角色"):
+        so.context(store, sample["seg"], n=2)
+
+
+def test_rerun_after_approval_sees_the_current_shot_design(store, sample):
+    from tools.llm import service
+    before = service.prepare(store, "shot_options", sample["seg"], {"n": 2})
+    so.apply(store, sample["seg"], {"options": [_opt(shot="近景", angle="俯拍", movement="推")]},
+             so.context(store, sample["seg"], n=2), {"pick": 0})
+    after = service.prepare(store, "shot_options", sample["seg"], {"n": 2})
+    assert "当前方案" in after.user and "近景" in after.user and "俯拍" in after.user
+    assert before.sha != after.sha

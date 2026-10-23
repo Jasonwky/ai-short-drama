@@ -49,7 +49,9 @@ def context(store: Store, drama_id: int, idea: str, n: int, constraint: str) -> 
     if not N_RANGE[0] <= n <= N_RANGE[1]:
         raise ValueError(f"方案数要在 {N_RANGE[0]}–{N_RANGE[1]} 之间")
     names = [r[0] for r in store.conn.execute("SELECT name FROM character WHERE drama_id = ? ORDER BY id", (drama_id,))]
-    return {"idea": idea.strip(), "n": n, "constraint": constraint.strip(), "characters": names}
+    current = load(store, drama_id)             # 当前立项进输入:批准后再跑,出新候选而不是复用已批准的那次
+    return {"idea": idea.strip(), "n": n, "constraint": constraint.strip(), "characters": names,
+            "current": render(current) if current else "(还没有)"}
 
 
 def schema(ctx: dict) -> dict:
@@ -67,7 +69,8 @@ def schema(ctx: dict) -> dict:
 def user_message(ctx: dict) -> str:
     extra = f"\n额外约束:{ctx['constraint']}" if ctx["constraint"] else ""
     taken = "、".join(ctx["characters"]) or "(还没有)"
-    return f"要 {ctx['n']} 个方案。已有角色(不许重名):{taken}{extra}\n<idea>\n{ctx['idea']}\n</idea>"
+    return (f"要 {ctx['n']} 个方案。已有角色(不许重名):{taken}{extra}\n当前立项:{ctx['current']}\n"
+            f"<idea>\n{ctx['idea']}\n</idea>")
 
 
 def judge_factory(ctx: dict):
