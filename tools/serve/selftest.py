@@ -80,7 +80,7 @@ def seed_demo(store: Store, data_root: Path) -> dict:
         (data_root / rel).parent.mkdir(parents=True, exist_ok=True)
         (data_root / rel).write_bytes(_png(96, 160, 150))
     d = repo.create_drama(store, "玉佩(自测)", "9:16", "realistic")
-    ep = repo.add_episode(store, d, 1, "script", script="林小雨在老宅庭院里回忆母亲。" * 20)
+    ep = repo.add_episode(store, d, 1, "script", script="林小雨在老宅庭院里回忆母亲。" * 20 + "\n林小雨说：「这块玉佩，是我母亲留给我的。」\n")
     lin = repo.add_character(store, d, "林小雨", turnaround_path="assets/lin.png", voice_desc="年轻女声,清亮",
                              appearance="二十出头,长发,素色上衣", final_prompt="A young woman in a cream blouse.")
     yard = repo.add_scene(store, d, "老宅庭院", image_path="assets/yard.png", final_prompt="An empty courtyard at dusk.")
@@ -434,6 +434,13 @@ def run(out_dir: Path) -> dict:
                     # 假 LLM 没有这个工具的样例 → 闸门判失败;演示的是「按钮 → 审阅页 → 失败原因写明」,真模型的行为由契约测试管
                     ("videos", "有场记表 → 视觉抽检按钮 → 审阅页落成失败并写明原因(假 LLM)", {},
                      [f"#seg-{seg} [data-vision-start]"], '[data-llm-state="failed"] [data-llm-error]', 30),
+                    ("script", "评审团:选视角 → 请评审 → 审阅页逐条采纳 / 驳回(假 LLM 不能批准)", {},
+                     [f'[data-episode="{ids["episode"]}"] [data-llm-critique] button'],
+                     "[data-llm-preview] [data-issue]", 40),
+                    ("script", "局部改写:粘贴一段 → 出几个写法 → 审阅页候选与原文并排(假 LLM 不能批准)",
+                     {f'[data-episode="{ids["episode"]}"] [data-rewrite-span]': "林小雨说：「这块玉佩，是我母亲留给我的。」"},
+                     [f'[data-episode="{ids["episode"]}"] [data-llm-rewrite] button'],
+                     "[data-llm-preview] [data-candidate]", 40),
                     # 放在最后:填了陈设,前面链路的提示词就要按它查
                     ("assets", "场景选用途、填固定陈设 → 保存", {f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]': "石桌、古井"},
                      [lambda pg: pg.locator(f'[data-asset="scene-{ids["yard"]}"] [data-scene-purpose]').select_option("庭院"),

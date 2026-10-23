@@ -16,6 +16,13 @@ CANNED = {
     # 从图反推描述:三类资产字段不同,按 schema 取需要的键。假 LLM **看不见图**:校验数字只印在图上,
     # 它答的 000 必错 —— 闸门照常拦下,自测里演示的就是「看不见图的模型被拦住」
     "submit_description": lambda schema: {k: DESCRIBE_SAMPLE[k] for k in schema["properties"]},
+    # 评审团 / 局部改写(P17a):引用和台词都取自自测演示剧第 1 集剧本(selftest.seed_demo)
+    "submit_issues": lambda schema: {"issues": [{
+        "quote": "这块玉佩，是我母亲留给我的", "severity": "中", "suggestion": "加一句她为什么珍惜这块玉佩",
+        "category": schema["properties"]["issues"]["items"]["properties"]["category"]["enum"][0]}]},
+    "submit_candidates": {"candidates": [
+        {"text": "林小雨说：「这块玉佩，是娘留给我唯一的念想。」", "why": "更有情感"},
+        {"text": "林小雨攥紧玉佩。\n林小雨说：「这是我母亲的东西，谁也拿不走。」", "why": "加强冲突"}]},
 }
 DESCRIBE_SAMPLE = {
     "appearance": "年轻女性,黑色中分长直发", "styling": "米白色长袖上衣,深蓝色长裙,黑色平底鞋",
