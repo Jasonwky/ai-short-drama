@@ -22,6 +22,9 @@ NONE = "无"
 # 管住出床靠景别(framing.py:竖屏躺着 + 多人只许近景),不靠这句话
 POSE_PHRASE = {"站": "站着", "俯身": "俯下身子凑近", "坐": "坐着", "跪": "跪着", "仰躺": "仰面平躺,全身完整地躺平",
                "侧躺": "侧身躺着,全身完整地躺平", "趴": "趴着", "走": "正在走动"}
+# 竖屏躺姿近景(framing.phrase 生效时):「全身完整地躺平」与「只拍胸口以上」自相矛盾,左右站位与「站着的人在画面上方」打架;
+# 10-23 对照 a1 组(2/2 合理)两样都没写
+CLOSE_POSE_PHRASE = {**POSE_PHRASE, "仰躺": "仰面躺着", "侧躺": "侧身躺着"}
 # 姿态变成 X,前一段描述里要出现的动作词之一
 POSE_VERBS = {"站": ("起身", "站起", "站了起来", "起来"), "俯身": ("俯身", "俯下", "弯腰", "凑近"), "坐": ("坐",), "跪": ("跪",), "仰躺": ("躺", "倒"),
               "侧躺": ("躺", "倒"), "趴": ("趴", "扑倒", "倒"), "走": ("走", "上前", "迈", "冲")}
@@ -64,13 +67,14 @@ def problems(entries: list[dict], characters: list[str], props: list[str]) -> li
     return out
 
 
-def phrase(entries: list[dict]) -> str:
-    """拼进首帧提示词的那句(@名字,由 tags.expand 换成 Picture k)。"""
+def phrase(entries: list[dict], close: bool = False) -> str:
+    """拼进首帧提示词的那句(@名字,由 tags.expand 换成 Picture k)。close = 竖屏躺姿近景:不写全身、不钉左右。"""
     parts = []
     for e in entries:
         facing = {"镜头": "面朝镜头", "侧对镜头": "侧对镜头", "背对镜头": "背对镜头"}.get(e["facing"], f"面朝@{e['facing']}")
-        bits = [f"@{e['character']} {POSE_PHRASE[e['pose']]}", facing,
-                f"在画面{e['side']}侧" if e["side"] != "中" else "在画面中间"]
+        bits = [f"@{e['character']} {(CLOSE_POSE_PHRASE if close else POSE_PHRASE)[e['pose']]}", facing]
+        if not close:
+            bits.append(f"在画面{e['side']}侧" if e["side"] != "中" else "在画面中间")
         if e["holding"] != NONE:
             bits.append(f"手里拿着@{e['holding']}")
         parts.append(",".join(bits))

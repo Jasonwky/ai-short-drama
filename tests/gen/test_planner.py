@@ -324,3 +324,4 @@ def test_close_shot_phrase_is_appended_after_the_blocking(store, sample):
     _lying_pair(store, sample, "近景")
     row, _ = _task(store, plan_first_frame(store, sample["seg"], seed=1))
     assert row["prompt"].endswith("。近景,画面只拍到躺着的人胸口以上,站着的人在画面上方")
+    assert "全身完整" not in row["prompt"] and "在画面左侧" not in row["prompt"]

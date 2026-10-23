@@ -18,6 +18,12 @@ def test_side_and_back_facing_read_naturally():
     assert ",背对镜头," in bk.phrase([_e("李福", "跪", "背对镜头", "左")])
 
 
+def test_close_shot_drops_full_body_and_sides():
+    # 10-23 对照 a1 组(2/2 合理)只写了「仰面躺着」、没钉左右;「全身完整地躺平」和「只拍胸口以上」自相矛盾
+    got = bk.phrase([_e("萧珩", "仰躺", "侧对镜头", "左"), _e("沈青禾", "俯身", "萧珩", "中", "银针")], close=True)
+    assert got == "@萧珩 仰面躺着,侧对镜头;@沈青禾 俯下身子凑近,面朝@萧珩,手里拿着@银针"
+
+
 def test_bending_over_someone_is_a_pose():
     # 实战第 4 段:施针要俯身凑近;只有「站」时人站在画面另一边,模型凭空多画一只手递针
     assert bk.phrase([_e("沈青禾", "俯身", "萧珩", "中")]).startswith("@沈青禾 俯下身子凑近,面朝@萧珩")
