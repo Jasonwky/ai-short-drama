@@ -96,3 +96,25 @@ def test_decision_pick_must_be_a_real_index():
     for bad in (True, -1, 5, "1", None):
         assert rw.decision_problems(out, {"pick": bad}) != [], bad
     assert rw.decision_problems(out, {"pick": 0}) == []
+
+
+def test_sync_replaces_by_position_when_a_new_line_equals_a_later_old_line(store):
+    ep = _ep(store, "甲说：「一」\n甲说：「二」\n")
+    d = repo.get(store, "episode", ep)["drama_id"]
+    repo.add_character(store, d, "甲")
+    s = repo.add_segment(store, ep, 1, duration_sec=8.0, video_path="videos/s1.mp4",
+                         description="【镜头1】甲说：「一」【镜头2】甲说：「二」")
+    span = "甲说：「一」\n甲说：「二」"
+    ctx = rw.context(store, ep, span=span, intent="加强冲突", note="")
+    out = {"candidates": [_c("甲说：「二」\n甲说：「三」"), _c("甲说：「四」\n甲说：「五」")]}
+    assert rw.apply(store, ep, out, ctx, {"pick": 0}) == 1
+    assert repo.get(store, "segment", s)["description"] == "【镜头1】甲说：「二」【镜头2】甲说：「三」"
+
+
+def test_judge_parses_speakers_like_rules_and_rejects_empty(store):
+    judge = rw.judge_factory(rw.context(store, _ep(store), span=SPAN, intent="加强冲突", note=""))
+    ok = _c("林小雨攥紧玉佩说：「甲乙丙丁戊己庚辛。」")
+    other = _c("林小雨攥紧玉佩。\n林小雨说：「这是我娘留下的唯一念想。」")
+    assert judge({"candidates": [ok, other]}) == []
+    assert any("是空的" in p for p in judge({"candidates": [ok, _c("   ")]}))
+    assert any("格式" in p for p in judge({"candidates": [ok, _c("林小雨「这是我娘留下的唯一念想。」")]}))

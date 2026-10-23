@@ -12,8 +12,6 @@
 """
 from __future__ import annotations
 
-import re
-
 from tools.drama import repo, rules
 from tools.drama.db import Store
 from tools.llm.verbatim import restore
@@ -24,7 +22,6 @@ TARGET = "episode"
 INTENTS = ("加强冲突", "提前钩子", "删铺垫", "换台词风格", "按评审意见改")
 MIN_C, MAX_C = 2, 3
 RATIO = (0.3, 3.0)
-_LINE = re.compile(r"^(.+?)说[：:]「.+」$")
 
 SYSTEM = """你是短剧编剧。只改写用户选中的那一段剧本,给 2–3 个**真不一样**的替换写法,调用工具 submit_candidates 提交。
 - 每个候选给 text(替换后的完整文字,可以多行)和 why(一句话说明这样改的用意);
@@ -71,17 +68,22 @@ def judge_factory(ctx: dict):
         if len(set(cands)) != len(cands):
             problems.append("有两个候选一样 —— 要给真不一样的写法")
         for i, t in enumerate(cands, 1):
+            if not t:
+                problems.append(f"候选 {i} 是空的")
+                continue
             if t == span.strip():
                 problems.append(f"候选 {i} 和原文一样")
             if not lo <= len(t) <= hi:
                 problems.append(f"候选 {i} 长度 {len(t)} 字,要在原文({len(span)} 字)的 0.3–3 倍之间")
             for line in (ln.strip() for ln in t.splitlines()):
-                if "「" in line:
-                    m = _LINE.match(line)
-                    if m is None:
-                        problems.append(f"候选 {i} 的台词「{line[:20]}」不是「角色名说：「台词」」的格式")
-                    elif m.group(1) not in names:
-                        problems.append(f"候选 {i} 里的「{m.group(1)}」不是本剧角色")
+                if "「" not in line:
+                    continue
+                said = rules.dialogue_lines(line, names)       # 说话人的认法与规则层一致
+                if not said:
+                    problems.append(f"候选 {i} 的台词「{line[:20]}」不是「角色名说：「台词」」的格式")
+                # rules 只认「名字结尾」的说话人;「林小雨攥紧玉佩说」这类动作跟在名字后面的,只要含本剧角色名就放行
+                for who in {w for w, _ in said if not any(n in w for n in names)}:
+                    problems.append(f"候选 {i} 里的「{who}」不是本剧角色")
         return problems
     return judge
 
@@ -100,15 +102,21 @@ def _sync_segment(store: Store, episode_id: int, old: str, new: str, names: list
             if all(f"「{line}」" in s["description"] for _, line in before)]
     if len(hits) != 1:
         return None
-    desc = hits[0]["description"]
-    for (_, a), (_, b) in zip(before, after):
-        desc = desc.replace(f"「{a}」", f"「{b}」", 1)
+    desc, out, at = hits[0]["description"], [], 0
+    for (_, a), (_, b) in zip(before, after):               # 按位置一遍换完,新台词等于后面的旧台词也不会被二次命中
+        i = desc.find(f"「{a}」", at)
+        if i < 0:
+            return None
+        out += [desc[at:i], f"「{b}」"]
+        at = i + len(a) + 2
+    desc = "".join(out) + desc[at:]
     repo.update(store, "segment", hits[0]["id"], description=desc)
     return hits[0]["number"]
 
 
 def apply(store: Store, episode_id: int, args: dict, ctx: dict, decision: dict) -> int | None:
-    """替换剧本里那一段;返回跟着改了台词的段号(没对上段落为 None)。不删段落、不动任何已生成的东西。"""
+    """替换剧本里那一段;返回跟着改了台词的段号(没对上段落为 None)。不删段落、不动任何已生成的东西。
+    剧本与段落是两次独立写入:段落那步若失败,剧本已经改了 —— 等同于「只改剧本」的状态。"""
     script = repo.get(store, "episode", episode_id)["script"]
     if script.count(ctx["span"]) != 1:
         raise ValueError("选中的片段已经不在剧本里(或不止一处)—— 剧本改过了,请重新选")
