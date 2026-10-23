@@ -27,6 +27,24 @@ def test_hints_compare_against_sourced_thresholds_only():
     assert all("出处" in h for h in got)
 
 
+def test_end_gaps_count_from_the_start_and_to_the_last_episode():
+    none = {n: _b() for n in range(1, 21)}
+    assert pacing.stats(none)["leading_gap"] == 20 and pacing.stats(none)["trailing_gap"] is None
+    assert any("全剧 20 集一次反转都没有" in h for h in pacing.hints(none))
+    late = {n: _b(reversal="大" if n == 15 else "无") for n in range(1, 21)}
+    s = pacing.stats(late)
+    assert s["reversal_gaps"] == [] and s["leading_gap"] == 15 and s["trailing_gap"] == 5
+    got = pacing.hints(late)
+    assert any("开头到第 15 集都没有反转" in h for h in got)
+    assert not any("之后到第" in h for h in got)                 # 尾部 5 集不超过阈值
+    tail = {n: _b(reversal="大" if n in (1, 5) else "无") for n in range(1, 21)}
+    assert any("第 5 集之后到第 20 集都没有反转" in h for h in pacing.hints(tail))
+
+
+def test_hook_coverage_is_none_without_early_episodes():
+    assert pacing.stats({12: _b()})["hook_coverage_first10"] is None
+
+
 def test_every_threshold_names_its_source_and_tier():
     for t in pacing.THRESHOLDS.values():
         assert t["source"] and t["tier"] in ("A", "B") and t["text"]
