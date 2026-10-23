@@ -251,3 +251,25 @@ def test_blocking_that_disagrees_with_bindings_refuses_the_frame(store, sample):
     repo.update(store, "segment", sample["seg"], blocking_json=_blocking(character="沈墨"))
     with pytest.raises(ValueError, match="场记表与本段绑定对不上"):
         plan_first_frame(store, sample["seg"], seed=1)
+
+
+def _lying_pair(store, sample, shot_type):
+    """林小雨仰躺、沈墨站着,同框两人(竖屏样例剧)。"""
+    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])
+    rows = [{"character": "林小雨", "pose": "仰躺", "facing": "镜头", "side": "左", "holding": "无"},
+            {"character": "沈墨", "pose": "站", "facing": "林小雨", "side": "右", "holding": "无"}]
+    repo.update(store, "segment", sample["seg"], shot_type=shot_type,
+                image_prompt="@林小雨 在 @老宅庭院 里,@沈墨 守在一旁,@玉佩 放在枕边",
+                blocking_json=json.dumps(rows, ensure_ascii=False))
+
+
+def test_lying_beside_someone_in_a_wide_vertical_shot_refuses_the_first_frame(store, sample):
+    _lying_pair(store, sample, "全景")
+    with pytest.raises(ValueError, match="景别只能选近景或特写"):
+        plan_first_frame(store, sample["seg"], seed=1)
+
+
+def test_close_shot_phrase_is_appended_after_the_blocking(store, sample):
+    _lying_pair(store, sample, "近景")
+    row, _ = _task(store, plan_first_frame(store, sample["seg"], seed=1))
+    assert row["prompt"].endswith("。近景,画面只拍到躺着的人胸口以上,站着的人在画面上方")

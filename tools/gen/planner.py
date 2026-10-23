@@ -17,7 +17,7 @@ worker 只负责把它原样交给云机 —— 这样「当时到底用了什�
 """
 from __future__ import annotations
 
-from tools.drama import blocking, refs, repo, rules, tags
+from tools.drama import blocking, framing, refs, repo, rules, tags
 from tools.drama.db import Store
 from tools.drama.readiness import key_frame_index, segment_readiness
 from tools.drama.targets import KEY_WRITES
@@ -89,11 +89,16 @@ TEXT_ONLY_REFUSED = ("纯文字模式不支持出视频:实测场景和道具守
 
 def frame_text(store: Store, segment_id: int, field: str) -> str:
     """参考帧实际用的图提示词。首帧在人 / LLM 写的那句后面拼上场记表(姿态、朝向、站位、手持,由代码写 ——
-    spec 2026-10-22-连续性保障-design.md 第 4 项);场记表只描述段落开头,尾帧不拼。"""
+    spec 2026-10-22-连续性保障-design.md 第 4 项),竖屏躺姿近景再拼一句景别(spec 2026-10-23-不穿帮验收-design.md 第 2 节);
+    场记表只描述段落开头,尾帧不拼。"""
     seg = repo.get(store, "segment", segment_id)
     text = seg[FRAMES[field][1]]
     entries = blocking.parse(seg["blocking_json"]) if field == "first_frame_path" else []
-    return f"{text.rstrip('。;; ')}。{blocking.phrase(entries)}" if entries and text.strip() else text
+    if not (entries and text.strip()):
+        return text
+    tail = "。".join(x for x in (blocking.phrase(entries),
+                                 framing.phrase(_aspect(store, segment_id), entries, seg["shot_type"])) if x)
+    return f"{text.rstrip('。;; ')}。{tail}"
 
 
 def _frame_problems(store: Store, segment_id: int, field: str) -> list[str]:
@@ -106,6 +111,7 @@ def _frame_problems(store: Store, segment_id: int, field: str) -> list[str]:
         a = repo.segment_assets(store, segment_id)
         problems += [f"场记表与本段绑定对不上:{p}(到段落编辑页改场记表)" for p in blocking.problems(
             blocking.parse(seg["blocking_json"]), [c["name"] for c in a["characters"]], [p["name"] for p in a["props"]])]
+        problems += framing.problems(_aspect(store, segment_id), blocking.parse(seg["blocking_json"]), seg["shot_type"])
     return problems or _image_problems(store, segment_id, frame_text(store, segment_id, field), label)
 
 
