@@ -113,8 +113,11 @@ def test_sync_replaces_by_position_when_a_new_line_equals_a_later_old_line(store
 
 def test_judge_parses_speakers_like_rules_and_rejects_empty(store):
     judge = rw.judge_factory(rw.context(store, _ep(store), span=SPAN, intent="加强冲突", note=""))
-    ok = _c("林小雨攥紧玉佩说：「甲乙丙丁戊己庚辛。」")
+    ok = _c("林小雨攥紧玉佩说：「甲乙丙丁戊己庚辛。」")  # 反例
     other = _c("林小雨攥紧玉佩。\n林小雨说：「这是我娘留下的唯一念想。」")
-    assert judge({"candidates": [ok, other]}) == []
+    assert judge({"candidates": [ok, other]}) != []                      # 动作连在名字后面:rules 认不出说话人,拒
+    assert any("林小雨攥紧玉佩" in p and "不是本剧角色" in p for p in judge({"candidates": [ok, other]}))
+    plain = _c("林小雨说：「这是我娘留下的唯一念想。」")
+    assert judge({"candidates": [plain, _c("林小雨攥紧玉佩。\n林小雨说：「谁也别想拿走。」")]}) == []
     assert any("是空的" in p for p in judge({"candidates": [ok, _c("   ")]}))
     assert any("格式" in p for p in judge({"candidates": [ok, _c("林小雨「这是我娘留下的唯一念想。」")]}))

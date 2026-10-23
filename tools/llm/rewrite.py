@@ -81,9 +81,8 @@ def judge_factory(ctx: dict):
                 said = rules.dialogue_lines(line, names)       # 说话人的认法与规则层一致
                 if not said:
                     problems.append(f"候选 {i} 的台词「{line[:20]}」不是「角色名说：「台词」」的格式")
-                # rules 只认「名字结尾」的说话人;「林小雨攥紧玉佩说」这类动作跟在名字后面的,只要含本剧角色名就放行
-                for who in {w for w, _ in said if not any(n in w for n in names)}:
-                    problems.append(f"候选 {i} 里的「{who}」不是本剧角色")
+                for who in {w for w, _ in said if w not in names}:    # rules 没认出的说话人会原样进视频提示词
+                    problems.append(f"候选 {i} 的说话人「{who}」不是本剧角色 —— 动作单独写一行,台词行写成「角色名说：「台词」」")
         return problems
     return judge
 
