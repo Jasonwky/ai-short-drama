@@ -159,3 +159,13 @@ def test_vision_check_sees_she_is_not_facing_him(client):
     (frame,) = res.args["frames"]
     her = next(p for p in frame["people"] if p["character"] == "沈玉瑶")
     assert her["facing"] != "萧珩"
+
+
+def test_critique_quotes_the_script_verbatim(client):
+    """评审团(2026-10-23):真模型的每条引用都要能在剧本原文里逐字找到(判卷就是这个口径)。"""
+    from tools.llm import critique
+    script = (GOLDEN / "tijia_ep1.txt").read_text(encoding="utf-8")
+    ctx = {"role": "观众", "script": script}
+    res = _gate(client, "critique", critique, ctx)
+    assert 1 <= len(res.args["issues"]) <= 8
+    assert all(restore(i["quote"], script) is not None for i in res.args["issues"])

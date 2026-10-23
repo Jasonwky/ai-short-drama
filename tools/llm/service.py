@@ -20,7 +20,7 @@ from tools.drama import invalidation, repo
 from tools.drama.db import Store
 from tools.drama.invalidation import Impact
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
-from tools.llm import describe, outline, runs, script_writer, storyboard, vision_check, voices
+from tools.llm import critique, describe, outline, runs, script_writer, storyboard, vision_check, voices
 from tools.llm.client import LLMError
 from tools.llm.gate import GateFailed, input_sha, run_gated
 
@@ -60,6 +60,8 @@ TASKS: dict[str, Spec] = {
     # 视觉抽检(spec 2026-10-22-连续性保障-design.md 第 5 项):只提示,不写回
     "vision_check": Spec(vision_check, "segment", vision_check.context, 3000, "视觉抽检:首帧和场记表对不对",
                          model=VISION_MODEL, needs_root=True),
+    # 评审团(spec 2026-10-23-剧集脑爆系统-design.md 第 3a 节):一个视角一次,只出问题清单,人逐条表态
+    "critique": Spec(critique, "episode", critique.context, 4000, "评审团:挑这集剧本的毛病"),
 }
 
 
