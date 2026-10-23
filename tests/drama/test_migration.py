@@ -8,8 +8,14 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v14(s):
+    """退回 v13:删掉 v14 新增的看片确认勾选项列。"""
+    s.conn.execute("ALTER TABLE segment_review DROP COLUMN checks_json")
+
+
 def _drop_v13(s):
-    """退回 v12:删掉 v13 新增的看片确认表、场景陈设两列、段落场记表列。"""
+    """退回 v12:删掉 v13 新增的看片确认表、场景陈设两列、段落场记表列;v14 的也一并退掉。"""
+    _drop_v14(s)
     s.conn.execute("DROP TABLE segment_review")
     s.conn.execute("ALTER TABLE scene DROP COLUMN purpose")
     s.conn.execute("ALTER TABLE scene DROP COLUMN furnishings")
@@ -311,4 +317,23 @@ def test_v12_database_gains_reviews_furnishings_and_blocking(tmp_path):
     rid = runs.start(s, task="vision_check", target_type="segment", target_id=seg, model="m", input_sha="x",
                      llm_mode="fake", params={})
     assert runs.get(s, rid)["target_type"] == "segment"
+    s.close()
+
+
+def test_v13_to_v14_old_reviews_have_no_ticked_items(tmp_path):
+    """v14:看片确认记下人勾了哪些清单项;v13 的老确认为空 = 按旧清单确认的。"""
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "玉佩", "9:16")
+    seg = repo.add_segment(s, repo.add_episode(s, d, 1, "script"), 1, video_path="v.mp4")
+    _drop_v14(s)
+    s.conn.execute("INSERT INTO segment_review (segment_id, video_path, sha256, note, created_at)"
+                   " VALUES (?, 'v.mp4', ?, '', '2026-10-22T00:00:00+00:00')", (seg, "a" * 64))
+    s.conn.execute("UPDATE meta SET value = '13' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    assert repo.review(s, seg, "a" * 64)["checks_json"] == ""
+    repo.add_review(s, seg, video_path="v.mp4", sha256="b" * 64, checks=["physics", "seam"])
+    assert repo.review(s, seg, "b" * 64)["checks_json"] == '["physics", "seam"]'
     s.close()

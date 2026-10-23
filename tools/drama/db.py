@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -319,7 +319,8 @@ BEGIN SELECT RAISE(ABORT, '白屏放行记录一经写下不可改 —— 它只
 SCHEMA += "".join(f"{stmt};\n" for stmt in BLANK_OVERRIDE_DDL)
 
 # v13:连续性保障(spec 2026-10-22-连续性保障-design.md)。看片确认:人看过这段视频、确认没有穿帮 ——
-# 只对这条视频的 sha256 有效,换了视频自动失效;没确认的段落拦导出。一经写下不可改,备注可空
+# 只对这条视频的 sha256 有效,换了视频自动失效;没确认的段落拦导出。一经写下不可改,备注可空。
+# v14:checks_json 记人勾过的验收清单项(tools/cut/checklist.py),空 = v13 时代按旧清单确认的
 REVIEW_DDL = [
     """CREATE TABLE segment_review (
   id INTEGER PRIMARY KEY,
@@ -332,7 +333,12 @@ REVIEW_DDL = [
     """CREATE TRIGGER segment_review_immutable BEFORE UPDATE ON segment_review
 BEGIN SELECT RAISE(ABORT, '看片确认一经写下不可改 —— 它只对当时那条视频有效'); END""",
 ]
-SCHEMA += "".join(f"{stmt};\n" for stmt in REVIEW_DDL)
+# 迁移 12 用的是上面这份 v13 原样(已发布的条目不改);新建库直接建 v14 的表
+REVIEW_DDL_V14 = [REVIEW_DDL[0].replace("  created_at TEXT NOT NULL\n)",
+                                        "  created_at TEXT NOT NULL,\n  checks_json TEXT NOT NULL DEFAULT ''\n)"),
+                  *REVIEW_DDL[1:]]
+assert REVIEW_DDL_V14[0] != REVIEW_DDL[0]
+SCHEMA += "".join(f"{stmt};\n" for stmt in REVIEW_DDL_V14)
 
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
@@ -375,6 +381,8 @@ MIGRATIONS: dict[int, list[str]] = {
          "ALTER TABLE segment ADD COLUMN blocking_json TEXT NOT NULL DEFAULT ''",
          "ALTER TABLE llm_run RENAME TO llm_run_v12", LLM_RUN_DDL_V13[0],
          "INSERT INTO llm_run SELECT * FROM llm_run_v12", "DROP TABLE llm_run_v12", *LLM_RUN_DDL_V13[1:]],
+    # v14:看片确认记下人勾了哪些清单项(spec 2026-10-23-不穿帮验收-design.md 第 1 节);老确认为空
+    13: ["ALTER TABLE segment_review ADD COLUMN checks_json TEXT NOT NULL DEFAULT ''"],
 }
 
 

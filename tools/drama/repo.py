@@ -168,10 +168,13 @@ def blank_override(store: Store, segment_id: int, sha256: str) -> sqlite3.Row | 
                               " ORDER BY id DESC LIMIT 1", (segment_id, sha256)).fetchone()
 
 
-def add_review(store: Store, segment_id: int, *, video_path: str, sha256: str, note: str = "") -> int:
-    """看片确认:人看过这条视频(sha256)、确认没有穿帮。写下不可改(触发器);换了视频自动失效。"""
+def add_review(store: Store, segment_id: int, *, video_path: str, sha256: str, checks: list[str] = (),
+               note: str = "") -> int:
+    """看片确认:人看过这条视频(sha256)、逐项勾过清单。写下不可改(触发器);换了视频自动失效。
+    勾没勾全由 cut/review.confirm 判,这里只照实记下。"""
     get(store, "segment", segment_id)
     return _insert(store, "segment_review", {"segment_id": segment_id, "video_path": video_path, "sha256": sha256,
+                                             "checks_json": json.dumps(list(checks), ensure_ascii=False),
                                              "note": note.strip(), "created_at": now()})
 
 
