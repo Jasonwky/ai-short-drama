@@ -10,10 +10,9 @@
 """
 from __future__ import annotations
 
-import json
-
 from tools.drama import repo
 from tools.drama.db import Store
+from tools.llm import rewrite, runs
 from tools.llm.verbatim import restore
 
 TASK = "critique"
@@ -104,7 +103,7 @@ def apply(store: Store, episode_id: int, args: dict, ctx: dict, decision: dict) 
 def _approved(store: Store, sql: str, args: tuple):
     for r in store.conn.execute("SELECT * FROM llm_run WHERE task = 'critique' AND state = 'approved' AND " + sql
                                 + " ORDER BY id", args):
-        yield r, json.loads(r["params_json"])["role"], json.loads(r["output_json"]), json.loads(r["decision_json"])
+        yield r, runs.params(r)["role"], runs.output(r), runs.decision(r)
 
 
 def adoption(store: Store, drama_id: int) -> dict[str, tuple[int, int]]:
@@ -118,8 +117,15 @@ def adoption(store: Store, drama_id: int) -> dict[str, tuple[int, int]]:
 
 
 def adopted(store: Store, episode_id: int) -> list[dict]:
-    """这一集被采纳的问题(局部改写「按这条改」的入口)。"""
+    """这一集被采纳的问题(局部改写「按这条改」的入口)。引用在现在的剧本里已经找不到(改写过了)、
+    或整行出现不止一次的不列 —— 那样建不出改写上下文,点了只会 400。"""
     out = []
     for r, role, output, decision in _approved(store, "target_type = 'episode' AND target_id = ?", (episode_id,)):
-        out += [{**output["issues"][i], "role": role, "run_id": r["id"]} for i in decision["adopt"]]
+        for i in decision["adopt"]:
+            issue = output["issues"][i]
+            try:
+                rewrite.context(store, episode_id, issue["quote"], rewrite.INTENTS[-1], "")
+            except ValueError:
+                continue
+            out.append({**issue, "role": role, "run_id": r["id"]})
     return out

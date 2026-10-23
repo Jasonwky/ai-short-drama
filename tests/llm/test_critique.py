@@ -70,6 +70,21 @@ def test_adopted_issues_are_listed_for_rewriting(store):
     assert a["quote"] == "天快黑了，你还不进屋？" and a["role"] == "编剧" and a["run_id"] == rid
 
 
+def test_adopted_issue_disappears_once_its_line_is_no_longer_in_the_script(store):
+    _, ep = _ep(store)
+    rid = runs.start(store, task="critique", target_type="episode", target_id=ep, model="m", input_sha="x",
+                     llm_mode="real", params={"role": "编剧"})
+    runs.propose(store, rid, {"issues": [_issue(), _issue(quote="天快黑了，你还不进屋？")]}, "j")
+    runs.approve(store, rid, {"adopt": [0, 1], "reject": []})
+    assert len(cq.adopted(store, ep)) == 2
+    script = repo.get(store, "episode", ep)["script"]
+    repo.update(store, "episode", ep, script=script.replace("天快黑了，你还不进屋？", "进屋吧。"))   # 已经改写过
+    (a,) = cq.adopted(store, ep)
+    assert a["quote"] != "天快黑了，你还不进屋？"
+    repo.update(store, "episode", ep, script=script + script)               # 整行出现两次:也建不出改写上下文
+    assert cq.adopted(store, ep) == []
+
+
 def test_decision_must_reference_existing_issues_once(store):
     out = {"issues": [_issue(), _issue()]}
     assert cq.decision_problems(out, {"adopt": [0, 5], "reject": [1]}) == ["第 6 条不存在(只有 2 条)"]

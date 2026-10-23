@@ -78,6 +78,11 @@ def output(row: sqlite3.Row) -> dict:
     return json.loads(row["output_json"])
 
 
+def decision(row: sqlite3.Row) -> dict | None:
+    """人批准时做的选择;没批准或不需要选择的任务为 None。"""
+    return json.loads(row["decision_json"]) if row["decision_json"] else None
+
+
 def params(row: sqlite3.Row) -> dict:
     return json.loads(row["params_json"])
 
