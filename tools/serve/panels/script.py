@@ -5,8 +5,6 @@
 """
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
@@ -19,34 +17,31 @@ router = APIRouter()
 CAPS = {"video_cap": MINIMAX_H3, "image_cap": QWEN_IMAGE_EDIT_2511}
 
 
-def _unsynced(store, episode_id: int) -> list[str]:
-    """批准过的局部改写里没对上任何段落的(本集有段落时才有意义):提示人分镜没跟着改。"""
-    descs = [r[0] for r in store.conn.execute("SELECT description FROM segment WHERE episode_id = ?", (episode_id,))]
-    if not descs:
-        return []
-    out = []
-    for r in runs.history(store, "episode", episode_id, "rewrite"):
-        if r["state"] != "approved":
-            continue
-        text = runs.output(r)["candidates"][json.loads(r["decision_json"])["pick"]]["text"]
-        lines = [line for _, line in rules.dialogue_lines(text)]
-        if any(text.strip() in d for d in descs) or any(f"「{line}」" in d for d in descs for line in lines):
-            continue
-        out.append(text.strip()[:40])
-    return out
+def _notice(store, rewrite_run: int | None, synced: int) -> tuple[int, str] | None:
+    """刚批准的局部改写的同步结果(批准时一次性给出,不事后推断):(集 id, 提示文字)。不是改写运行就不显示。"""
+    if rewrite_run is None:
+        return None
+    row = store.conn.execute("SELECT * FROM llm_run WHERE id = ? AND task = 'rewrite' AND state = 'approved'",
+                             (rewrite_run,)).fetchone()
+    if row is None:
+        return None
+    if synced > 0:
+        return row["target_id"], f"改写已写回剧本,第 {synced} 段的台词已同步(视频保留,重出后在历史里「调用」)"
+    return row["target_id"], "改写已写回剧本,没对上任何段落,分镜没跟着改 —— 要的话去段落编辑页改描述"
 
 
 @router.get("/drama/{drama_id}/script")
-def page(request: Request, drama_id: int):
+def page(request: Request, drama_id: int, rewrite_run: int | None = None, synced: int = 0):
     store = rt(request).store
     repo.get(store, "drama", drama_id)
+    notice = _notice(store, rewrite_run, synced)
     eps = []
     for e in store.conn.execute("SELECT * FROM episode WHERE drama_id = ? ORDER BY number", (drama_id,)):
         n = store.conn.execute("SELECT COUNT(*) FROM segment WHERE episode_id = ?", (e["id"],)).fetchone()[0]
         lo, hi = rules.expected_segment_range(e["script"]) if e["script"].strip() else (0, 0)
         eps.append({"row": e, "n_segments": n, "range": (lo, hi),
                     "problems": rules.check_episode(e["script"], n) if e["script"].strip() and n else [],
-                    "adopted": critique.adopted(store, e["id"]), "unsynced": _unsynced(store, e["id"]),
+                    "adopted": critique.adopted(store, e["id"]), "notice": notice[1] if notice and notice[0] == e["id"] else None,
                     "llm_runs": [r for r in runs.history(store, "episode", e["id"])
                                  if r["task"].startswith("script_") or r["task"] in ("critique", "rewrite")]})
     return render(request, "script.html", "script", drama_id=drama_id, eps=eps, roles=list(critique.ROLES),

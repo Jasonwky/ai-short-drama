@@ -79,13 +79,14 @@ def _preview(store, row) -> dict:
         return {"vision": out["frames"], "mismatches": vision_check.mismatches(expected, out)}
     if task == "critique":
         stance = {}                     # 批准后的记录:序号 → adopt / reject(没批准为空)
-        if row["state"] == "approved" and row["decision_json"]:
-            dec = json.loads(row["decision_json"])
+        dec = runs.decision(row) if row["state"] == "approved" else None
+        if dec:
             stance = {**{i: "adopt" for i in dec["adopt"]}, **{i: "reject" for i in dec["reject"]}}
         return {"issues": [{"n": i, "stance": stance.get(i), **it} for i, it in enumerate(out["issues"])],
                 "role": params["role"]}
     if task == "rewrite":
-        picked = json.loads(row["decision_json"])["pick"] if row["state"] == "approved" and row["decision_json"] else None
+        dec = runs.decision(row) if row["state"] == "approved" else None
+        picked = dec["pick"] if dec else None
         return {"span": params["span"], "intent": params["intent"],
                 "candidates": [{"n": i, "picked": i == picked, **c} for i, c in enumerate(out["candidates"])]}
     if task == "voice":
@@ -154,8 +155,11 @@ async def approve(request: Request, run_id: int):
                                              + imp.summary(),
                             action=f"/llm/run/{run_id}/approve", fields={}, back=f"/llm/run/{run_id}", **ctx)
     decision = _decision(runs.get(store, run_id)["task"], form)
-    service.approve(store, run_id, rt(request).data_root, confirm_reset=cost is not None, decision=decision)
-    return RedirectResponse(_home(store, runs.get(store, run_id))[0], status_code=303)
+    synced = service.approve(store, run_id, rt(request).data_root, confirm_reset=cost is not None, decision=decision)
+    home = _home(store, runs.get(store, run_id))[0]
+    if runs.get(store, run_id)["task"] == "rewrite":      # 改写写回后告诉剧本面板:台词同步到了第几段(没对上为 0)
+        home += f"?rewrite_run={run_id}&synced={synced or 0}"
+    return RedirectResponse(home, status_code=303)
 
 
 @router.post("/llm/run/{run_id}/reject")

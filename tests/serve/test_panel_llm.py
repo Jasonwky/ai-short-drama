@@ -106,6 +106,17 @@ def test_rewrite_review_page_shows_candidates_against_the_span(client, store, sa
     assert r.status_code == 400
     r = client.post(f"/llm/run/{rid}/approve", data={"pick": "1"}, follow_redirects=False)
     assert r.status_code == 303 and "一言不发" in repo.get(store, "episode", sample["episode"])["script"]
+    assert r.headers["location"].endswith(f"/script?rewrite_run={rid}&synced=0")      # 没对上段落:告诉脚本面板
+
+
+def test_approving_a_rewrite_reports_which_segment_got_the_new_line(client, store, sample):
+    span = "林小雨说：「这块玉佩，是我母亲留给我的。」"
+    repo.update(store, "episode", sample["episode"], script=f"林小雨低头。\n{span}\n")
+    out = {"candidates": [{"text": "林小雨说：「玉佩是我母亲的。谁敢碰？」", "why": "冲突"},
+                          {"text": "林小雨攥紧玉佩，一言不发。", "why": "留白"}]}
+    rid = _real_run(store, "rewrite", sample["episode"], {"span": span, "intent": "加强冲突", "note": ""}, out)
+    r = client.post(f"/llm/run/{rid}/approve", data={"pick": "0"}, follow_redirects=False)
+    assert r.headers["location"].endswith(f"/script?rewrite_run={rid}&synced={repo.get(store, 'segment', sample['seg'])['number']}")
 
 
 def test_critique_model_output_is_html_escaped(client, store, sample):
