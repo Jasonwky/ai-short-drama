@@ -34,9 +34,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   (只听本机;后台 worker 随控制台一起跑;没有假后端开关)
 - **Playwright 全面自测**(一律有头,会弹浏览器;没有无头开关):`python -X utf8 -m tools.serve.selftest`;截图在 `outputs/selftest/<时间>/`
 - **验收**:`python -X utf8 -m tools.serve.accept`(四层:单测 → 真 LLM 契约 → Playwright 有头 → 真云机整链;
-  没有 `llm.txt` 或不给云机参数时对应层 SKIP,总判决 PARTIAL,不算通过)
-- **LLM**:key 放仓库根 `llm.txt`(已 gitignore,**绝不提交**);服务 SynScale(OpenAI 兼容,只有 http),默认模型见 `tools/llm/service.py`
-- **真 LLM 契约测试**(花钱、每条 10–90 秒,默认 `pytest -q` 不跑):`python -X utf8 -m pytest -m real_llm -q`;记录在 `tmp/contract_llm/`
+  本机找不到 Claude Code 命令行或不给云机参数时对应层 SKIP,总判决 PARTIAL,不算通过)
+- **LLM**:2026-10-23 起走**本机 Claude Code 命令行**(`tools/llm/claude_cli.py`,`claude -p` + `--json-schema` + stream-json 输入,
+  能带图);隔离跑:每次空工作目录、`--setting-sources ""`、`--tools ""`、自定义系统提示 —— 不读本仓 CLAUDE.md。
+  `--bare` 不认账号登录,不能用;直接调 `claude.exe`(npm 的 `.CMD` 会被 cmd 改写参数)。默认模型 `sonnet`,见 `tools/llm/service.py`。
+  旧的 SynScale 客户端(`client.py`,key 在 gitignored 的 `llm.txt`,**绝不提交**)代码留着,运行时不再用
+- **真 LLM 契约测试**(花钱、每条 10–90 秒,默认 `pytest -q` 不跑):`python -X utf8 -m pytest -m real_llm -q`(在 PowerShell 里跑);记录在 `tmp/contract_llm/`
 
 ### 代码布局(读多个文件才看得出的部分)
 
@@ -225,7 +228,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 实现补充(2026-09-06,已用 `claude-api` 权威参考核实)
 
-> **2026-09-24 起本项目实际用的是 SynScale(OpenAI 兼容),不是 Anthropic API**,下面的 Anthropic 细节作为参考保留。
+> **2026-10-23 起本项目用的是本机 Claude Code 命令行**(之前 2026-09-24 起用 SynScale,OpenAI 兼容)。下面 SynScale 的实测与 Anthropic 细节作为参考保留;
+> 不论哪个后端,结构化输出都**照样在客户端校验 + 代码判卷**,命令行的 `--json-schema` 不是我们的保证。
 > 实测(`spike-results/2026-09-24-SynScale结构化输出实测.md`):`response_format: json_schema` **被静默忽略**;
 > strict 工具调用能把 schema 送进模型,但**不是服务端约束解码**(出过非法 JSON、多余字段、enum 外的值)—— 客户端校验是唯一保证。
 > 🔴 2026-09-24 再测(`spike-results/2026-09-24-视觉LLM反推描述实测.md`):同一个模型会被路由到不同上游,各自只认一种 `tool_choice` 拼法

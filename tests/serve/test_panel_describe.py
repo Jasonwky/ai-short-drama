@@ -3,7 +3,7 @@
 from tools.drama import repo
 from tools.gen.assets import _png
 from tools.drama.tasks import tasks_for
-from tools.llm import runs
+from tools.llm import runs, service
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"x" * 32
 
@@ -51,7 +51,7 @@ def test_fake_describe_is_caught_and_shown_as_failed(client, runtime, store):
     runtime.wait_llm()
     assert runs.get(store, rid)["state"] == "failed"
     page = client.get(f"/llm/run/{rid}").text
-    assert "check_number 读错了" in page and "gpt-5.6-luna" in page                  # 记的是视觉模型
+    assert "check_number 读错了" in page and service.VISION_MODEL in page             # 记的是视觉模型
     assert f'data-llm-run="{rid}"' in client.get(f"/drama/{d}/assets").text
 
 

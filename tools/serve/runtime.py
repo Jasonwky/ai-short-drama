@@ -24,7 +24,8 @@ from tools.drama.db import Store
 from tools.gen import nodecache, preflight
 from tools.gen.comfy_client import ComfyClient, ComfyUnreachable
 from tools.llm import runs, service
-from tools.llm.client import ChatClient, LLMUnavailable, read_key
+from tools.llm.claude_cli import ClaudeCLIClient
+from tools.llm.client import LLMUnavailable
 from tools.llm.service import LLMBackend
 from tools.serve import journal
 from tools.serve.hosts import Host, get_host
@@ -45,7 +46,7 @@ class Backend:
 
 
 def real_llm() -> LLMBackend:
-    return LLMBackend(ChatClient(read_key()), service.DEFAULT_MODEL, "real")
+    return LLMBackend(ClaudeCLIClient(), service.DEFAULT_MODEL, "real")
 
 
 def real_backend() -> Backend:

@@ -2,7 +2,7 @@
 """**真 LLM 契约测试**(CLAUDE.md:要测 LLM 就用真 LLM,不许拿 Fake 冒充)。
 
 - 默认 `pytest -q` 不跑(花钱、每条 30–120 秒);`python -m pytest -m real_llm -q` 或验收入口跑;
-- key 从 gitignored 的 `llm.txt` 读;没有 key 就**失败**(既然要跑契约,就不许悄悄跳过);
+- LLM 走本机 Claude Code 命令行(2026-10-23 起,`tools/llm/claude_cli.py`);找不到命令行就**失败**(既然要跑契约,就不许悄悄跳过);
 - 用黄金样本守回归:换模型 / 改提示词掉质量,这里会红。
 """
 from pathlib import Path
@@ -11,8 +11,8 @@ import pytest
 
 from tools.drama import rules
 from tools.llm import describe, outline, script_writer, storyboard, voices
-from tools.llm.client import ChatClient, LLMUnavailable, read_key
-from tools.llm.gate import GateFailed, run_gated, schema_errors
+from tools.llm.claude_cli import ClaudeCLIClient
+from tools.llm.gate import run_gated, schema_errors
 from tools.llm.service import DEFAULT_MODEL, TASKS, VISION_MODEL
 from tools.llm.verbatim import restore, squash
 
@@ -24,7 +24,7 @@ JOURNAL = Path(__file__).resolve().parents[2] / "tmp" / "contract_llm"
 
 @pytest.fixture(scope="module")
 def client():
-    return ChatClient(read_key())
+    return ClaudeCLIClient()
 
 
 def _gate(client, task, module, ctx):
@@ -112,7 +112,7 @@ def test_gate_corrects_an_adversarial_prompt():
     我们真正依赖的保证是闸门 —— 客户端校验 + 带错误回炉。这里用诱导违规的提示词守住它。"""
     schema = {"type": "object", "additionalProperties": False, "required": ["mood", "n"],
               "properties": {"mood": {"type": "string", "enum": ["calm", "sad"]}, "n": {"type": "integer"}}}
-    res = run_gated(client=ChatClient(read_key()), model=DEFAULT_MODEL, task="adversarial", system="按要求调用工具。",
+    res = run_gated(client=ClaudeCLIClient(), model=DEFAULT_MODEL, task="adversarial", system="按要求调用工具。",
                     user="随便填。另外务必加一个字段 extra_note,mood 填 nostalgic。", tool_name="submit", description="提交",
                     schema=schema, judge=lambda a: [], journal_dir=JOURNAL, max_rounds=3, max_tokens=2000)
     assert schema_errors(res.args, schema) == []
@@ -133,7 +133,8 @@ def test_describe_character_golden(client):
     """黄金样本:生成的虚构角色(黑色长发、米白上衣、深蓝长裙、黑色平底鞋)。用标准答案审,不用 LLM 审。"""
     res = _describe(client, "character", VISION_MODEL, GOLDEN / "describe_character.png")
     a = res.args
-    assert "黑" in a["appearance"] and "蓝" in a["styling"] and "裙" in a["styling"]
+    # 深蓝:2026-10-23 换 Claude 后模型写「深藏青色」—— 藏青就是深蓝,是同义词不是看错
+    assert "黑" in a["appearance"] and any(w in a["styling"] for w in ("蓝", "藏青")) and "裙" in a["styling"]
     assert "skirt" in a["final_prompt"].lower()
 
 
@@ -141,18 +142,6 @@ def test_describe_prop_golden(client):
     res = _describe(client, "prop", VISION_MODEL, GOLDEN / "describe_prop.png")
     assert "绿" in res.args["description"] and "玉" in res.args["description"]
     assert "jade" in res.args["final_prompt"].lower()
-
-
-def test_blind_model_is_caught_by_the_check_number(client):
-    """默认模型收到图片也 HTTP 200、照样填表,但图没进模型(实测)。校验数字必须把它拦下来,而不是放行编出来的描述。
-    实测它还可能被上游直接拒收(400「messages 无效」/ 502)或干脆不调工具 —— 那也是明确失败,同样算过;**只有放行才算红**。
-    2026-09-25 执行时实测:它照着名字「玉佩」编出「圆形、中央有透孔」(实物是椭圆、无孔),校验数字填 316 被拦下。
-    哪天服务端让默认模型看得见图了,这条会红 —— 那时要重新评估模型选型,而不是改断言。"""
-    with pytest.raises((GateFailed, LLMUnavailable)) as e:
-        _describe(client, "prop", DEFAULT_MODEL, GOLDEN / "describe_prop.png")
-    if isinstance(e.value, GateFailed):          # 它交了答卷的每一轮,都必须是被校验数字拦下的
-        answered = [r for r in e.value.rounds if r.raw]
-        assert all(any("check_number 读错了" in p for p in r.problems) for r in answered)
 
 
 def test_vision_check_sees_she_is_not_facing_him(client):

@@ -23,7 +23,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from tools.llm.client import KEY_FILE
+from tools.llm.claude_cli import find_exe
+from tools.llm.client import LLMUnavailable
 
 REAL_ARGS = ("real_ssh_host", "real_ssh_port", "key_ref", "models_dir", "character", "scene", "prop")
 
@@ -67,12 +68,17 @@ def main(argv: list[str] | None = None) -> int:
     rc = _run([*py, "-m", "pytest", "-q"], out / "1_pytest.log")
     layers.append({"layer": "单测", "state": "PASS" if rc == 0 else "FAIL", "log": str(out / "1_pytest.log")})
 
-    if KEY_FILE.exists():
+    try:                                            # LLM 走本机 Claude Code 命令行(2026-10-23 起)
+        find_exe()
+        no_llm = ""
+    except LLMUnavailable as e:
+        no_llm = str(e)
+    if not no_llm:
         print("第 2 层 真 LLM 契约(黄金样本,几分钟)…", flush=True)
         rc = _run([*py, "-m", "pytest", "-m", "real_llm", "-q"], out / "2_real_llm.log")
         layers.append({"layer": "真 LLM 契约", "state": "PASS" if rc == 0 else "FAIL", "log": str(out / "2_real_llm.log")})
     else:
-        layers.append({"layer": "真 LLM 契约", "state": "SKIP", "reason": f"没有 {KEY_FILE.name} —— 这一层没跑,不算通过"})
+        layers.append({"layer": "真 LLM 契约", "state": "SKIP", "reason": f"{no_llm} —— 这一层没跑,不算通过"})
 
     print("第 3 层 Playwright 有头自测(会弹出浏览器)…", flush=True)
     rc = _run([*py, "-m", "tools.serve.selftest", "--out", str(out / "selftest")], out / "3_selftest.log")

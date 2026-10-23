@@ -25,12 +25,13 @@ def test_no_llm_configured_is_loud(store, sample, tmp_path):
         rt.start_llm("voice", sample["lin"], {})
 
 
-def test_real_backend_reads_the_key_only_when_asked(monkeypatch, tmp_path):
-    import tools.llm.client as client
-    monkeypatch.setattr(client, "KEY_FILE", tmp_path / "missing.txt")
-    b = real_backend()                                            # 建后端不读 key
-    with pytest.raises(LLMUnavailable, match="找不到 LLM key"):
-        b.llm()                                                   # 点按钮时才读,读不到就报错
+def test_real_backend_looks_for_claude_only_when_asked(monkeypatch):
+    """LLM 走本机 Claude Code 命令行(2026-10-23 起):建后端时不找,点按钮时才找,找不到就报错(不静默切 Fake)。"""
+    import tools.llm.claude_cli as cc
+    monkeypatch.setattr(cc.shutil, "which", lambda name: None)
+    b = real_backend()
+    with pytest.raises(LLMUnavailable, match="找不到本机 Claude Code"):
+        b.llm()
 
 
 def test_unexpected_errors_become_failed_runs_not_silence(store, sample, tmp_path, monkeypatch):

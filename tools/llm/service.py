@@ -24,10 +24,11 @@ from tools.llm import describe, outline, runs, script_writer, storyboard, vision
 from tools.llm.client import LLMError
 from tools.llm.gate import GateFailed, input_sha, run_gated
 
-# 默认模型由实测选出(spike-results/2026-09-24-SynScale结构化输出实测.md)
-DEFAULT_MODEL = "deepseek-v4-flash-0731-new"
-# 看图任务的模型:本 key 下唯一实测能看见图、且接受当前工具调用写法的(spike-results/2026-09-24-视觉LLM反推描述实测.md)
-VISION_MODEL = "gpt-5.6-luna"
+# 2026-10-23 起 LLM 走本机 Claude Code 命令行(`claude_cli.py`;SynScale 连续两天拒绝连接,用户定换掉)。
+# 模型用别名,命令行解析成当时的 Sonnet;llm_run 里记的是它实际回报的模型全名。Sonnet 看得见图(实测数对了人数),
+# 看图任务不再另配模型 —— 两个常量都留着,任务登记表照旧按「要看图」标注,以后要分开时只改这里
+DEFAULT_MODEL = "sonnet"
+VISION_MODEL = "sonnet"
 
 
 @dataclass(frozen=True)
