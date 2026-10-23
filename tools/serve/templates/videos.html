@@ -88,15 +88,23 @@
           {% else %}<p class="hint" data-vision-ok>抽检 <a href="/llm/run/{{ v.run.id }}">#{{ v.run.id }}</a>:首帧和场记表对得上(模型判断)</p>{% endif %}
         {% endif %}
       {% endif %}
-      {% if s.review %}
-        <p class="status-ok" data-reviewed>已看片确认 · {{ s.review.created_at }}{% if s.review.note %} · {{ s.review.note }}{% endif %}
+      {% if s.review and s.review.complete %}
+        <p class="status-ok" data-reviewed>已看片确认 · {{ s.review.created_at }} · 勾过 {{ s.review.checked }} 项{% if s.review.note %} · {{ s.review.note }}{% endif %}
           <span class="hint">(只对这条视频 sha256 <code>{{ s.review.sha256[:16] }}</code> 有效,换了视频要重新看)</span></p>
       {% else %}
-        <form method="post" action="/segment/{{ s.row.id }}/review" class="row" data-review-form>
-          <div style="flex: 1; min-width: 220px"><label>备注(可空)</label><input type="text" name="note" data-review-note></div>
-          <button class="btn" type="submit" data-review-confirm>看过,没有穿帮</button>
+        {% if s.review %}<p class="status-bad" data-review-outdated>这段是按旧清单确认的,要按下面的清单重看一遍</p>{% endif %}
+        <form method="post" action="/segment/{{ s.row.id }}/review" data-review-form>
+          {% for i in review_items %}
+          <label class="row" data-check-item="{{ i.key }}">
+            {% if "人勾" in i.how %}<input type="checkbox" name="check" value="{{ i.key }}" data-check-box>
+            {% else %}<span class="hint">[自动]</span>{% endif %}
+            <span>{{ i.name }}</span> <span class="hint">({{ i.how }} · {{ i.source }})</span></label>
+          {% endfor %}
+          <div class="row"><div style="flex: 1; min-width: 220px"><label>备注(可空)</label>
+            <input type="text" name="note" data-review-note></div>
+            <button class="btn" type="submit" data-review-confirm disabled>逐项看过,确认没有穿帮</button></div>
         </form>
-        <p class="hint">没确认的段落不许导出。要看:接缝前后人物 / 服装 / 道具 / 站位接不接得上,切镜后背景是不是同一间屋。</p>
+        <p class="hint">人勾的项全勾上才能确认;没确认的段落不许导出。自动项由导出前的检测把关(烧字、白屏、字幕判卷)。</p>
       {% endif %}
     </div>
     {% endif %}
@@ -128,4 +136,13 @@
 {% else %}
   <section class="card empty">这一集还没有段落(去「分镜」新建)</section>
 {% endfor %}
+<script>
+  // 验收清单:人勾项全勾上,确认按钮才可点(服务端 review.confirm 也会再核一遍)
+  document.querySelectorAll('[data-review-form]').forEach(f => {
+    const boxes = [...f.querySelectorAll('[data-check-box]')], btn = f.querySelector('[data-review-confirm]');
+    const sync = () => { btn.disabled = !boxes.every(b => b.checked); };
+    boxes.forEach(b => b.addEventListener('change', sync));
+    sync();
+  });
+</script>
 {% endblock %}

@@ -18,7 +18,7 @@ import json
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from tools.cut import blankscan, cuts, keycheck, media, review, subtitles
+from tools.cut import blankscan, checklist, cuts, keycheck, media, review, subtitles
 from tools.drama import blocking, repo
 from tools.llm import runs, vision_check
 from tools.drama.tasks import producer, tasks_for
@@ -38,6 +38,14 @@ def _override(store, root, seg) -> dict | None:
     """这段当前视频的白屏放行(按 sha256 对),带上溯源报告里那一行。"""
     o = blankscan.override_for(store, root, seg)
     return None if o is None else {**o, "note": blankscan.override_note(seg["number"], blankscan.snapshot(o))}
+
+
+def _review(store, root, seg) -> dict | None:
+    """这段当前视频的看片确认,带上勾了几项、是不是按现行清单勾全的(v13 的老确认不算)。"""
+    r = review.review_for(store, root, seg)
+    if r is None:
+        return None
+    return {**r, "checked": len(review.snapshot(r)["checks"]), "complete": review.complete(r)}
 
 
 def _vision(store, seg, root) -> dict | None:
@@ -95,11 +103,12 @@ def page(request: Request, episode_id: int):
                      "blocking": blocking.phrase(blocking.parse(s["blocking_json"])),
                      "video_sha": sha256_file(runtime.data_root / s["video_path"]) if has_video else None,
                      "vision": _vision(store, s, runtime.data_root) if has_video else None,
-                     "review": review.review_for(store, runtime.data_root, s) if has_video else None,
+                     "review": _review(store, runtime.data_root, s) if has_video else None,
                      "extra": aligner.extra_speech_for(store, runtime.data_root, s["id"]),
                      "cues": subtitles.parse_srt(sub.read_text(encoding="utf-8")) if sub and sub.is_file() else []})
         prev = cut
     return render(request, "videos.html", "videos", episode_id=episode_id, ep=ep, segs=segs, seed=new_seed(),
+                  review_items=checklist.ITEMS,
                   est_note=b.note, key_ref=(keycheck.HIT, keycheck.OTHER), full_steps=full,
                   full_from_preset=preset_steps is not None, draft_steps=DRAFT_STEPS, few_note=FEW_STEPS_NOTE)
 
@@ -122,10 +131,12 @@ def blank_override(request: Request, segment_id: int, reason: str = Form("")):
 
 
 @router.post("/segment/{segment_id}/review")
-def confirm_review(request: Request, segment_id: int, note: str = Form("")):
-    """看过这段视频、没有穿帮:只对这条视频的 sha256 有效。"""
+async def confirm_review(request: Request, segment_id: int):
+    """逐项勾过验收清单、确认没有穿帮:只对这条视频的 sha256 有效(spec 2026-10-23-不穿帮验收 第 1 节)。"""
     runtime = rt(request)
-    review.confirm(runtime.store, runtime.data_root, segment_id, note)
+    form = await request.form()
+    review.confirm(runtime.store, runtime.data_root, segment_id, [str(k) for k in form.getlist("check")],
+                   str(form.get("note", "")))
     ep_id = repo.get(runtime.store, "segment", segment_id)["episode_id"]
     return RedirectResponse(f"/episode/{ep_id}/videos#seg-{segment_id}", status_code=303)
 

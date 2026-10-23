@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """视频面板的看片区:切镜计数、接缝两帧、看片确认(spec 2026-10-22-连续性保障-design.md 第 1、2 项)。"""
 from tests.cut.conftest import done_task
+from tools.cut import checklist
 from tools.drama import repo
 from tools.serve.fakes import sample_mp4
 
@@ -23,12 +24,24 @@ def test_review_section_shows_cuts_and_the_seam(client, runtime, store, sample):
 
 def test_confirm_review_is_tied_to_the_current_video(client, runtime, store, sample):
     seg2 = _two(store, sample, runtime.data_root)
-    r = client.post(f"/segment/{seg2}/review", data={"note": "接缝看过"}, follow_redirects=False)
+    r = client.post(f"/segment/{seg2}/review", data={"note": "接缝看过", "check": list(checklist.MANUAL)},
+                    follow_redirects=False)
     assert r.status_code == 303
     page = client.get(f"/episode/{sample['episode']}/videos").text
-    assert page.count("data-reviewed") == 1 and "接缝看过" in page
+    assert page.count("data-reviewed") == 1 and "接缝看过" in page and f"勾过 {len(checklist.MANUAL)} 项" in page
     done_task(store, runtime.data_root, seg2, "video", "outputs/tasks/v3/clip.mp4", sample_mp4() + b"\0")
     assert "data-reviewed" not in client.get(f"/episode/{sample['episode']}/videos").text    # 换了视频要重看
+
+
+def test_card_lists_every_checklist_item_and_refuses_partial_ticks(client, runtime, store, sample):
+    """验收清单(spec 2026-10-23-不穿帮验收-design.md 第 1 节):整张清单都列出来,少勾一项不能确认。"""
+    seg2 = _two(store, sample, runtime.data_root)
+    page = client.get(f"/episode/{sample['episode']}/videos").text
+    assert page.count("data-check-item=") == 2 * len(checklist.ITEMS)        # 两段,每段整张清单
+    assert page.count("data-check-box") >= 2 * len(checklist.MANUAL)
+    r = client.post(f"/segment/{seg2}/review", data={"check": ["identity"]}, follow_redirects=False)
+    assert r.status_code == 400 and "人在家具里" in r.text
+    assert "data-reviewed" not in client.get(f"/episode/{sample['episode']}/videos").text
 
 
 def test_vision_check_button_and_result_on_the_card(client, runtime, store, sample):
