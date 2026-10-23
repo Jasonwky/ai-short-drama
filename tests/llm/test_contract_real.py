@@ -201,3 +201,12 @@ def test_beats_cover_every_episode_with_verbatim_quotes(client):
                         (2, "王爷醒来,李福跪地求饶,沈玉瑶被杖毙;王爷捏住她的下巴,追问她究竟是谁。")]}
     res = _gate(client, "beats", beats, ctx)
     assert sorted(e["number"] for e in res.args["episodes"]) == [1, 2]
+
+
+def test_outline_variants_really_differ(client):
+    """单集大纲变体(2026-10-23):真模型给的版本两两至少 2 个维度不同(判卷口径)。"""
+    from tools.llm import diverge, outline_variants
+    ctx = {"outline": "沈青禾替嫁冲喜,大婚夜被嫡姐羞辱,她当众一针救活昏迷的王爷,揭穿管事下毒。", "n": 3}
+    res = _gate(client, "outline_variants", outline_variants, ctx)
+    vs = res.args["variants"]
+    assert len(vs) == 3 and diverge.distinct_problems(vs, tuple(outline_variants.DIMS)) == []
