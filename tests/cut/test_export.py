@@ -401,8 +401,33 @@ def test_unreviewed_segment_blocks_export_and_review_is_tied_to_the_video(store,
     assert msg.startswith("段落 2")
     with pytest.raises(ValueError, match="看片"):
         export.begin(store, root, s["episode"], PRODUCER)
-    from tools.cut import review
-    review.confirm(store, root, s["seg2"], "接缝看过")
+    from tools.cut import checklist, review
+    review.confirm(store, root, s["seg2"], list(checklist.MANUAL), "接缝看过")
     eid = export.begin(store, root, s["episode"], PRODUCER)
     snap = json.loads(export.get(store, eid)["inputs_json"])
     assert [v["review"]["note"] for v in snap] == ["", "接缝看过"]
+
+
+def test_review_must_tick_every_manual_item(store, two_segments, mp4_bytes):
+    """验收清单(spec 2026-10-23-不穿帮验收-design.md 第 1 节):人勾项缺一项不能确认。"""
+    from tools.cut import checklist, review
+    s, root = two_segments, two_segments["root"]
+    done_task(store, root, s["seg2"], "video", "outputs/tasks/v3/clip.mp4", mp4_bytes + b"\0",
+              refs=["outputs/tasks/f2/frame.png"])
+    with pytest.raises(ValueError, match="人在家具里"):
+        review.confirm(store, root, s["seg2"], [k for k in checklist.MANUAL if k != "physics"])
+    review.confirm(store, root, s["seg2"], list(checklist.MANUAL))
+    assert export.readiness(store, root, s["episode"]) == []
+
+
+def test_reviews_from_the_old_checklist_block_export(store, two_segments, mp4_bytes):
+    """v13 时代的确认没有勾选项 = 按旧清单确认的,要按新清单重看才许导。"""
+    from tools.serve.dispatch import sha256_file
+    s, root = two_segments, two_segments["root"]
+    done_task(store, root, s["seg2"], "video", "outputs/tasks/v3/clip.mp4", mp4_bytes + b"\0",
+              refs=["outputs/tasks/f2/frame.png"])
+    store.conn.execute("INSERT INTO segment_review (segment_id, video_path, sha256, note, created_at)"
+                       " VALUES (?, ?, ?, '', '2026-10-22T00:00:00+00:00')",
+                       (s["seg2"], "outputs/tasks/v3/clip.mp4", sha256_file(root / "outputs/tasks/v3/clip.mp4")))
+    (msg,) = [p for p in export.readiness(store, root, s["episode"]) if "看片" in p or "旧清单" in p]
+    assert msg.startswith("段落 2") and "按旧清单确认" in msg

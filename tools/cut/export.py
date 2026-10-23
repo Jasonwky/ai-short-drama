@@ -80,8 +80,9 @@ def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
             blank = blankscan.cached(data_root, s["video_path"])                                # 同上:只读缓存
             if blank and blankscan.override_for(store, data_root, s) is None:                   # 人工确认放行过这条视频的不拦
                 problems.append(blankscan.problem(s["number"], blank))
-            if review.review_for(store, data_root, s) is None:                                 # 人看过才许导
-                problems.append(review.problem(s["number"]))
+            r = review.review_for(store, data_root, s)
+            if r is None or not review.complete(r):                                           # 人逐项看过才许导
+                problems.append(review.problem(s["number"], r))
     try:
         media.require_ffmpeg()
     except ValueError as e:

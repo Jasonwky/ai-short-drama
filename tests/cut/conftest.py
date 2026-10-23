@@ -3,6 +3,7 @@
 import pytest
 
 from tests.drama.conftest import sample, store  # noqa: F401  —— 复用 P1 的夹具
+from tools.cut import checklist
 from tools.drama import repo
 from tools.drama.tasks import create_task, set_task_state
 from tools.serve.dispatch import sha256_file
@@ -46,5 +47,5 @@ def two_segments(store, sample, tmp_path, mp4_bytes):  # noqa: F811
               refs=["outputs/tasks/v1/clip.mp4"])
     for seg, n in ((seg1, 1), (seg2, 2)):           # 看片确认(v13):人看过才许导
         repo.add_review(store, seg, video_path=f"outputs/tasks/v{n}/clip.mp4",
-                        sha256=sha256_file(root / f"outputs/tasks/v{n}/clip.mp4"))
+                        sha256=sha256_file(root / f"outputs/tasks/v{n}/clip.mp4"), checks=list(checklist.MANUAL))
     return {**sample, "root": root, "seg1": seg1, "seg2": seg2}
