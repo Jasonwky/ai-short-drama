@@ -16,7 +16,7 @@ from tools.drama.db import Store, now
 # 各表允许调用方写入的字段。主键、外键归属、创建时间由本模块自己管。
 _COLUMNS: dict[str, set[str]] = {
     "drama": {"premise_json"},          # 立项发散的结果(v16);剧名、画幅不在这里 —— 画幅建后不可改
-    "episode": {"source_text", "outline", "script"},
+    "episode": {"source_text", "outline", "script", "beats_json"},
     "character": {"appearance", "styling", "voice_desc", "final_prompt", "seed",
                   "turnaround_path", "fourview_path", "voice_ref_path"},
     "scene": {"episode_id", "location", "time", "lighting", "final_prompt", "image_path", "purpose", "furnishings"},

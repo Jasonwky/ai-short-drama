@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -354,6 +354,10 @@ SCHEMA += "".join(f"{stmt};\n" for stmt in DECISION_DDL)
 PREMISE_DDL = ["ALTER TABLE drama ADD COLUMN premise_json TEXT NOT NULL DEFAULT ''"]
 SCHEMA += "".join(f"{stmt};\n" for stmt in PREMISE_DDL)
 
+# v17:大纲节拍标注(spec 2026-10-23-剧集脑爆系统-design.md 第 2a 节)—— 人批准过的逐集节拍,空 = 没标过
+BEATS_DDL = ["ALTER TABLE episode ADD COLUMN beats_json TEXT NOT NULL DEFAULT ''"]
+SCHEMA += "".join(f"{stmt};\n" for stmt in BEATS_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -401,6 +405,8 @@ MIGRATIONS: dict[int, list[str]] = {
     14: DECISION_DDL,
     # v16:剧的立项发散结果
     15: PREMISE_DDL,
+    # v17:集的节拍标注
+    16: BEATS_DDL,
 }
 
 

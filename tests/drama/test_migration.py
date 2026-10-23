@@ -8,8 +8,15 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v17(s):
+    """退回 v16:删掉 v17 新增的 episode.beats_json。"""
+    if "beats_json" in _cols(s, "episode"):         # 更老的造库流程里列可能已经不在
+        s.conn.execute("ALTER TABLE episode DROP COLUMN beats_json")
+
+
 def _drop_v16(s):
-    """退回 v15:删掉 v16 新增的 drama.premise_json。"""
+    """退回 v15:删掉 v16 新增的 drama.premise_json;v17 的也一并退掉。"""
+    _drop_v17(s)
     if "premise_json" in _cols(s, "drama"):         # 更老的造库流程里列可能已经不在
         s.conn.execute("ALTER TABLE drama DROP COLUMN premise_json")
 
@@ -392,4 +399,20 @@ def test_v15_to_v16_dramas_gain_an_empty_premise(tmp_path):
     assert repo.get(s, "drama", d)["premise_json"] == ""
     repo.update(s, "drama", d, premise_json='{"title": "替嫁"}')
     assert repo.get(s, "drama", d)["premise_json"] == '{"title": "替嫁"}'
+    s.close()
+
+
+def test_v16_to_v17_episodes_gain_empty_beats(tmp_path):
+    """v17:节拍标注(spec 2026-10-23-剧集脑爆系统-design.md 第 2a 节)写进 episode.beats_json;老集为空。"""
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    ep = repo.add_episode(s, repo.create_drama(s, "玉佩", "9:16"), 1, "script")
+    _drop_v17(s)
+    s.conn.execute("UPDATE meta SET value = '16' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    assert repo.get(s, "episode", ep)["beats_json"] == ""
+    repo.update(s, "episode", ep, beats_json='{"hook": "有"}')
+    assert repo.get(s, "episode", ep)["beats_json"] == '{"hook": "有"}'
     s.close()
