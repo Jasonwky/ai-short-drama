@@ -83,6 +83,28 @@
           候选 {{ c.n + 1 }}</label>{% else %}<label>候选 {{ c.n + 1 }}</label>{% if c.picked %} <b>已选用</b>{% endif %}{% endif %}<pre>{{ c.text }}</pre><p class="hint">{{ c.why }}</p></div>
     {% endfor %}
     </div></div>
+  {% elif preview.premise is defined %}
+    {% set pm = preview.premise %}
+    {% if pm.overlap > 0.5 %}<p class="status-bad" data-premise-overlap>本批方案趋同(维度重合 {{ pm.overlap }}),可以重跑或加约束</p>{% endif %}
+    <p class="hint">每个字段挑一个方案的写法(也可点列头「整套选这个」);全部选完才能批准。「套路款」= 模型自评最典型的一个,仅供参考。</p>
+    <table data-premise-table>
+      <tr><th></th>
+        {% for c in pm.candidates %}
+          <th data-premise-candidate="{{ loop.index0 }}">方案 {{ loop.index }}
+            {% if loop.index0 == pm.routine %}<span class="tag" data-routine>套路款</span>{% endif %}
+            {% if run.state == "proposed" %}<br><button class="btn small" type="button" data-pick-all="{{ loop.index0 }}">整套选这个</button>{% endif %}</th>
+        {% endfor %}</tr>
+      {% for f, lab in pm.fields %}
+        <tr><th>{{ lab }}</th>
+          {% for c in pm.candidates %}
+            {% set v = c[f] %}
+            <td{% if pm.picked.get(f) == loop.index0 %} data-picked{% endif %}>
+              {% if run.state == "proposed" %}<label><input type="radio" name="pick-{{ f }}" value="{{ loop.index0 }}" form="approve-form">
+              {% elif pm.picked.get(f) == loop.index0 %}<b>已选</b>
+              {% endif %}{% if f == "protagonist" %}{{ v.name }}({{ v.tag }};{{ v.contrast }}){% else %}{{ v }}{% endif %}{% if run.state == "proposed" %}</label>{% endif %}</td>
+          {% endfor %}</tr>
+      {% endfor %}
+    </table>
   {% elif preview.episodes %}
     {% for e in preview.episodes %}
       <div class="side-by-side"><div><label>第 {{ loop.index }} 集大纲</label><pre>{{ e.outline }}</pre></div>
@@ -106,5 +128,16 @@
     <button class="btn" type="submit" data-reject>驳回</button>
   </form>
 </section>
+{% endif %}
+{% if preview.premise is defined and run.state == "proposed" %}
+<script>
+  // 「整套选这个」:把该方案列的所有字段单选勾上
+  document.querySelectorAll("[data-pick-all]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var i = btn.getAttribute("data-pick-all");
+      document.querySelectorAll('input[type=radio][name^="pick-"][value="' + i + '"]').forEach(function (r) { r.checked = true; });
+    });
+  });
+</script>
 {% endif %}
 {% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "_macros.html" import llm_run_list %}
+{% block content %}
+<h1>脑爆立项 · {{ d.title }} <a class="btn small" href="/">← 返回立项</a></h1>
+<section class="card">
+  <h2>现有立项</h2>
+  {% if current %}<pre data-premise-current>{{ current }}</pre>
+  {% else %}<p class="empty" data-premise-current>还没做过立项</p>{% endif %}
+  <p class="hint">批准后的立项会随大纲、编剧任务一起发给 LLM;不会改剧名,方案里的片名只当建议。</p>
+</section>
+<section class="card">
+  <h2>想一批方案</h2>
+  <form method="post" action="/llm/start/premise/{{ drama_id }}" data-llm-premise>
+    <label>一句话想法</label><textarea name="idea" required placeholder="例:替嫁冲喜的庶女其实是神医"></textarea>
+    <label>方案数</label>
+    <select name="n">{% for k in range(n_range[0], n_range[1] + 1) %}<option{% if k == 3 %} selected{% endif %}>{{ k }}</option>{% endfor %}</select>
+    <label>额外约束(可空)</label><input type="text" name="constraint" placeholder="例:不要古装">
+    <button class="btn primary" type="submit">LLM 出方案</button>
+    <p class="hint">想法会发送给 LLM;方案要你逐字段挑 / 拼、批准才写回。</p>
+  </form>
+  {{ llm_run_list(runs, llm_state) }}
+</section>
+{% endblock %}

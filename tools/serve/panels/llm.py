@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
 from tools.drama import blocking, repo
-from tools.llm import describe, outline, runs, script_writer, service, storyboard, vision_check, voices
+from tools.llm import describe, diverge, outline, premise, runs, script_writer, service, storyboard, vision_check, voices
 from tools.serve.panels.common import confirm_page, render, rt
 
 router = APIRouter()
@@ -22,7 +22,8 @@ router = APIRouter()
 PARAMS = {"outline": {"novel": str, "n_episodes": int}, "script_synopsis": {"synopsis": str, "minutes": int},
           "script_adapt": {"minutes": int}, "storyboard": {}, "voice": {},
           **{f"describe_{t}": {} for t in describe.FIELDS}, "vision_check": {"video_sha256": str},
-          "critique": {"role": str}, "rewrite": {"span": str, "intent": str, "note": str}}
+          "critique": {"role": str}, "rewrite": {"span": str, "intent": str, "note": str},
+          "premise": {"idea": str, "n": int, "constraint": str}}
 
 
 def _params(task: str, form) -> dict:
@@ -41,6 +42,8 @@ def _home(store, row) -> tuple[str, dict]:
     """这条 LLM 任务回到哪个面板,以及渲染导航用的上下文。"""
     t, tid = row["target_type"], row["target_id"]
     if t == "drama":
+        if row["task"] == "premise":
+            return f"/drama/{tid}/premise", {"panel_key": "projects", "drama_id": tid}
         return f"/drama/{tid}/outline", {"panel_key": "outline", "drama_id": tid}
     if t in ("character", "scene", "prop"):
         did = repo.get(store, t, tid)["drama_id"]
@@ -89,6 +92,12 @@ def _preview(store, row) -> dict:
         picked = dec["pick"] if dec else None
         return {"span": params["span"], "intent": params["intent"],
                 "candidates": [{"n": i, "picked": i == picked, **c} for i, c in enumerate(out["candidates"])]}
+    if task == "premise":
+        cands = out["candidates"]
+        picked = (runs.decision(row) or {}).get("assemble", {}) if row["state"] == "approved" else {}
+        return {"premise": {"fields": [(f, premise.LABELS[f]) for f in premise.FIELDS], "candidates": cands,
+                            "routine": diverge.routine_index(cands),
+                            "overlap": round(diverge.overlap(cands, tuple(premise.DIMS)), 2), "picked": picked}}
     if task == "voice":
         return {"voice": voices.compose(out),
                 "current": repo.get(store, "character", row["target_id"])["voice_desc"]}
@@ -122,6 +131,13 @@ def _decision(task: str, form) -> dict | None:
     if task == "rewrite":
         raw = str(form.get("pick", ""))
         return {"pick": int(raw) if raw.isdigit() else -1}
+    if task == "premise":
+        picks = {}
+        for f in premise.FIELDS:
+            raw = str(form.get(f"pick-{f}", ""))
+            if raw.isdecimal():
+                picks[f] = int(raw)
+        return {"assemble": picks}
     return None
 
 

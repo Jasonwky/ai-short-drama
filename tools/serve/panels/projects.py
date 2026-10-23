@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse
 
 from tools.drama import repo
 from tools.drama.styles import STYLES, get_style
+from tools.llm import premise, runs
 from tools.serve.panels.bundles import listing
 from tools.serve.panels.common import render, rt
 
@@ -21,6 +22,17 @@ def page(request: Request):
         "FROM drama d ORDER BY d.id DESC").fetchall()
     return render(request, "projects.html", "projects", dramas=dramas, style_list=STYLES,
                   bundles=listing(runtime.data_root))
+
+
+@router.get("/drama/{drama_id}/premise")
+def premise_page(request: Request, drama_id: int):
+    """脑爆立项(spec 2026-10-23-剧集脑爆系统-design.md 第 1 节):一句话想法 → 几个真不一样的方案,人逐字段挑 / 拼。"""
+    store = rt(request).store
+    drama = repo.get(store, "drama", drama_id)
+    current = premise.load(store, drama_id)
+    return render(request, "premise.html", "projects", drama_id=drama_id, d=drama,
+                  current=premise.render(current) if current else "",
+                  runs=runs.history(store, "drama", drama_id, "premise"), n_range=premise.N_RANGE)
 
 
 @router.post("/dramas")

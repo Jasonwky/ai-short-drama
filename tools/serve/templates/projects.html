@@ -10,6 +10,7 @@
         <tr>
           <td>{{ d.title }}</td><td>{{ d.aspect_ratio }}</td><td>{{ styles.get(d.style, "未选") }}</td><td>{{ d.n_episodes }}</td>
           <td><a href="/drama/{{ d.id }}/script">打开</a>
+            <a href="/drama/{{ d.id }}/premise" data-premise-link>脑爆立项</a>
             <form method="post" action="/drama/{{ d.id }}/bundle" style="display: inline">
               <button class="btn small" type="submit" data-export-bundle>导出工程</button></form></td>
         </tr>
