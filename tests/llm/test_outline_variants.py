@@ -47,3 +47,12 @@ def test_pick_writes_the_outline_and_refuses_if_a_script_appeared(store):
     repo.update(store, "episode", e, script="有了剧本")
     with pytest.raises(ValueError, match="已有剧本"):
         ov.apply(store, e, out, ctx, {"pick": 0})
+
+
+def test_pick_clears_stale_beats(store):
+    e = _ep(store)
+    repo.update(store, "episode", e, beats_json='{"hook": "有", "quote": "旧"}')
+    ctx = ov.context(store, e, n=2)
+    out = {"variants": [_v(text="甲"), _v("强悬念", "身份反转", "身份待揭", text="乙")]}
+    ov.apply(store, e, out, ctx, {"pick": 0})
+    assert repo.get(store, "episode", e)["beats_json"] == ""

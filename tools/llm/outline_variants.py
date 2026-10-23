@@ -75,4 +75,6 @@ def decision_problems(args: dict, decision: dict) -> list[str]:
 
 def apply(store: Store, episode_id: int, args: dict, ctx: dict, decision: dict) -> None:
     _refuse_if_scripted(repo.get(store, "episode", episode_id))
-    repo.update(store, "episode", episode_id, outline=args["variants"][decision["pick"]]["outline"].strip())
+    # 大纲重写了,旧节拍里逐字引用的依据对不上新大纲,一并清掉
+    repo.update(store, "episode", episode_id, outline=args["variants"][decision["pick"]]["outline"].strip(),
+                beats_json="")
