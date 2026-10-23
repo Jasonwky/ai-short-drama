@@ -55,8 +55,12 @@ def fail_stale(store: Store) -> int:
     return len(ids)
 
 
-def approve(store: Store, run_id: int) -> None:
-    _move(store, run_id, "approved", decided_at=now())
+def approve(store: Store, run_id: int, decision: dict | None = None) -> None:
+    """decision:人在批准时做的选择(评审团采纳了哪些问题、局部改写挑了哪个);不需要选择的任务为 None。"""
+    fields = {"decided_at": now()}
+    if decision is not None:
+        fields["decision_json"] = json.dumps(decision, ensure_ascii=False)
+    _move(store, run_id, "approved", **fields)
 
 
 def reject(store: Store, run_id: int) -> None:

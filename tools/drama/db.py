@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -340,6 +340,16 @@ REVIEW_DDL_V14 = [REVIEW_DDL[0].replace("  created_at TEXT NOT NULL\n)",
 assert REVIEW_DDL_V14[0] != REVIEW_DDL[0]
 SCHEMA += "".join(f"{stmt};\n" for stmt in REVIEW_DDL_V14)
 
+# v15:人在批准时做的选择(spec 2026-10-23-剧集脑爆系统-design.md 第 0 节)—— 评审团采纳了哪些问题、
+# 局部改写挑了哪个候选。和产物一样:一经写下不可改(批准即锁定,可复现)
+DECISION_DDL = [
+    "ALTER TABLE llm_run ADD COLUMN decision_json TEXT",
+    """CREATE TRIGGER llm_run_decision_locked BEFORE UPDATE OF decision_json ON llm_run
+WHEN OLD.decision_json IS NOT NULL
+BEGIN SELECT RAISE(ABORT, '批准时的选择一经写下不可改 —— 要改就重跑一条'); END""",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in DECISION_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -383,6 +393,8 @@ MIGRATIONS: dict[int, list[str]] = {
          "INSERT INTO llm_run SELECT * FROM llm_run_v12", "DROP TABLE llm_run_v12", *LLM_RUN_DDL_V13[1:]],
     # v14:看片确认记下人勾了哪些清单项(spec 2026-10-23-不穿帮验收-design.md 第 1 节);老确认为空
     13: ["ALTER TABLE segment_review ADD COLUMN checks_json TEXT NOT NULL DEFAULT ''"],
+    # v15:llm_run 记下批准时人的选择(评审团采纳 / 局部改写挑哪个)
+    14: DECISION_DDL,
 }
 
 

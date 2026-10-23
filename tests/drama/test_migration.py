@@ -8,8 +8,16 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v15(s):
+    """退回 v14:删掉 v15 新增的 llm_run.decision_json 与它的触发器。"""
+    s.conn.execute("DROP TRIGGER IF EXISTS llm_run_decision_locked")
+    if "decision_json" in _cols(s, "llm_run"):      # 更老的造库流程会先把 llm_run 整张删掉 / 换成旧表
+        s.conn.execute("ALTER TABLE llm_run DROP COLUMN decision_json")
+
+
 def _drop_v14(s):
-    """退回 v13:删掉 v14 新增的看片确认勾选项列。"""
+    """退回 v13:删掉 v14 新增的看片确认勾选项列;v15 的也一并退掉。"""
+    _drop_v15(s)
     s.conn.execute("ALTER TABLE segment_review DROP COLUMN checks_json")
 
 
@@ -336,4 +344,29 @@ def test_v13_to_v14_old_reviews_have_no_ticked_items(tmp_path):
     assert repo.review(s, seg, "a" * 64)["checks_json"] == ""
     repo.add_review(s, seg, video_path="v.mp4", sha256="b" * 64, checks=["physics", "seam"])
     assert repo.review(s, seg, "b" * 64)["checks_json"] == '["physics", "seam"]'
+    s.close()
+
+
+def test_v14_to_v15_llm_runs_gain_a_locked_decision(tmp_path):
+    """v15:批准时人的选择(采纳哪些问题 / 挑哪个候选)记进 llm_run,批准后不可改。"""
+    import sqlite3
+
+    import pytest
+
+    from tools.llm import runs
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "玉佩", "9:16")
+    _drop_v15(s)
+    s.conn.execute("UPDATE meta SET value = '14' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    rid = runs.start(s, task="critique", target_type="drama", target_id=d, model="m", input_sha="x",
+                     llm_mode="real", params={"role": "观众"})
+    runs.propose(s, rid, {"issues": []}, "j")
+    runs.approve(s, rid, decision={"adopt": [], "reject": []})
+    assert runs.get(s, rid)["decision_json"] == '{"adopt": [], "reject": []}'
+    with pytest.raises(sqlite3.IntegrityError, match="不可改"):
+        s.conn.execute("UPDATE llm_run SET decision_json = '{}' WHERE id = ?", (rid,))
     s.close()
