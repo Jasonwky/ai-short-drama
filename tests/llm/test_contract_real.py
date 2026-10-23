@@ -192,3 +192,12 @@ def test_premise_candidates_really_differ(client):
     res = _gate(client, "premise", premise, ctx)
     cands = res.args["candidates"]
     assert len(cands) == 3 and diverge.distinct_problems(cands, tuple(premise.DIMS)) == []
+
+
+def test_beats_cover_every_episode_with_verbatim_quotes(client):
+    """节拍标注(2026-10-23):每集都标、依据逐字出自该集大纲(判卷口径)。"""
+    from tools.llm import beats
+    ctx = {"episodes": [(1, "沈青禾替嫁冲喜,大婚夜被嫡姐羞辱,她当众一针救活昏迷的王爷,揭穿管事下毒。"),
+                        (2, "王爷醒来,李福跪地求饶,沈玉瑶被杖毙;王爷捏住她的下巴,追问她究竟是谁。")]}
+    res = _gate(client, "beats", beats, ctx)
+    assert sorted(e["number"] for e in res.args["episodes"]) == [1, 2]

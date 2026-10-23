@@ -20,7 +20,7 @@ from tools.drama import invalidation, repo
 from tools.drama.db import Store
 from tools.drama.invalidation import Impact
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
-from tools.llm import critique, describe, outline, premise, rewrite, runs, script_writer, storyboard, vision_check, voices
+from tools.llm import beats, critique, describe, outline, premise, rewrite, runs, script_writer, storyboard, vision_check, voices
 from tools.llm.client import LLMError
 from tools.llm.gate import GateFailed, input_sha, run_gated
 
@@ -66,6 +66,8 @@ TASKS: dict[str, Spec] = {
     "rewrite": Spec(rewrite, "episode", rewrite.context, 4000, "局部改写:给选中的一段出几个写法"),
     # 立项发散(spec 2026-10-23-剧集脑爆系统-design.md 第 1 节):N 个维度上真不一样的方案,人逐字段挑 / 拼
     "premise": Spec(premise, "drama", premise.context, 6000, "立项发散:出几个真不一样的方案"),
+    # 大纲节拍标注(spec 2026-10-23-剧集脑爆系统-design.md 第 2a 节):逐集闭集字段 + 逐字依据;节奏由代码统计、只提示
+    "beats": Spec(beats, "drama", beats.context, 8000, "大纲节拍:逐集标注钩子、反转、情绪、卡点"),
 }
 
 
