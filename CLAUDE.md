@@ -96,6 +96,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   **分镜方案** `shot_options`:景别 / 机位至少差一项,过场记表、陈设表、竖屏可拍性、同场景前后段的姿态衔接(打回);
   **批准不作废已生成的首帧 / 视频**(用户原则),景别 + 机位由代码拼进首帧(`framing.shot_phrase`)、运镜拼进视频(`move_phrase`),
   首帧任务记 `frame` 快照,镜头改过时首帧卡片提示「当前首帧还是旧方案」。
+  **修改回路**(P19-C,spec 2026-10-24-剧本分镜修改回路-design.md):`script_revise` / `storyboard_revise`,人写意见(一行一条,可「针对」、可「必须改」),
+  LLM 交逐处替换 / 逐段逐字段补丁,人**按意见整组**接受 / 驳回;共用逻辑在 `llm/revise.py`。写回前后存 `llm_run.applied_json`(v18,不可改),
+  「回到这一轮之前」按它恢复(两态)。分镜修改判卷 = 改后问题 − 改前就有的问题;判卷问题是 `gate.Fatal` 时不回炉。
+  ⚠️ 传给模板的 dict 别用 `items` / `keys` / `values` 当键:Jinja 的 `g.items` 取到的是 dict 方法(P19-C 踩过)
   ⚠️ 模板里拿不到的变量 Jinja 会悄悄渲染成空串(P17b 自测抓到过表单地址缺剧号):`render()` 把 `drama_id` 留给导航,模板里用 `drama.id` / 自己传的对象
 - 增量补全 `tools/gen/fill.py` 与单条生成共用规划器的纯检查函数(`*_problems`);**一律两态**,确认时只认确认页列出的目标。
   工程包 `tools/drama/bundle.py`:导入永远新建一部剧(id 重映射、路径加 `imports/<编号>/` 前缀、逐文件校验 sha256)

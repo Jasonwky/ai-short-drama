@@ -59,8 +59,8 @@
       {{ revise_history(e.rounds) }}
       {% if e.drift and (e.drift.missing or e.drift.orphan) %}
         <div class="status-bad" data-drift>剧本和分镜的台词对不上(只提示,不拦):
-          {% if e.drift.missing %}剧本里有、段落里没有:{{ e.drift.missing | join(" / ") }}。{% endif %}
-          {% if e.drift.orphan %}段落里有、剧本里已经没有:{{ e.drift.orphan | join(" / ") }}。{% endif %}
+          {% if e.drift.missing %}剧本里有、段落里没有:「{{ e.drift.missing | join("」「") }}」;{% endif %}
+          {% if e.drift.orphan %}段落里有、剧本里已经没有:「{{ e.drift.orphan | join("」「") }}」;{% endif %}
           要同步就去分镜页提修改意见,或在段落编辑页改描述。</div>
       {% endif %}
       {% if e.notice %}<p class="hint" data-rewrite-notice>{{ e.notice }}</p>{% endif %}
