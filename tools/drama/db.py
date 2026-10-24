@@ -450,7 +450,9 @@ def now() -> str:
 
 class Store:
     def __init__(self, path: str | Path = ":memory:"):
-        self.conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
+        # cached_statements=0:网页请求线程和后台线程共用这个连接,同时跑同一条 SQL 时会拿到同一个缓存的语句对象,
+        # 互相重置 —— 实测读空、甚至抛 InterfaceError(API misuse)。不缓存就各用各的语句(SQLite 本身是串行化模式)
+        self.conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None, cached_statements=0)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         if str(path) != ":memory:":

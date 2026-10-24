@@ -68,3 +68,29 @@ def test_reopen_keeps_data_and_rejects_version_mismatch(tmp_path):
 
     with pytest.raises(RuntimeError, match=f"99 与代码 {SCHEMA_VERSION} 不符"):
         Store(path)
+
+
+def test_two_threads_reading_the_same_statement_never_read_empty(store):
+    """控制台里网页请求和后台 LLM 线程共用一个连接,会同时跑同一条 SQL(P19-B 逐集队列压出来的:
+    两边都在 prepare 里 repo.get 剧那一行)。按 id 读一条早已存在的记录,一次都不许读空。"""
+    import threading
+    from tools.drama import repo
+    d = repo.create_drama(store, "玉佩", "9:16")
+    misses = []
+
+    def reader():
+        for _ in range(3000):
+            if repo.get(store, "drama", d) is None:
+                misses.append(1)
+
+    def safe_reader():
+        try:
+            reader()
+        except KeyError:                       # repo.get 读空时抛 KeyError(「drama N 不存在」)
+            misses.append(1)
+    ts = [threading.Thread(target=safe_reader) for _ in range(2)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert not misses, f"两个线程同时读,有 {len(misses)} 次读空"
