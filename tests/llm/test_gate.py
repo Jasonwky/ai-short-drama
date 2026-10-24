@@ -5,7 +5,8 @@ import json
 import pytest
 
 from tools.llm.client import NoToolCall, ToolResult, Truncated
-from tools.llm.gate import GateFailed, run_gated, schema_errors, strict_schema_problems
+from tools.llm.fake import FakeLLM
+from tools.llm.gate import Fatal, GateFailed, run_gated, schema_errors, strict_schema_problems
 
 SCHEMA = {"type": "object", "additionalProperties": False, "required": ["mood", "n"],
           "properties": {"mood": {"type": "string", "enum": ["calm", "sad"]}, "n": {"type": "integer"}}}
@@ -92,3 +93,23 @@ def test_truncation_is_not_retried(tmp_path):
     with pytest.raises(Truncated):
         _run(client, tmp_path)
     assert len(client.seen) == 1                                 # 没有第二次调用
+
+
+SCHEMA_X = {"type": "object", "additionalProperties": False, "required": ["x"], "properties": {"x": {"type": "string"}}}
+
+
+def test_fatal_problem_fails_at_once_without_retrying(tmp_path):
+    llm = FakeLLM({"t": {"x": "a"}})
+    with pytest.raises(GateFailed, match="先在资产里建") as e:
+        run_gated(client=llm, model="m", task="t", system="s", user="u", tool_name="t", description="d",
+                  schema=SCHEMA_X, judge=lambda args: [Fatal("「小翠」不是本剧角色,先在资产里建"), "顺带的问题"],
+                  journal_dir=tmp_path, max_rounds=3)
+    assert llm.calls == 1 and len(e.value.rounds) == 1                 # 没有回炉
+
+
+def test_ordinary_problems_still_retry(tmp_path):
+    llm = FakeLLM({"t": {"x": "a"}})
+    with pytest.raises(GateFailed):
+        run_gated(client=llm, model="m", task="t", system="s", user="u", tool_name="t", description="d",
+                  schema=SCHEMA_X, judge=lambda args: ["格式不对"], journal_dir=tmp_path, max_rounds=3)
+    assert llm.calls == 3

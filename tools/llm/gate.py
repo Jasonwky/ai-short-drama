@@ -33,6 +33,11 @@ class GateFailed(LLMError):
         self.journal_path = journal_path
 
 
+class Fatal(str):
+    """判卷问题里**回炉也改不好**的那种(如人在意见里要加的新角色还没建):出现就立即失败,不再白烧轮次
+    —— 同 `max_tokens` 截断不进重试的道理(spec 2026-10-24-剧本分镜修改回路-design.md 0.1)。"""
+
+
 @dataclass
 class Round:
     n: int
@@ -121,6 +126,10 @@ def run_gated(*, client, model: str, task: str, system: str, user: str, tool_nam
             if not rnd.problems:
                 dump("ok", res.args)
                 return GateResult(res.args, rounds, path)
+            fatal = [p for p in rnd.problems if isinstance(p, Fatal)]
+            if fatal:
+                dump("failed", None, fatal[0])
+                raise GateFailed(f"{task}:{fatal[0]}(回炉也改不好,不再重试)", rounds, path)
         feedback = "上一版不合格,请逐条修正后重新调用工具 " + tool_name + ":\n" + "\n".join(f"- {p}" for p in rnd.problems)
         if rnd.raw:
             messages.append({"role": "assistant", "content": f"(上一版工具参数){rnd.raw}"})
