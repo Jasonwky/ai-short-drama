@@ -20,7 +20,7 @@ from tools.drama import invalidation, repo
 from tools.drama.db import Store
 from tools.drama.invalidation import Impact
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
-from tools.llm import beats, critique, describe, outline, outline_variants, premise, rewrite, runs, script_revise, script_writer, shot_options, storyboard, vision_check, voices
+from tools.llm import beats, critique, describe, outline, outline_variants, premise, rewrite, runs, script_revise, script_writer, shot_options, storyboard, storyboard_revise, vision_check, voices
 from tools.llm.client import LLMError
 from tools.llm.gate import GateFailed, input_sha, run_gated
 
@@ -74,6 +74,9 @@ TASKS: dict[str, Spec] = {
     "shot_options": Spec(shot_options, "segment", shot_options.context, 6000, "分镜方案:给这段出几个镜头方案"),
     # 剧本修改回路(spec 2026-10-24-剧本分镜修改回路-design.md 第 1 节):人提意见,LLM 交逐处替换,按意见整组批准
     "script_revise": Spec(script_revise, "episode", script_revise.context, 8000, "剧本修改:按你的意见逐处改"),
+    # 分镜修改回路(第 2 节):逐段逐字段补丁,只拦新引入的问题;已生成的首帧 / 视频不作废,只标过期
+    "storyboard_revise": Spec(storyboard_revise, "episode", storyboard_revise.context, 12000,
+                              "分镜修改:按你的意见逐段改", max_rounds=4),
 }
 
 
