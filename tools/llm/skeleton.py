@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import json
 
-from tools.drama import repo
+from tools.drama import pacing, repo
 from tools.drama.db import Store
-from tools.llm import outline
+from tools.llm import diverge, outline, premise, runs
 
 
 def load(store: Store, drama_id: int) -> dict | None:
@@ -61,9 +61,6 @@ def render(skel: dict) -> str:
 
 
 # ---- 骨架 LLM 任务(spec 第 1 节)----
-# 依赖放在这里而不是文件头:上面的纯函数是地基,不跟着任务部分改动
-from tools.drama import pacing  # noqa: E402
-from tools.llm import diverge, premise, runs  # noqa: E402
 
 TASK = "skeleton"
 TOOL = "submit_skeletons"
