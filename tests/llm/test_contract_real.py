@@ -227,3 +227,30 @@ def test_shot_options_pass_the_existing_checks(client):
            "current": {"shot_type": "", "angle": "", "movement": "", "image_prompt": "", "blocking_json": ""}}
     res = _gate(client, "shot_options", shot_options, ctx)
     assert len(res.args["options"]) == 2
+
+
+def test_script_revise_honours_must_change_and_edits_verbatim(client):
+    """剧本修改(2026-10-24):真模型对「必须改」不许回答「不改」,每处 old 逐字在剧本里、整行唯一(判卷口径)。"""
+    from tools.llm import revise, script_revise
+    script = (GOLDEN / "tijia_ep1.txt").read_text(encoding="utf-8")
+    ctx = {"script": script, "characters": ["沈青禾", "沈玉瑶", "李福", "萧珩"], "rejected": [],
+           "notes": [{"text": "李福的台词太软,改得更嚣张刻薄", "target": "", "must": True},
+                     {"text": "结尾加一句萧珩的狠话", "target": "", "must": False}]}
+    res = _gate(client, "script_revise", script_revise, ctx)
+    must = next(r for r in res.args["responses"] if r["note"] == 1)
+    assert must["verdict"] == "改" and must["edits"]
+    edits = script_revise.plan_edits(script, res.args, {"accept": revise.changed_notes(res.args), "reject": []})
+    assert script_revise.splice(script, edits) != script
+
+
+def test_storyboard_revise_patches_converge_without_new_problems(client):
+    """分镜修改(2026-10-24):题甲第 1 集 9 段(原本就超出段数范围),真模型的补丁只许不引入新问题(判卷口径)。
+    第 3 段在样本里已经是近景,必改项放在第 1 段(全景 → 近景)。"""
+    import json
+    from tools.llm import storyboard_revise
+    ctx = json.loads((GOLDEN / "tijia_ep1_storyboard.json").read_text(encoding="utf-8"))
+    ctx.update(rejected=[], notes=[{"text": "第 1 段景别改成近景,突出沈玉瑶居高临下的压迫感", "target": "1", "must": True},
+                                  {"text": "整集运镜太单调,挑一两段改成推镜", "target": "", "must": False}])
+    res = _gate(client, "storyboard_revise", storyboard_revise, ctx)
+    must = next(r for r in res.args["responses"] if r["note"] == 1)
+    assert must["verdict"] == "改" and all(p["segment"] == 1 for p in must["patches"])
