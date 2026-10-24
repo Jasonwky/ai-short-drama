@@ -22,6 +22,7 @@ TOOL = "submit_outline"
 TARGET = "drama"
 MAX_NOVEL_CHARS = 60000          # 超过就让人分批 —— 不静默截断
 MAX_PARAGRAPHS = 800
+MAX_EPISODES = 30                # 一次让 LLM 拆的集数上限;集数多就多分几批,不放松判卷
 EVENTS_MIN, EVENTS_MAX = 2, 8     # 下游不依赖这个数,只防空和失控;实测 3–6 太紧,7 条正常事件被打回
 
 SYSTEM = """你是短剧改编策划。把用户给的小说原文拆成指定集数的分集大纲,调用工具 submit_outline 提交。
@@ -73,6 +74,35 @@ def split_episodes(total: int, sizes: list[int]) -> list[int]:
     return got
 
 
+def plan(novel: str, total: int) -> list[tuple[list[str], int]]:
+    """切批 + 分集数;按字数分到某批的集数超过 MAX_EPISODES 时,把这批按字数再切成几批,各批集数尽量相等。"""
+    parts = batches(novel)
+    if not parts:
+        return []
+    out: list[tuple[list[str], int]] = []
+    for b, n in zip(parts, split_episodes(total, [sum(len(p) for p in b) for b in parts])):
+        k = -(-n // MAX_EPISODES)
+        counts = [n // k + (i < n % k) for i in range(k)]
+        out += zip(_cut(b, counts), counts)
+    return out
+
+
+def _cut(paras: list[str], counts: list[int]) -> list[list[str]]:
+    """按段落边界把一批切成 len(counts) 份,各份字数与集数成比例。"""
+    total, n = sum(len(p) for p in paras), sum(counts)
+    out: list[list[str]] = [[]]
+    acc, bound = 0, total * counts[0] / n
+    for p in paras:
+        if out[-1] and len(out) < len(counts) and acc >= bound:
+            out.append([])
+            bound += total * counts[len(out) - 1] / n
+        out[-1].append(p)
+        acc += len(p)
+    if len(out) < len(counts):
+        raise ValueError(f"这批原文只有 {len(paras)} 段,切不出 {len(counts)} 批(每批最多 {MAX_EPISODES} 集)—— 请在原文里多分段")
+    return out
+
+
 def context(store: Store, drama_id: int, novel: str, n_episodes: int) -> dict:
     repo.get(store, "drama", drama_id)
     paras = paragraphs(novel)
@@ -84,8 +114,8 @@ def context(store: Store, drama_id: int, novel: str, n_episodes: int) -> dict:
     if len(novel) > MAX_NOVEL_CHARS or len(paras) > MAX_PARAGRAPHS:
         problems.append(f"小说原文 {len(novel)} 字 / {len(paras)} 段,超过单次上限 {MAX_NOVEL_CHARS} 字 / "
                         f"{MAX_PARAGRAPHS} 段 —— 请分批(不静默截断)")
-    if not 1 <= n_episodes <= 30:
-        problems.append("集数要在 1–30 之间")
+    if not 1 <= n_episodes <= MAX_EPISODES:
+        problems.append(f"集数要在 1–{MAX_EPISODES} 之间")
     elif len(paras) < n_episodes:
         problems.append(f"原文只有 {len(paras)} 段,拆不出 {n_episodes} 集")
     if problems:

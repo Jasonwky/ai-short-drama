@@ -31,6 +31,27 @@ def test_split_episodes_is_proportional_with_at_least_one_each():
         outline.split_episodes(2, [1, 1, 1])
 
 
+def test_plan_splits_a_batch_with_too_many_episodes():
+    novel = "\n".join("段" * 10 for _ in range(200))                  # 2000 字,按字数只有 1 批
+    plan = outline.plan(novel, 100)
+    assert [n for _, n in plan] == [25, 25, 25, 25]                   # 每批不超过 MAX_EPISODES 集
+    assert [len(b) for b, _ in plan] == [50, 50, 50, 50]              # 段落按字数跟着分,首尾相接
+    assert outline.plan(novel, 30) == [(outline.paragraphs(novel), 30)]   # 没超就不切
+
+
+def test_plan_keeps_char_batches_and_only_subdivides_the_crowded_ones(monkeypatch):
+    monkeypatch.setattr(outline, "MAX_NOVEL_CHARS", 1000)
+    novel = "\n".join("段" * 9 for _ in range(150))                   # 1500 字 → 1000 + 500 两批
+    plan = outline.plan(novel, 60)
+    assert [n for _, n in plan] == [20, 20, 20] and sum(len(b) for b, _ in plan) == 150
+
+
+def test_context_rejects_more_than_max_episodes_in_one_call(store):
+    d = repo.create_drama(store, "玉佩", "9:16", "realistic")
+    with pytest.raises(ValueError, match="1–30"):
+        outline.context(store, d, "\n".join("段落" * 60 for _ in range(40)), 31)
+
+
 def test_first_batch_prompt_is_unchanged_and_later_batches_carry_the_previous_outline(store):
     d = repo.create_drama(store, "玉佩", "9:16", "realistic")
     first = outline.context(store, d, NOVEL, 3)

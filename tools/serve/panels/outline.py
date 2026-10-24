@@ -32,14 +32,14 @@ def page(request: Request, drama_id: int):
 def batches(request: Request, drama_id: int, novel: str = Form(""), n_episodes: int = Form(...)):
     store = rt(request).store
     repo.get(store, "drama", drama_id)
-    parts = outline.batches(novel)
+    parts = outline.plan(novel, n_episodes)
     if not parts:
         raise ValueError("小说原文是空的")
-    counts = outline.split_episodes(n_episodes, [sum(len(p) for p in b) for b in parts])
     last = store.conn.execute("SELECT MAX(number) FROM episode WHERE drama_id = ?", (drama_id,)).fetchone()[0] or 0
     rows, start = [], last + 1
-    for i, (b, n) in enumerate(zip(parts, counts), 1):
+    for i, (b, n) in enumerate(parts, 1):
         rows.append({"i": i, "text": "\n".join(b), "paras": len(b), "chars": sum(len(p) for p in b), "n": n,
                      "head": b[0][:40], "tail": b[-1][-40:], "from_ep": start, "to_ep": start + n - 1})
         start += n
-    return render(request, "outline_batches.html", "outline", drama_id=drama_id, rows=rows, last=last)
+    return render(request, "outline_batches.html", "outline", drama_id=drama_id, rows=rows, last=last,
+                  max_episodes=outline.MAX_EPISODES)

@@ -21,7 +21,7 @@ from tools.llm import diverge
 TASK = "premise"
 TOOL = "submit_premises"
 TARGET = "drama"
-N_RANGE = (3, 6)
+N_RANGE = (3, 12)
 DIMS = {
     "genre": ("古装权谋", "古装甜宠", "都市逆袭", "都市情感", "悬疑", "重生复仇", "家庭伦理", "其他"),
     "payoff": ("打脸", "逆袭", "复仇", "甜宠", "身份揭晓", "智斗"),

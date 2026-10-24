@@ -184,14 +184,15 @@ def test_rewrite_gives_distinct_candidates_in_script_format(client):
     assert 2 <= len(texts) <= 3 and len(set(texts)) == len(texts) and span not in texts
 
 
-def test_premise_candidates_really_differ(client):
+@pytest.mark.parametrize("n", [3, 12])                     # 12 = N_RANGE 上限(2026-10-24 从 6 放宽)
+def test_premise_candidates_really_differ(client, n):
     """立项发散(2026-10-23):真模型给的方案两两至少 2 个维度不同、过合规词表、典型度在 0–1(判卷口径)。"""
     from tools.llm import diverge, premise
-    ctx = {"idea": "替嫁冲喜的庶女,大婚夜发现王爷是被下毒,她其实是隐世神医", "n": 3, "constraint": "",
+    ctx = {"idea": "替嫁冲喜的庶女,大婚夜发现王爷是被下毒,她其实是隐世神医", "n": n, "constraint": "",
            "characters": [], "current": "(还没有)"}
     res = _gate(client, "premise", premise, ctx)
     cands = res.args["candidates"]
-    assert len(cands) == 3 and diverge.distinct_problems(cands, tuple(premise.DIMS)) == []
+    assert len(cands) == n and diverge.distinct_problems(cands, tuple(premise.DIMS)) == []
 
 
 def test_beats_cover_every_episode_with_verbatim_quotes(client):

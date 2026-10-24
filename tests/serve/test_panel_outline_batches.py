@@ -15,6 +15,14 @@ def test_long_novel_is_split_into_batches_with_suggested_counts(client, store, m
     assert "约第 1–2 集" in page and 'target="_blank"' in page
 
 
+def test_a_hundred_episodes_from_a_short_novel_become_batches_of_at_most_30(client, store):
+    d = repo.create_drama(store, "百集", "9:16", "realistic")
+    novel = "\n".join("段" * 10 for _ in range(200))
+    page = client.post(f"/drama/{d}/outline/batches", data={"novel": novel, "n_episodes": "100"}).text
+    assert page.count("data-batch-start") == 4 and "约第 76–100 集" in page
+    assert page.count('name="n_episodes" value="25" min="1" max="30"') == 4
+
+
 def test_existing_episodes_continue_numbering(client, sample):
     page = client.get(f"/drama/{sample['drama']}/outline").text
     assert "接在第 1 集之后" in page and "data-outline-form" in page

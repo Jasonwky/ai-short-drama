@@ -27,6 +27,7 @@ def test_project_list_links_to_the_premise_page(client, store, sample):
     page = client.get(f'/drama/{sample["drama"]}/premise').text
     assert "data-llm-premise" in page and 'name="idea"' in page
     assert f'action="/llm/start/premise/{sample["drama"]}"' in page      # 表单要带上剧 id
+    assert 'name="n" value="3" min="3" max="12"' in page                  # 方案数自己填,不是下拉
 
 
 def test_review_page_shows_candidates_routine_tag_and_field_radios(client, store, sample):

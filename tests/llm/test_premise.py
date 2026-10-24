@@ -33,8 +33,10 @@ def test_context_needs_an_idea_and_a_sane_count(store):
     assert ctx["n"] == 3 and ctx["characters"] == ["沈青禾"]
     with pytest.raises(ValueError, match="想法"):
         pm.context(store, d, idea=" ", n=3, constraint="")
-    with pytest.raises(ValueError, match="3–6"):
-        pm.context(store, d, idea="一个想法够长了", n=9, constraint="")
+    assert pm.context(store, d, idea="一个想法够长了", n=12, constraint="")["n"] == 12
+    for n in (2, 13):
+        with pytest.raises(ValueError, match="3–12"):
+            pm.context(store, d, idea="一个想法够长了", n=n, constraint="")
 
 
 def test_schema_dimensions_are_closed_sets(store):

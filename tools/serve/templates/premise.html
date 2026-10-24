@@ -13,7 +13,8 @@
   <form method="post" action="/llm/start/premise/{{ d.id }}" data-llm-premise>
     <label>一句话想法</label><textarea name="idea" required placeholder="例:替嫁冲喜的庶女其实是神医"></textarea>
     <label>方案数</label>
-    <select name="n">{% for k in range(n_range[0], n_range[1] + 1) %}<option{% if k == 3 %} selected{% endif %}>{{ k }}</option>{% endfor %}</select>
+    <input type="number" name="n" value="3" min="{{ n_range[0] }}" max="{{ n_range[1] }}" required style="width: 80px">
+    <p class="hint">{{ n_range[0] }}–{{ n_range[1] }} 个;方案越多,LLM 越难做到两两不同,出错重写的轮次会变多。</p>
     <label>额外约束(可空)</label><input type="text" name="constraint" placeholder="例:不要古装">
     <button class="btn primary" type="submit">LLM 出方案</button>
     <p class="hint">想法会发送给 LLM;方案要你逐字段挑 / 拼、批准才写回。</p>
