@@ -2,6 +2,37 @@
 {% from "_macros.html" import llm_run_list %}
 {% block content %}
 <h1>大纲</h1>
+<section class="card" data-original>
+  <h2>原创:从立项出分集</h2>
+  {% if not has_premise %}
+    <p class="empty">先定立项:去 <a href="/drama/{{ drama.id }}/premise">脑爆立项</a> 批准一份立项,再从它出整部剧的骨架。</p>
+  {% else %}
+    <p class="hint">先出 2–3 个整部剧的骨架方案(分几幕、每幕目标与幕末大事件)让你挑;各幕集数由代码按权重分。
+      挑定后按批展开成分集大纲(每批 ≤ 30 集,上一批批准后再展开下一批);已有大纲或剧本的集不覆盖。立项会发送给 LLM 服务。</p>
+    <form method="post" action="/llm/start/skeleton/{{ drama.id }}" class="row" data-llm-skeleton>
+      <div><label>全剧几集</label><input type="number" name="total" value="30" min="1" max="200" style="width: 80px"></div>
+      <div><label>方案数</label><select name="n"><option>2</option><option selected>3</option></select></div>
+      <div style="flex: 1"><label>额外约束(可空)</label><input type="text" name="constraint" placeholder="例:前 10 集必须有一次大反转"></div>
+      <div><button class="btn primary" type="submit">出骨架方案</button></div>
+    </form>
+    {% if skeleton_text %}
+      <h2>当前骨架</h2>
+      <pre data-skeleton-current>{{ skeleton_text }}</pre>
+      <table data-skeleton-parts>
+        <tr><th>幕</th><th>集</th><th>已有大纲</th><th></th></tr>
+        {% for p in skeleton_parts %}
+          <tr data-expand-part="{{ p.start }}">
+            <td>第 {{ p.act }} 幕</td><td>第 {{ p.start }}–{{ p.end }} 集</td><td>{{ p.filled }} / {{ p.end - p.start + 1 }}</td>
+            <td><form method="post" action="/llm/start/expand/{{ drama.id }}">
+              <input type="hidden" name="start" value="{{ p.start }}"><input type="hidden" name="end" value="{{ p.end }}">
+              <button class="btn small" type="submit" data-expand-start>展开这一批</button></form></td>
+          </tr>
+        {% endfor %}
+      </table>
+      <p class="hint">逐批进行:上一批批准后再展开下一批(下一批以上一集大纲为前情;先生成的下一批,批准时会因输入变了被拒,要重跑)。</p>
+    {% endif %}
+  {% endif %}
+</section>
 <section class="card" data-outline>
   <h2>小说改编:原文 → 分集大纲{% if eps %}(接在第 {{ eps[-1].number }} 集之后){% endif %}</h2>
   <p class="hint">代码先把原文按段编号,LLM 只回每集的起止段号;代码核对首尾相接、覆盖全文、集数,不合格自动退回重做。

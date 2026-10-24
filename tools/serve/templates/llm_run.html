@@ -107,6 +107,31 @@
       </div>
     {% endfor %}
     </div></div>
+  {% elif preview.skeleton is defined %}
+    {% set sk = preview.skeleton %}
+    <p class="hint">挑一个方案作为整部剧的骨架(全剧 {{ sk.total }} 集);各幕集数由代码按权重分。「套路款」= 模型自评最常见的一个,仅供参考。</p>
+    {% if sk.kept %}<p class="status-bad" data-skeleton-kept>这部剧已有大纲的 {{ sk.kept }} 集不会变:换骨架后展开时这些集不覆盖</p>{% endif %}
+    {% for c in sk.candidates %}
+      <div class="card" data-skeleton-candidate="{{ loop.index0 }}"{% if sk.picked == loop.index0 %} data-picked{% endif %}>
+        {% if run.state == "proposed" %}<label><input type="radio" name="pick" value="{{ loop.index0 }}" form="approve-form">
+          方案 {{ loop.index }}</label>{% else %}<label>方案 {{ loop.index }}</label>{% if sk.picked == loop.index0 %} <b>已选用</b>{% endif %}{% endif %}
+        {% if c.routine %}<span class="tag" data-routine>套路款</span>{% endif %}
+        <p>主线 <b>{{ c.arc }}</b> · 节奏 <b>{{ c.rhythm }}</b> · 结局 <b>{{ c.ending }}</b></p>
+        <table>
+          <tr><th>幕</th><th>集</th><th>标题</th><th>主角目标</th><th>幕末大事件</th></tr>
+          {% for a in c.acts %}<tr><td>{{ loop.index }}</td><td>{{ a.start }}–{{ a.end }}</td><td>{{ a.title }}</td><td>{{ a.goal }}</td><td>{{ a.climax }}</td></tr>{% endfor %}
+        </table>
+        <p class="hint" style="color: #b8860b" data-skeleton-paywall>{{ c.paywall }}(只提示,不拦)</p>
+      </div>
+    {% endfor %}
+  {% elif preview.expand is defined %}
+    <p class="hint">批准后按集号写进各集大纲:没有的集新建,空集填上;<b>已有大纲或剧本的集不覆盖</b>。</p>
+    {% for e in preview.expand.episodes %}
+      <div class="card" data-expand-episode="{{ e.number }}" data-status="{{ e.status }}">
+        <p><b>第 {{ e.number }} 集</b> · {{ {"new": "新建", "fill": "填进空集", "keep": "已有,不覆盖"}[e.status] }}</p>
+        <pre>{{ e.outline }}</pre>
+      </div>
+    {% endfor %}
   {% elif preview.revise is defined %}
     {% set rv = preview.revise %}
     <p class="hint">按意见整组「接受」或「驳回」:同一条意见下的修改一起写回或一起不写;没被接受的地方一个字不动。</p>

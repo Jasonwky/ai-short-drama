@@ -218,6 +218,17 @@ def _drag_region(segment_id: int, shot: Path):
     return act
 
 
+def _with_premise(store: Store, drama_id: int):
+    """出骨架的前提是立项已批准;假 LLM 的产物批准不了,就直接写一份立项当前置数据(同 _blank_video 直接换视频)。"""
+    def act(page) -> None:
+        repo.update(store, "drama", drama_id, premise_json=json.dumps({
+            "title": "玉佩之谜", "logline": "孤女回老宅,从母亲的玉佩里挖出身世", "genre": "悬疑", "payoff": "身份揭晓",
+            "conflict": "身份错位", "hook_type": "强悬念", "protagonist": {"name": "林小雨", "tag": "孤女", "contrast": "柔弱外表下心思缜密"},
+            "antagonist": "沈墨", "hook": "雨夜,玉佩在她掌心裂开一道缝"}, ensure_ascii=False))
+        page.reload()
+    return act
+
+
 def _blank_video(store: Store, root: Path, segment_id: int):
     """假后端出不了白屏片:本机 ffmpeg 现造一条「1 秒正常 + 1 秒纯白」的片子当这段的当前视频,
     再跑导出开工前那一道白屏检查(写缓存)—— 视频卡片只读缓存,命中就该出提示。"""
@@ -475,6 +486,11 @@ def run(out_dir: Path) -> dict:
                       lambda pg: pg.locator("[data-batch-minutes]").select_option("1"),
                       "[data-batch-confirm]"],
                      f'[data-episode-row="{ids["episode3"]}"] [data-script-state="proposed"]', 60),
+                    ("outline", "原创:有立项 → 出骨架方案 → 审阅页三个方案、各幕集号、付费卡点提示(假 LLM 不能批准)",
+                     {}, [_with_premise(store, ids["drama"]),
+                          lambda pg: pg.locator("[data-llm-skeleton] input[name=total]").fill("12"),
+                          "[data-llm-skeleton] button[type=submit]"],
+                     "[data-llm-preview] [data-skeleton-candidate]", 40),
                     # 放在最后:填了陈设,前面链路的提示词就要按它查
                     ("assets", "场景选用途、填固定陈设 → 保存", {f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]': "石桌、古井"},
                      [lambda pg: pg.locator(f'[data-asset="scene-{ids["yard"]}"] [data-scene-purpose]').select_option("庭院"),

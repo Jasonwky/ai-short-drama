@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 
+from tools.llm import expand, skeleton
 from tools.llm.client import NoToolCall, ToolResult
 
 CANNED = {
@@ -33,6 +34,9 @@ CANNED = {
     "submit_storyboard_patches": lambda schema: storyboard_patches_sample(schema),
     # P19-B 逐集批量:自测里批量出剧本要走到「待你审」
     "submit_script": lambda schema: script_sample(schema),
+    # P19-A 原创分集:样例由任务模块自己给(按 schema 的 minItems 出数量)
+    "submit_skeletons": lambda schema: skeleton.fake_sample(schema),
+    "submit_episode_outlines": lambda schema: expand.fake_sample(schema),
 }
 
 

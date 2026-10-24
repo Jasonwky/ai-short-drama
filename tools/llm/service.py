@@ -20,7 +20,7 @@ from tools.drama import invalidation, repo
 from tools.drama.db import Store
 from tools.drama.invalidation import Impact
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
-from tools.llm import beats, critique, describe, outline, outline_variants, premise, rewrite, runs, script_revise, script_writer, shot_options, storyboard, storyboard_revise, vision_check, voices
+from tools.llm import beats, critique, describe, expand, outline, outline_variants, premise, rewrite, runs, script_revise, script_writer, shot_options, skeleton, storyboard, storyboard_revise, vision_check, voices
 from tools.llm.client import LLMError
 from tools.llm.gate import GateFailed, input_sha, run_gated
 
@@ -75,6 +75,9 @@ TASKS: dict[str, Spec] = {
     "outline_variants": Spec(outline_variants, "episode", outline_variants.context, 8000, "单集变体:把这集大纲换几种写法"),
     # 分镜方案(第 4 节):景别 / 机位至少差一项;批准不作废已生成的(用户 2026-10-23 原则)
     "shot_options": Spec(shot_options, "segment", shot_options.context, 6000, "分镜方案:给这段出几个镜头方案"),
+    # 原创分集(spec 2026-10-24-原创分集-design.md):骨架 2–3 个方案人挑一个;逐段展开每批 ≤ 30 集,逐批批准
+    "skeleton": Spec(skeleton, "drama", skeleton.context, 8000, "原创骨架:出几个整部剧的分幕方案"),
+    "expand": Spec(expand, "drama", expand.context, 16000, "逐段展开:按骨架写这一批的分集大纲"),
     # 剧本修改回路(spec 2026-10-24-剧本分镜修改回路-design.md 第 1 节):人提意见,LLM 交逐处替换,按意见整组批准
     "script_revise": Spec(script_revise, "episode", script_revise.context, 8000, "剧本修改:按你的意见逐处改"),
     # 分镜修改回路(第 2 节):逐段逐字段补丁,只拦新引入的问题;已生成的首帧 / 视频不作废,只标过期

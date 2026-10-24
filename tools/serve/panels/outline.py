@@ -10,11 +10,11 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
 from tools.drama import pacing, repo
-from tools.llm import beats, outline, runs
+from tools.llm import beats, outline, premise, runs, skeleton
 from tools.serve.panels.common import render, rt
 
 router = APIRouter()
-LLM_TASKS = ("outline", "beats", "outline_variants")
+LLM_TASKS = ("outline", "beats", "outline_variants", "skeleton", "expand")
 
 
 @router.get("/drama/{drama_id}/outline")
@@ -25,8 +25,14 @@ def page(request: Request, drama_id: int):
     beat_map = beats.load(store, drama_id)
     rows = [r for t, tid in (("drama", drama_id), *(("episode", e["id"]) for e in eps))
             for r in runs.history(store, t, tid) if r["task"] in LLM_TASKS]
+    skel = skeleton.load(store, drama_id)
+    have = {e["number"] for e in eps if e["outline"].strip()}
+    parts = [{"act": a, "start": s, "end": e, "filled": sum(1 for n in range(s, e + 1) if n in have)}
+             for a, s, e in skeleton.batches(skel)] if skel else []
     return render(request, "outline.html", "outline", drama_id=drama_id, eps=eps, beat_map=beat_map,
-                  pacing_hints=pacing.hints(beat_map), llm_runs=sorted(rows, key=lambda r: r["id"]))
+                  pacing_hints=pacing.hints(beat_map), llm_runs=sorted(rows, key=lambda r: r["id"]),
+                  has_premise=premise.load(store, drama_id) is not None,
+                  skeleton_text=skeleton.render(skel) if skel else "", skeleton_parts=parts)
 
 
 @router.post("/drama/{drama_id}/outline/batches")

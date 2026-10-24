@@ -26,7 +26,8 @@ PARAMS = {"outline": {"novel": str, "n_episodes": int}, "script_synopsis": {"syn
           "critique": {"role": str}, "rewrite": {"span": str, "intent": str, "note": str},
           "premise": {"idea": str, "n": int, "constraint": str},
           "beats": {}, "outline_variants": {"n": int}, "shot_options": {"n": int},
-          "script_revise": {"notes": "notes"}, "storyboard_revise": {"notes": "notes"}}
+          "script_revise": {"notes": "notes"}, "storyboard_revise": {"notes": "notes"},
+          "skeleton": {"total": int, "n": int, "constraint": str}, "expand": {"start": int, "end": int}}
 
 
 def _params(task: str, form) -> dict:
@@ -75,6 +76,8 @@ def _preview(store, row) -> dict:
     task = row["task"]
     if task in ("script_revise", "storyboard_revise"):
         return {"revise": service.spec(task).module.preview(store, row)}
+    if task in ("skeleton", "expand"):                 # 原创分集:审阅页数据由任务模块自己算
+        return {task: service.spec(task).module.preview(store, row)}
     if task == "storyboard":
         segs = []
         for n, seg in enumerate(out["segments"], 1):
@@ -155,7 +158,7 @@ def _decision(task: str, form) -> dict | None:
                 stance[int(idx)] = str(v)
         return {"adopt": sorted(i for i, v in stance.items() if v == "adopt"),
                 "reject": sorted(i for i, v in stance.items() if v == "reject")}
-    if task in ("rewrite", "outline_variants", "shot_options"):
+    if task in ("rewrite", "outline_variants", "shot_options", "skeleton"):
         raw = str(form.get("pick", ""))
         return {"pick": int(raw) if raw.isdigit() else -1}
     if task == "premise":
