@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Form, Request
+from fastapi.responses import RedirectResponse
 
 from tools.drama import pacing, repo
 from tools.llm import beats, outline, runs
@@ -43,3 +44,15 @@ def batches(request: Request, drama_id: int, novel: str = Form(""), n_episodes: 
         start += n
     return render(request, "outline_batches.html", "outline", drama_id=drama_id, rows=rows, last=last,
                   max_episodes=outline.MAX_EPISODES)
+
+
+@router.post("/episode/{episode_id}/outline")
+def save_outline(request: Request, episode_id: int, outline: str = Form("")):
+    """手写本集大纲(原创剧):这集已有剧本就拒(大纲改了剧本会悄悄过期,同单集变体);改了就清掉这集的节拍。"""
+    store = rt(request).store
+    ep = repo.get(store, "episode", episode_id)
+    if ep["script"].strip():
+        raise ValueError(f"第 {ep['number']} 集已有剧本 —— 大纲改了剧本会悄悄过期;要改大纲先清掉这集剧本")
+    if outline.strip() != ep["outline"]:
+        repo.update(store, "episode", episode_id, outline=outline.strip(), beats_json="")
+    return RedirectResponse(f"/drama/{ep['drama_id']}/outline", status_code=303)

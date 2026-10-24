@@ -35,15 +35,22 @@
             <div><label>大纲</label><pre>{{ e.outline }}</pre></div>
             <div><label>对应原文</label><pre>{{ e.source_text or "(无)" }}</pre></div>
           </div>
-          {% if e.script.strip() %}<p class="hint">这集已有剧本,改大纲要先清剧本</p>
-          {% else %}
+        {% endif %}
+        {% if e.script.strip() %}<p class="hint">这集已有剧本,改大纲要先清剧本</p>
+        {% else %}
+          <form method="post" action="/episode/{{ e.id }}/outline" data-outline-edit>
+            <label>{{ "改大纲" if e.outline else "写本集大纲" }}(保存会清掉这集的节拍)</label>
+            <textarea name="outline">{{ e.outline }}</textarea>
+            <button class="btn small" type="submit">保存大纲</button>
+          </form>
+          {% if e.outline %}
           <form method="post" action="/llm/start/outline_variants/{{ e.id }}" data-llm-variants>
             <label>换几种写法(2–4)</label>
             <select name="n">{% for k in (2, 3, 4) %}<option{{ " selected" if k == 3 }}>{{ k }}</option>{% endfor %}</select>
             <button class="btn small" type="submit">出大纲变体</button>
           </form>
           {% endif %}
-        {% else %}<p class="empty">这一集不是从小说大纲建的(来源:{{ e.source_type }})</p>{% endif %}
+        {% endif %}
       </div>
     {% endfor %}
   {% endif %}
