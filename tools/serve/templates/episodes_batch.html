@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>批量出剧本 · 确认 <a class="btn small" href="/drama/{{ drama.id }}/episodes">← 返回</a></h1>
+<section class="card" data-batch-plan>
+  <p>要出 <b>{{ todo | length }}</b> 集;LLM 一次一集,预计 {{ est[0] }}–{{ est[1] }} 分钟(每集约 30–80 秒,按区间报)。
+    剧本出来后逐集等你审,批准后自动排分镜。</p>
+  <table>
+    <tr><th>集</th><th>结果</th><th>说明</th></tr>
+    {% for i in items %}
+      <tr data-batch-item="{{ i.status }}"><td>第 {{ i.number }} 集</td><td>{{ labels[i.status] }}</td><td>{{ i.reason }}</td></tr>
+    {% endfor %}
+  </table>
+  {% if todo %}
+    <form method="post" action="/drama/{{ drama.id }}/episodes/batch">
+      <input type="hidden" name="confirm" value="1">
+      <input type="hidden" name="ids" value="{{ todo | map(attribute='episode_id') | join(',') }}">
+      <label>每集目标时长(分钟)</label>
+      <select name="minutes" data-batch-minutes>{% for m in minutes %}<option{{ " selected" if m == 2 }}>{{ m }}</option>{% endfor %}</select>
+      <button class="btn primary" type="submit" data-batch-confirm>确认,排进队列</button>
+    </form>
+  {% else %}<p class="empty">没有要出的集</p>{% endif %}
+</section>
+{% endblock %}

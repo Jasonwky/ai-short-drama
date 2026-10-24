@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>逐集</h1>
+<section class="card" data-episodes {% if inflight %}data-inflight{% endif %}>
+  {% if paused %}
+    <p class="status-bad" data-queue-paused>{{ paused }}</p>
+    <form method="post" action="/drama/{{ drama.id }}/episodes/resume">
+      <button class="btn primary" type="submit" data-queue-resume>继续</button></form>
+  {% endif %}
+  <p><b data-review-count>待你审 {{ review }} 项</b> · 队列里还有 {{ waiting }} 条没开始</p>
+  <div class="row">
+    <form method="post" action="/drama/{{ drama.id }}/episodes/batch">
+      <button class="btn primary" type="submit" data-batch-scripts>给缺剧本的集出剧本</button></form>
+    {% if waiting %}<form method="post" action="/drama/{{ drama.id }}/episodes/cancel">
+      <button class="btn" type="submit" data-queue-cancel>停掉还没开始的({{ waiting }} 条)</button></form>{% endif %}
+    <form method="post" action="/drama/{{ drama.id }}/episodes/new" class="row">
+      <input type="number" name="n" value="10" min="1" max="200" style="width: 80px">
+      <button class="btn" type="submit" data-new-episodes>新建这么多空集</button></form>
+  </div>
+  <p class="hint">剧本按这一集有什么自动选入口:小说集按大纲改写原文,其他集按大纲写(带前后集大纲做衔接);没有大纲的先去「大纲」面板写。
+    剧本批准后,这集没有段落就自动排「拆分镜」(剧本里的角色都得已在资产里)。LLM 一次只跑一条;连续 3 条因 LLM 本身失败会暂停队列。</p>
+  <table>
+    <tr><th>集</th><th>大纲</th><th>剧本</th><th>分镜</th><th></th></tr>
+    {% for r in rows %}
+      <tr data-episode-row="{{ r.id }}">
+        <td>第 {{ r.number }} 集</td>
+        <td>{{ "有" if r.outline else "—" }}</td>
+        {% for k in ("script", "storyboard") %}{% set c = r[k] %}
+          <td data-{{ k }}-state="{{ c.state }}" class="{{ 'status-bad' if c.state in ('failed', 'stale', 'blocked') }}">
+            {% if c.run is defined %}<a href="/llm/run/{{ c.run }}">{{ c.label }}</a>{% else %}{{ c.label }}{% endif %}</td>
+        {% endfor %}
+        <td><a class="btn small" href="/drama/{{ drama.id }}/script#ep-{{ r.id }}">剧本页</a>
+          <a class="btn small" href="/episode/{{ r.id }}/storyboard">分镜页</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="empty">还没有集 —— 上面「新建这么多空集」,或去「大纲」面板从小说拆集</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

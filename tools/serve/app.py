@@ -16,8 +16,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from tools.llm.client import LLMError
-from tools.serve.panels import (assets, bundles, common, fill, final, frames, llm, machines, outline, picks, projects,
-                                  script, storyboard, trace, videos, workflows)
+from tools.serve.panels import (assets, bundles, common, episodes, fill, final, frames, llm, machines, outline, picks,
+                                  projects, script, storyboard, trace, videos, workflows)
 from tools.serve import comfy_shim
 from tools.serve.runtime import Runtime
 
@@ -39,7 +39,7 @@ def create_app(runtime: Runtime) -> FastAPI:
     app = FastAPI(title="AI 短剧控制台", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.runtime = runtime
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
-    for mod in (projects, outline, script, assets, storyboard, frames, videos, final, machines, picks, llm, fill,
+    for mod in (projects, outline, script, episodes, assets, storyboard, frames, videos, final, machines, picks, llm, fill,
                 bundles, workflows, trace, comfy_shim):
         app.include_router(mod.router)
 

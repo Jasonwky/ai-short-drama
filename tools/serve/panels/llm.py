@@ -13,8 +13,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
 from tools.drama import blocking, pacing, repo
-from tools.llm import (describe, diverge, outline, outline_variants, premise, revise, runs, script_writer, service,
-                       shot_options, storyboard, vision_check, voices)
+from tools.llm import (batch, describe, diverge, outline, outline_variants, premise, revise, runs, script_writer,
+                       service, shot_options, storyboard, vision_check, voices)
 from tools.serve.panels.common import confirm_page, render, rt
 
 router = APIRouter()
@@ -207,6 +207,10 @@ async def approve(request: Request, run_id: int):
                             action=f"/llm/run/{run_id}/approve", fields={}, back=f"/llm/run/{run_id}", **ctx)
     decision = _decision(runs.get(store, run_id)["task"], form)
     synced = service.approve(store, run_id, rt(request).data_root, confirm_reset=cost is not None, decision=decision)
+    row = runs.get(store, run_id)
+    if row["task"] in batch.SCRIPT_TASKS:          # 整集剧本批准:没段落就自动排「拆分镜」(spec 2026-10-24 第 5 节)
+        batch.after_script_approved(store, row["target_id"])
+        rt(request).pump_queue()
     home = _home(store, runs.get(store, run_id))[0]
     if runs.get(store, run_id)["task"] == "rewrite":      # 改写写回后告诉剧本面板:台词同步到了第几段(没对上为 0)
         home += f"?rewrite_run={run_id}&synced={synced or 0}"

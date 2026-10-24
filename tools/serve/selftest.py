@@ -61,6 +61,7 @@ KEY_SELECTOR = {
     "projects": "[data-drama-list]",
     "outline": "[data-outline]",
     "script": "[data-episode]",
+    "episodes": "[data-episode-row]",
     "assets": "[data-asset-col=character] [data-asset]",
     "storyboard": "[data-segment-list] [data-segment]",
     "frames": "[data-generate-frame]",
