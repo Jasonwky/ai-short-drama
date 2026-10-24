@@ -15,7 +15,8 @@ PREMISE = ("片名:替嫁王妃\n卖点:替嫁冲喜的庶女一针救活王爷,
 
 def test_skeleton_candidates_really_differ(client):  # noqa: F811
     """真模型给的骨架方案:方案数对、两两至少 2 个维度不同、幕数与权重过判卷(由 _gate 的判卷保证)。"""
-    ctx = {"premise": PREMISE, "characters": ["沈青禾", "沈玉瑶", "萧珩"], "total": 30, "n": 3, "constraint": ""}
+    ctx = {"premise": PREMISE, "characters": ["沈青禾", "沈玉瑶", "萧珩"], "total": 30, "n": 3, "constraint": "",
+           "current": "(还没有)"}
     res = _gate(client, "skeleton", skeleton, ctx)
     cands = res.args["candidates"]
     assert len(cands) == 3 and diverge.distinct_problems(cands, tuple(skeleton.DIMS), min_diff=2) == []

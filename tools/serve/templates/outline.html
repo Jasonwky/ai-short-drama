@@ -10,7 +10,7 @@
     <p class="hint">先出 2–3 个整部剧的骨架方案(分几幕、每幕目标与幕末大事件)让你挑;各幕集数由代码按权重分。
       挑定后按批展开成分集大纲(每批 ≤ 30 集,上一批批准后再展开下一批);已有大纲或剧本的集不覆盖。立项会发送给 LLM 服务。</p>
     <form method="post" action="/llm/start/skeleton/{{ drama.id }}" class="row" data-llm-skeleton>
-      <div><label>全剧几集</label><input type="number" name="total" value="30" min="1" max="200" style="width: 80px"></div>
+      <div><label>全剧几集</label><input type="number" name="total" value="30" min="2" max="200" style="width: 80px"></div>
       <div><label>方案数</label><select name="n"><option>2</option><option selected>3</option></select></div>
       <div style="flex: 1"><label>额外约束(可空)</label><input type="text" name="constraint" placeholder="例:前 10 集必须有一次大反转"></div>
       <div><button class="btn primary" type="submit">出骨架方案</button></div>
@@ -25,7 +25,9 @@
             <td>第 {{ p.act }} 幕</td><td>第 {{ p.start }}–{{ p.end }} 集</td><td>{{ p.filled }} / {{ p.end - p.start + 1 }}</td>
             <td><form method="post" action="/llm/start/expand/{{ drama.id }}">
               <input type="hidden" name="start" value="{{ p.start }}"><input type="hidden" name="end" value="{{ p.end }}">
-              <button class="btn small" type="submit" data-expand-start>展开这一批</button></form></td>
+              {% if p.ready %}<button class="btn small" type="submit" data-expand-start>展开这一批</button>
+              {% else %}<button class="btn small" type="submit" disabled data-expand-waiting>展开这一批</button>
+                <span class="hint">第 {{ p.start - 1 }} 集还没有大纲:先完成上一批</span>{% endif %}</form></td>
           </tr>
         {% endfor %}
       </table>

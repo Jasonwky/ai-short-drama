@@ -54,8 +54,8 @@ def test_context_bounds_and_contents(store):
     ctx = sk.context(store, d, total=30, n=3, constraint=" 结局要大团圆 ")
     assert ctx["total"] == 30 and ctx["n"] == 3 and ctx["constraint"] == "结局要大团圆"
     assert ctx["characters"] == ["沈青禾"] and "片名:替嫁王妃" in ctx["premise"]
-    for total in (0, 201):
-        with pytest.raises(ValueError, match="1–200"):
+    for total in (1, 201):                                       # 下限 2:至少 2 幕(复查修正,原来是 1)
+        with pytest.raises(ValueError, match="2–200"):
             sk.context(store, d, total=total, n=3, constraint="")
     for n in (1, 4):
         with pytest.raises(ValueError, match="2–3"):
@@ -214,3 +214,42 @@ def test_fake_sample_passes_schema_and_judge(store, n):
     sample = sk.fake_sample(sch)
     assert gate.schema_errors(sample, sch) == []
     assert sk.judge_factory(ctx)(sample) == []
+
+
+# ---- 2026-10-24 独立复查的修正 ----
+
+def test_rerun_after_approval_is_a_new_input_not_the_locked_one(store):
+    """批准后同参数再出骨架,不能命中已批准的锁定版(原来输入里没有当前骨架,换不了)。"""
+    from tools.llm import service
+    d = _drama(store)
+    p = {"total": 30, "n": 3, "constraint": ""}
+    before = service.prepare(store, sk.TASK, d, p).sha
+    sk.apply(store, d, _three(), _ctx(store, d), {"pick": 0})
+    assert service.prepare(store, sk.TASK, d, p).sha != before
+    assert "<current>" in sk.user_message(_ctx(store, d))
+
+
+def test_total_must_leave_room_for_the_minimum_number_of_acts(store):
+    with pytest.raises(ValueError, match="总集数"):
+        _ctx(store, total=1)                                     # 至少 2 幕、每幕至少 1 集 → 1 集永远过不了判卷
+
+
+def test_allocate_keeps_tiny_weights_proportional():
+    assert sk.allocate(10, [0.0004, 0.0006]) == sk.allocate(10, [0.4, 0.6]) == [(1, 4), (5, 10)]
+
+
+def test_paywall_text_follows_a_nine_episode_drama(store):
+    d = _drama(store)
+    two = {"candidates": [_cand(weights=(0.5, 0.5)), _cand("复仇清算", "均匀推进", "开放", weights=(0.5, 0.5))]}
+    assert sk.preview(store, _row(store, d, two, total=9))["candidates"][0]["paywall"].startswith("第 9 集(付费卡点)")
+
+
+def test_kept_counts_scripted_episodes_without_an_outline(store):
+    d = _drama(store)
+    repo.add_episode(store, d, 1, "script", script="已有剧本")              # 展开时同样不覆盖
+    assert sk.preview(store, _row(store, d, _three()))["kept"] == 1
+
+
+def test_character_names_are_inside_a_data_tag(store):
+    msg = sk.user_message(_ctx(store))
+    assert "<characters>\n沈青禾\n</characters>" in msg

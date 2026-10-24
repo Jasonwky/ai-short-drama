@@ -27,7 +27,8 @@ def page(request: Request, drama_id: int):
             for r in runs.history(store, t, tid) if r["task"] in LLM_TASKS]
     skel = skeleton.load(store, drama_id)
     have = {e["number"] for e in eps if e["outline"].strip()}
-    parts = [{"act": a, "start": s, "end": e, "filled": sum(1 for n in range(s, e + 1) if n in have)}
+    parts = [{"act": a, "start": s, "end": e, "filled": sum(1 for n in range(s, e + 1) if n in have),
+              "ready": s == 1 or (s - 1) in have}           # 上一集有大纲才能展开(同 expand.context 的前提)
              for a, s, e in skeleton.batches(skel)] if skel else []
     return render(request, "outline.html", "outline", drama_id=drama_id, eps=eps, beat_map=beat_map,
                   pacing_hints=pacing.hints(beat_map), llm_runs=sorted(rows, key=lambda r: r["id"]),

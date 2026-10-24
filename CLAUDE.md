@@ -102,6 +102,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   **逐集批量**(P19-B,spec 2026-10-24-逐集批量出剧本分镜-design.md):「逐集」面板两态批量出剧本(小说集 `script_adapt`、只有大纲的 `script_outline`),
   持久队列 `llm_queue`(v19)由 `Runtime.pump_queue` 加锁一次出一条,连续 3 条 LLM 本身失败就暂停(`service.finish` 返回失败类别);
   整集剧本批准后没段落就自动排拆分镜(剧本里的角色须已在资产里)。原创剧在大纲页手写每集大纲。
+  **原创分集**(P19-A,spec 2026-10-24-原创分集-design.md):大纲页「原创:从立项出分集」—— 骨架 `skeleton`(2–3 方案人挑,
+  各幕集数由代码按相对权重分,存 `drama.skeleton_json`,v20)→ 逐段展开 `expand`(每批 ≤ 30 集,要求上一集已有大纲,已有大纲 / 剧本的集不覆盖)
+  → 单集变体有骨架时带前后集与本幕目标。共用纯函数在 `skeleton.py` 文件头部分(allocate / batches / act_for / render)。
+  派 worktree agent 前先推送或让它先 `git merge --ff-only main`:worktree 从远程 `origin/HEAD` 建(findings/2026-10-24-多agent并行开发复盘.md)
   ⚠️ `Store` 的连接被网页线程和后台线程共用:`cached_statements=0` 不能去掉(同一条 SQL 并发会拿到同一个缓存语句、读空,P19-B 实测)
   ⚠️ 传给模板的 dict 别用 `items` / `keys` / `values` 当键:Jinja 的 `g.items` 取到的是 dict 方法(P19-C 踩过)
   ⚠️ 模板里拿不到的变量 Jinja 会悄悄渲染成空串(P17b 自测抓到过表单地址缺剧号):`render()` 把 `drama_id` 留给导航,模板里用 `drama.id` / 自己传的对象
