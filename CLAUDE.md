@@ -99,6 +99,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   **修改回路**(P19-C,spec 2026-10-24-剧本分镜修改回路-design.md):`script_revise` / `storyboard_revise`,人写意见(一行一条,可「针对」、可「必须改」),
   LLM 交逐处替换 / 逐段逐字段补丁,人**按意见整组**接受 / 驳回;共用逻辑在 `llm/revise.py`。写回前后存 `llm_run.applied_json`(v18,不可改),
   「回到这一轮之前」按它恢复(两态)。分镜修改判卷 = 改后问题 − 改前就有的问题;判卷问题是 `gate.Fatal` 时不回炉。
+  **逐集批量**(P19-B,spec 2026-10-24-逐集批量出剧本分镜-design.md):「逐集」面板两态批量出剧本(小说集 `script_adapt`、只有大纲的 `script_outline`),
+  持久队列 `llm_queue`(v19)由 `Runtime.pump_queue` 加锁一次出一条,连续 3 条 LLM 本身失败就暂停(`service.finish` 返回失败类别);
+  整集剧本批准后没段落就自动排拆分镜(剧本里的角色须已在资产里)。原创剧在大纲页手写每集大纲。
+  ⚠️ `Store` 的连接被网页线程和后台线程共用:`cached_statements=0` 不能去掉(同一条 SQL 并发会拿到同一个缓存语句、读空,P19-B 实测)
   ⚠️ 传给模板的 dict 别用 `items` / `keys` / `values` 当键:Jinja 的 `g.items` 取到的是 dict 方法(P19-C 踩过)
   ⚠️ 模板里拿不到的变量 Jinja 会悄悄渲染成空串(P17b 自测抓到过表单地址缺剧号):`render()` 把 `drama_id` 留给导航,模板里用 `drama.id` / 自己传的对象
 - 增量补全 `tools/gen/fill.py` 与单条生成共用规划器的纯检查函数(`*_problems`);**一律两态**,确认时只认确认页列出的目标。

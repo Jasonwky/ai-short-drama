@@ -31,7 +31,17 @@ CANNED = {
     # P19-C 修改回路:样例取自自测演示剧第 1 集(selftest.seed_demo);第 1 条意见改,其余「不改」
     "submit_script_edits": lambda schema: script_edits_sample(schema),
     "submit_storyboard_patches": lambda schema: storyboard_patches_sample(schema),
+    # P19-B 逐集批量:自测里批量出剧本要走到「待你审」
+    "submit_script": lambda schema: script_sample(schema),
 }
+
+
+def script_sample(schema: dict) -> dict:
+    """写剧本样例:一个场景、479 字(1 分钟篇幅 400–600 之内,自测选 1 分钟);人物取自自测演示剧(selftest.seed_demo)。"""
+    act = "林小雨推开老宅斑驳的木门，院子里落满枯叶，她在石桌旁慢慢坐下，望着那口古井出神良久"
+    lines = [{"kind": "action", "speaker": None, "text": act} for _ in range(12)]
+    lines.append({"kind": "dialogue", "speaker": "林小雨", "text": "这块玉佩，是我母亲留给我的。"})
+    return {"scenes": [{"place": "老宅庭院", "time": "黄昏", "lines": lines}]}
 
 
 def _notes_enum(schema: dict) -> list[int]:

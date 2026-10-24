@@ -470,6 +470,11 @@ def run(out_dir: Path) -> dict:
                       '[data-llm-storyboard-revise] input[name="target-0"]': "1"},
                      ["[data-llm-storyboard-revise] button[type=submit]"],
                      "[data-llm-preview] [data-revise-group]", 40),
+                    ("episodes", "逐集:给缺剧本的集出剧本 → 确认页选 1 分钟 → 确认 → 第 3 集待你审(假 LLM)", {},
+                     ["[data-batch-scripts]",
+                      lambda pg: pg.locator("[data-batch-minutes]").select_option("1"),
+                      "[data-batch-confirm]"],
+                     f'[data-episode-row="{ids["episode3"]}"] [data-script-state="proposed"]', 60),
                     # 放在最后:填了陈设,前面链路的提示词就要按它查
                     ("assets", "场景选用途、填固定陈设 → 保存", {f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]': "石桌、古井"},
                      [lambda pg: pg.locator(f'[data-asset="scene-{ids["yard"]}"] [data-scene-purpose]').select_option("庭院"),

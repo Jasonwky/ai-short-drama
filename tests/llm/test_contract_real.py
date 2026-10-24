@@ -254,3 +254,14 @@ def test_storyboard_revise_patches_converge_without_new_problems(client):
     res = _gate(client, "storyboard_revise", storyboard_revise, ctx)
     must = next(r for r in res.args["responses"] if r["note"] == 1)
     assert must["verdict"] == "改" and all(p["segment"] == 1 for p in must["patches"])
+
+
+def test_script_from_outline_with_neighbours(client):
+    """大纲 → 剧本(2026-10-24):真模型按本集大纲写、带前后集大纲,篇幅与格式过判卷。"""
+    ctx = {"kind": "outline", "source": "", "minutes": 1, "characters": ["沈青禾", "萧珩", "李福"], "premise": "",
+           "prev": "沈青禾替嫁冲喜,大婚夜被嫡姐羞辱,她一针救醒昏迷的王爷萧珩。",
+           "outline": "萧珩醒来,管事李福跪地求饶;沈青禾当众揭穿李福在汤药里下毒,萧珩下令杖毙。",
+           "next": "萧珩追问沈青禾的来历,她只说自己是庶女,手里却握着第二枚银针。"}
+    res = _gate(client, "script_outline", script_writer, ctx)
+    text = script_writer.render(res.args)
+    assert rules.dialogue_lines(text) and "李福" in text
