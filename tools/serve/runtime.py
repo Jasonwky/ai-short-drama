@@ -23,7 +23,7 @@ from tools.cut import export
 from tools.drama.db import Store
 from tools.gen import nodecache, preflight
 from tools.gen.comfy_client import ComfyClient, ComfyUnreachable
-from tools.llm import runs, service
+from tools.llm import llm_queue, runs, service
 from tools.llm.claude_cli import ClaudeCLIClient
 from tools.llm.client import LLMUnavailable
 from tools.llm.service import LLMBackend
@@ -86,6 +86,8 @@ class Runtime:
         self.last_error = ""          # 后台线程最近一次异常,主机面板上显示
         self._llm_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="drama-llm")
         self._llm_jobs: list[Future] = []
+        self._queue_lock = threading.Lock()   # 出队:判「没有在跑的」与「置 started」在同一把锁里(两个线程会同时来)
+        self._queue_fails = 0                 # 连续几条队列项因 LLM 本身失败(断路器)
         self._cut_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="drama-cut")
         self._cut_jobs: list[Future] = []
         self.frontend_job: dict | None = None    # 「下载前端」的后台任务状态(工作流面板上显示)
@@ -167,12 +169,48 @@ class Runtime:
         return rid, reused
 
     def _finish_llm(self, rid: int, llm: LLMBackend) -> None:
+        kind: str | None = "error"
         try:
-            service.finish(self.store, rid, llm, self.data_root / "journal",   # → journal/llm/*.json
-                           data_root=self.data_root)
+            kind = service.finish(self.store, rid, llm, self.data_root / "journal",   # → journal/llm/*.json
+                                  data_root=self.data_root)
         except Exception as e:     # 不吞:落成 failed 带原因、进 journal(service 自己处理不了的意外)
             runs.fail(self.store, rid, f"{type(e).__name__}: {e}")
             journal.append(self.data_root, [f"llm_run {rid} 意外失败:{type(e).__name__}: {e}"], prefix="runtime ")
+        self._after_llm(rid, kind)
+
+    def _after_llm(self, rid: int, kind: str | None) -> None:
+        """一条 LLM 运行结束:是队列项就给断路器计数,然后取下一条。手动发起的运行不计入、也不清零(spec 8.7)。"""
+        with self._queue_lock:
+            if llm_queue.item_for_run(self.store, rid) is not None:
+                self._queue_fails = self._queue_fails + 1 if kind == "llm" else 0
+                if self._queue_fails >= llm_queue.BREAK_AFTER:
+                    err = runs.get(self.store, rid)["error"] or ""
+                    reason = (f"连续 {self._queue_fails} 条 LLM 调用失败,队列已暂停 —— 最后一条:{err[:200]};"
+                              "修好后点「继续」")
+                    llm_queue.pause(self.store, reason)
+                    journal.append(self.data_root, [reason], prefix="runtime ")
+                    self._queue_fails = 0
+        self.pump_queue()
+
+    def pump_queue(self) -> None:
+        """取下一条:没暂停、没有在跑的队列项,就开最早的 waiting。开运行当场失败(前提不满足)记下原因、接着取下一条;
+        命中锁定版(不调 LLM)也接着取;真开了一条就停,等它结束时再来(spec 2026-10-24-逐集批量出剧本分镜 第 4 节)。"""
+        with self._queue_lock:
+            while not llm_queue.paused(self.store) and llm_queue.running_item(self.store) is None:
+                item = llm_queue.next_waiting(self.store)
+                if item is None:
+                    return
+                try:
+                    rid, reused = self.start_llm(item["task"], item["target_id"], llm_queue.params(item))
+                except LLMUnavailable as e:
+                    llm_queue.pause(self.store, f"LLM 不可用,队列已暂停 —— {e};修好后点「继续」")
+                    return
+                except (ValueError, KeyError) as e:        # 单集问题(前提不满足 / 集被删了):不卡队列
+                    llm_queue.mark_started(self.store, item["id"], None, str(e))
+                    continue
+                llm_queue.mark_started(self.store, item["id"], rid)
+                if not reused:
+                    return
 
     def wait_llm(self, timeout: float = 60) -> None:
         """测试用:等后台 LLM 任务全部结束。"""
@@ -208,6 +246,7 @@ class Runtime:
         n = runs.fail_stale(self.store)
         if n:
             journal.append(self.data_root, [f"上次有 {n} 次 LLM 运行没跑完,已标失败"], prefix="runtime ")
+        self.pump_queue()          # 上次没跑完的队列:waiting 的接着跑(重启时在跑的那条已标失败,不重试)
 
         def loop():
             while not self._stop.is_set():
