@@ -107,6 +107,35 @@
       </div>
     {% endfor %}
     </div></div>
+  {% elif preview.revise is defined %}
+    {% set rv = preview.revise %}
+    <p class="hint">按意见整组「接受」或「驳回」:同一条意见下的修改一起写回或一起不写;没被接受的地方一个字不动。</p>
+    {% for h in rv.hints %}<p class="hint" style="color: #b8860b" data-revise-hint>{{ h }}</p>{% endfor %}
+    {% for g in rv.groups if g.verdict == "改" %}
+      <div class="card" data-revise-group="{{ g.note }}">
+        <p><b>意见 {{ g.note }}</b>{% if g.must %} <span class="tag">必须改</span>{% endif %}:{{ g.text }}
+          {% if g.target %}<span class="hint">(针对:{{ g.target }})</span>{% endif %}</p>
+        <p class="hint">AI 的用意:{{ g.reason }}</p>
+        {% for it in g.changes %}
+          <div class="side-by-side">
+            <div><label>{{ it.label }} · 原来</label><pre>{{ it.old or "(空)" }}</pre></div>
+            <div><label>改成</label><pre>{{ it.new or "(删除)" }}</pre>{% if it.why %}<p class="hint">{{ it.why }}</p>{% endif %}</div>
+          </div>
+        {% endfor %}
+        {% if run.state == "proposed" %}
+          <label><input type="radio" name="decide-{{ g.note }}" value="accept" form="approve-form"> 接受</label>
+          <label><input type="radio" name="decide-{{ g.note }}" value="reject" form="approve-form"> 驳回</label>
+        {% elif g.stance %}<p data-stance="{{ g.stance }}"><b>{{ "已接受" if g.stance == "accept" else "已驳回" }}</b></p>{% endif %}
+      </div>
+    {% endfor %}
+    {% set skipped = rv.groups | selectattr("verdict", "equalto", "不改") | list %}
+    {% if skipped %}
+      <div class="card" data-revise-skipped>
+        <h2>AI 没改的意见({{ skipped | length }} 条)</h2>
+        {% for g in skipped %}<p><b>意见 {{ g.note }}</b>:{{ g.text }} —— <span class="status-bad">AI 说:{{ g.reason }}</span></p>{% endfor %}
+        <p class="hint">不同意就在下一轮把这条勾成「必须改」。</p>
+      </div>
+    {% endif %}
   {% elif preview.options is defined %}
     <p class="hint">挑一个镜头方案写回本段的景别 / 机位 / 运镜 / 场记表 / 首帧提示词。批准不会作废已生成的首帧和视频;重出首帧后在历史里「调用」才成为当前。</p>
     {% for o in preview.options %}

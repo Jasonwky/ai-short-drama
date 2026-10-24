@@ -13,8 +13,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
 from tools.drama import blocking, pacing, repo
-from tools.llm import (describe, diverge, outline, outline_variants, premise, runs, script_writer, service, shot_options,
-                       storyboard, vision_check, voices)
+from tools.llm import (describe, diverge, outline, outline_variants, premise, revise, runs, script_writer, service,
+                       shot_options, storyboard, vision_check, voices)
 from tools.serve.panels.common import confirm_page, render, rt
 
 router = APIRouter()
@@ -25,13 +25,17 @@ PARAMS = {"outline": {"novel": str, "n_episodes": int}, "script_synopsis": {"syn
           **{f"describe_{t}": {} for t in describe.FIELDS}, "vision_check": {"video_sha256": str},
           "critique": {"role": str}, "rewrite": {"span": str, "intent": str, "note": str},
           "premise": {"idea": str, "n": int, "constraint": str},
-          "beats": {}, "outline_variants": {"n": int}, "shot_options": {"n": int}}
+          "beats": {}, "outline_variants": {"n": int}, "shot_options": {"n": int},
+          "script_revise": {"notes": "notes"}, "storyboard_revise": {"notes": "notes"}}
 
 
 def _params(task: str, form) -> dict:
     service.spec(task)                     # 未知任务当场报错
     out = {}
     for key, typ in PARAMS[task].items():
+        if typ == "notes":                      # 修改意见:表单里一行一组(note-i / target-i / must-i)
+            out[key] = revise.notes_from_form(form)
+            continue
         raw = str(form.get(key, "")).strip()
         try:
             out[key] = typ(raw)
@@ -55,7 +59,7 @@ def _home(store, row) -> tuple[str, dict]:
         if row["task"] == "shot_options":
             return f"/segment/{tid}/edit", {"panel_key": "storyboard", "episode_id": eid}
         return f"/episode/{eid}/videos#seg-{tid}", {"panel_key": "videos", "episode_id": eid}
-    if row["task"] == "storyboard":
+    if row["task"] in ("storyboard", "storyboard_revise"):
         return f"/episode/{tid}/storyboard", {"panel_key": "storyboard", "episode_id": tid}
     did = repo.get(store, "episode", tid)["drama_id"]
     if row["task"] == "outline_variants":
@@ -69,6 +73,8 @@ def _preview(store, row) -> dict:
         return {}
     out, params = runs.output(row), runs.params(row)
     task = row["task"]
+    if task in ("script_revise", "storyboard_revise"):
+        return {"revise": service.spec(task).module.preview(store, row)}
     if task == "storyboard":
         segs = []
         for n, seg in enumerate(out["segments"], 1):
@@ -159,6 +165,14 @@ def _decision(task: str, form) -> dict | None:
             if raw.isdecimal():
                 picks[f] = int(raw)
         return {"assemble": picks}
+    if task in ("script_revise", "storyboard_revise"):
+        stance = {}
+        for k, v in form.items():
+            idx = k.split("-", 1)[1] if k.startswith("decide-") else ""
+            if idx.isdigit():                       # 缺的表态由 decision_problems 报
+                stance[int(idx)] = str(v)
+        return {"accept": sorted(i for i, v in stance.items() if v == "accept"),
+                "reject": sorted(i for i, v in stance.items() if v == "reject")}
     return None
 
 
@@ -204,3 +218,23 @@ def reject(request: Request, run_id: int):
     store = rt(request).store
     runs.reject(store, run_id)
     return RedirectResponse(f"/llm/run/{run_id}", status_code=303)
+
+
+@router.post("/llm/run/{run_id}/rollback")
+async def rollback(request: Request, run_id: int):
+    """修改回路「回到这一轮之前」:两态 —— 先出确认页(说清恢复什么),确认了才写。"""
+    store = rt(request).store
+    row = runs.get(store, run_id)
+    module = service.spec(row["task"]).module
+    if not hasattr(module, "rollback"):
+        raise ValueError(f"任务 {row['task']} 不支持回滚")
+    form = await request.form()
+    home, ctx = _home(store, row)
+    if form.get("confirm") != "1":
+        bad = module.rollback_problems(store, row)
+        if bad:
+            raise ValueError(";".join(bad))
+        return confirm_page(request, summary=module.rollback_summary(row), action=f"/llm/run/{run_id}/rollback",
+                            fields={}, back=home, **ctx)
+    module.rollback(store, row)
+    return RedirectResponse(home, status_code=303)

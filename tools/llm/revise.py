@@ -127,7 +127,7 @@ def groups(row, change_key: str, render_change: Callable[[dict], dict]) -> list[
         n = params["notes"][r["note"] - 1]
         res.append({"note": r["note"], "text": n["text"], "target": n["target"], "must": n["must"],
                     "verdict": r["verdict"], "reason": r["reason"], "stance": stance.get(r["note"]),
-                    "items": [render_change(c) for c in r[change_key]]})
+                    "changes": [render_change(c) for c in r[change_key]]})   # 不叫 items:Jinja 里会取到 dict.items
     return res
 
 

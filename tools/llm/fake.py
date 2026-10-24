@@ -28,7 +28,32 @@ CANNED = {
     "submit_beats": lambda schema: beats_sample(schema),
     "submit_outline_variants": lambda schema: variants_sample(schema),
     "submit_shot_options": lambda schema: shot_options_sample(schema),
+    # P19-C 修改回路:样例取自自测演示剧第 1 集(selftest.seed_demo);第 1 条意见改,其余「不改」
+    "submit_script_edits": lambda schema: script_edits_sample(schema),
+    "submit_storyboard_patches": lambda schema: storyboard_patches_sample(schema),
 }
+
+
+def _notes_enum(schema: dict) -> list[int]:
+    return schema["properties"]["responses"]["items"]["properties"]["note"]["enum"]
+
+
+def script_edits_sample(schema: dict) -> dict:
+    first, *rest = _notes_enum(schema)
+    edit = {"old": "林小雨说：「这块玉佩，是我母亲留给我的。」", "new": "林小雨说：「这块玉佩，是娘留给我唯一的念想。」",
+            "why": "更有情感"}
+    return {"responses": [{"note": first, "verdict": "改", "reason": "更有情感", "edits": [edit]},
+                          *({"note": k, "verdict": "不改", "reason": "(假 LLM 只改第 1 条)", "edits": []} for k in rest)]}
+
+
+def storyboard_patches_sample(schema: dict) -> dict:
+    first, *rest = _notes_enum(schema)
+    item = schema["properties"]["responses"]["items"]["properties"]["patches"]["items"]["properties"]
+    blank = {k: None for k in item if k not in ("segment", "field")}
+    patch = {**blank, "segment": item["segment"]["enum"][0], "field": "video_prompt",
+             "text": "@林小雨 在 @老宅庭院 低头凝视 @玉佩,镜头缓缓推近,她抬眼说话"}
+    return {"responses": [{"note": first, "verdict": "改", "reason": "运镜更有情绪", "patches": [patch]},
+                          *({"note": k, "verdict": "不改", "reason": "(假 LLM 只改第 1 条)", "patches": []} for k in rest)]}
 
 
 def beats_sample(schema: dict) -> dict:
