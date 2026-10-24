@@ -135,7 +135,9 @@ def begin(store: Store, task: str, target_id: int, params: dict, llm: LLMBackend
 
 
 def finish(store: Store, run_id: int, llm: LLMBackend, journal_dir: Path, max_rounds: int | None = None,
-           data_root: Path | None = None) -> None:
+           data_root: Path | None = None) -> str | None:
+    """真正调 LLM。返回失败类别:None(产出待审)/ "judge"(判卷没过)/ "llm"(LLM 本身:不可用 / 连不上 / 截断 / 拒答)/
+    "input"(前提变了)。逐集队列的断路器只数 "llm"(spec 2026-10-24-逐集批量出剧本分镜-design.md 第 4 节)。"""
     row = runs.get(store, run_id)
     try:
         p = prepare(store, row["task"], row["target_id"], runs.params(row), data_root)
@@ -145,12 +147,17 @@ def finish(store: Store, run_id: int, llm: LLMBackend, journal_dir: Path, max_ro
                         judge=sp.module.judge_factory(p.ctx), journal_dir=journal_dir,
                         max_rounds=max_rounds or sp.max_rounds,
                         max_tokens=sp.max_tokens, images=p.images)
-    except GateFailed as e:
+    except GateFailed as e:                    # GateFailed 是 LLMError 的子类,必须先接
         runs.fail(store, run_id, str(e), str(e.journal_path))
-    except (LLMError, ValueError) as e:        # 不吞:连不上 / 截断 / 拒答 / 前提变了,都落成 failed 带原因
+        return "judge"
+    except LLMError as e:                      # 不吞:连不上 / 截断 / 拒答,落成 failed 带原因
         runs.fail(store, run_id, f"{type(e).__name__}: {e}")
-    else:
-        runs.propose(store, run_id, res.args, str(res.journal_path))
+        return "llm"
+    except ValueError as e:                    # 前提变了
+        runs.fail(store, run_id, f"{type(e).__name__}: {e}")
+        return "input"
+    runs.propose(store, run_id, res.args, str(res.journal_path))
+    return None
 
 
 def reset_cost(store: Store, run_id: int) -> tuple[int, Impact] | None:
