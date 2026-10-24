@@ -1,15 +1,28 @@
 # -*- coding: utf-8 -*-
+import sqlite3
+
+import pytest
+
 from tools.drama import repo
 from tools.drama.db import SCHEMA_VERSION, Store
 from tools.drama.tasks import create_task, set_task_state
+from tools.llm import runs
 
 
 def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v18(s):
+    """退回 v17:删掉 v18 新增的 llm_run.applied_json 与它的触发器。"""
+    s.conn.execute("DROP TRIGGER IF EXISTS llm_run_applied_locked")
+    if "applied_json" in _cols(s, "llm_run"):       # 更老的造库流程会先把 llm_run 整张删掉 / 换成旧表
+        s.conn.execute("ALTER TABLE llm_run DROP COLUMN applied_json")
+
+
 def _drop_v17(s):
-    """退回 v16:删掉 v17 新增的 episode.beats_json。"""
+    """退回 v16:删掉 v17 新增的 episode.beats_json;v18 的也一并退掉。"""
+    _drop_v18(s)
     if "beats_json" in _cols(s, "episode"):         # 更老的造库流程里列可能已经不在
         s.conn.execute("ALTER TABLE episode DROP COLUMN beats_json")
 
@@ -415,4 +428,23 @@ def test_v16_to_v17_episodes_gain_empty_beats(tmp_path):
     assert repo.get(s, "episode", ep)["beats_json"] == ""
     repo.update(s, "episode", ep, beats_json='{"hook": "有"}')
     assert repo.get(s, "episode", ep)["beats_json"] == '{"hook": "有"}'
+    s.close()
+
+
+def test_v17_to_v18_llm_runs_gain_a_locked_applied_snapshot(tmp_path):
+    """v18:修改回路写回前后的快照(spec 2026-10-24-剧本分镜修改回路-design.md 0.6);老记录为空,写下后不可改。"""
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "玉佩", "9:16")
+    rid = runs.start(s, task="premise", target_type="drama", target_id=d, model="m", input_sha="x",
+                     llm_mode="real", params={})
+    _drop_v18(s)
+    s.conn.execute("UPDATE meta SET value = '17' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    assert runs.get(s, rid)["applied_json"] is None
+    s.conn.execute("UPDATE llm_run SET applied_json = '{}' WHERE id = ?", (rid,))
+    with pytest.raises(sqlite3.DatabaseError, match="不可改"):
+        s.conn.execute("UPDATE llm_run SET applied_json = '{\"a\": 1}' WHERE id = ?", (rid,))
     s.close()

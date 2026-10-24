@@ -3,6 +3,7 @@ import sqlite3
 
 import pytest
 
+from tools.drama import repo
 from tools.drama.db import Store
 from tools.llm import runs
 
@@ -87,3 +88,20 @@ def test_stale_running_run_is_failed_on_restart(store):
     assert runs.get(store, stuck)["state"] == "failed" and "控制台重启" in runs.get(store, stuck)["error"]
     assert runs.get(store, done)["state"] == "proposed"                  # 已经有结果的不动
     assert runs.fail_stale(store) == 0
+
+
+def test_approve_records_the_applied_snapshot(store):
+    d = repo.create_drama(store, "玉佩", "9:16")
+    rid = runs.start(store, task="premise", target_type="drama", target_id=d, model="m", input_sha="x",
+                     llm_mode="real", params={})
+    runs.propose(store, rid, {"x": 1}, "j")
+    runs.approve(store, rid, {"pick": 0}, applied={"before": "旧", "after": "新"})
+    row = runs.get(store, rid)
+    assert runs.applied(row) == {"before": "旧", "after": "新"} and runs.decision(row) == {"pick": 0}
+
+
+def test_runs_without_a_snapshot_read_as_none(store):
+    d = repo.create_drama(store, "玉佩", "9:16")
+    rid = runs.start(store, task="premise", target_type="drama", target_id=d, model="m", input_sha="x",
+                     llm_mode="real", params={})
+    assert runs.applied(runs.get(store, rid)) is None

@@ -55,11 +55,14 @@ def fail_stale(store: Store) -> int:
     return len(ids)
 
 
-def approve(store: Store, run_id: int, decision: dict | None = None) -> None:
-    """decision:人在批准时做的选择(评审团采纳了哪些问题、局部改写挑了哪个);不需要选择的任务为 None。"""
+def approve(store: Store, run_id: int, decision: dict | None = None, applied: dict | None = None) -> None:
+    """decision:人在批准时做的选择(评审团采纳了哪些问题、局部改写挑了哪个);不需要选择的任务为 None。
+    applied:写回前后的实际内容(修改回路的回滚按它恢复);不记快照的任务为 None。"""
     fields = {"decided_at": now()}
     if decision is not None:
         fields["decision_json"] = json.dumps(decision, ensure_ascii=False)
+    if applied is not None:
+        fields["applied_json"] = json.dumps(applied, ensure_ascii=False)
     _move(store, run_id, "approved", **fields)
 
 
@@ -81,6 +84,11 @@ def output(row: sqlite3.Row) -> dict:
 def decision(row: sqlite3.Row) -> dict | None:
     """人批准时做的选择;没批准或不需要选择的任务为 None。"""
     return json.loads(row["decision_json"]) if row["decision_json"] else None
+
+
+def applied(row: sqlite3.Row) -> dict | None:
+    """批准时写回前后的实际内容(修改回路);不记快照的任务为 None。"""
+    return json.loads(row["applied_json"]) if row["applied_json"] else None
 
 
 def params(row: sqlite3.Row) -> dict:

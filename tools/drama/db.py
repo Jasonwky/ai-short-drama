@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -358,6 +358,16 @@ SCHEMA += "".join(f"{stmt};\n" for stmt in PREMISE_DDL)
 BEATS_DDL = ["ALTER TABLE episode ADD COLUMN beats_json TEXT NOT NULL DEFAULT ''"]
 SCHEMA += "".join(f"{stmt};\n" for stmt in BEATS_DDL)
 
+# v18:修改回路写回前后的实际内容(spec 2026-10-24-剧本分镜修改回路-design.md 0.6)—— 回滚按它恢复;
+# 和产物、选择一样:一经写下不可改
+APPLIED_DDL = [
+    "ALTER TABLE llm_run ADD COLUMN applied_json TEXT",
+    """CREATE TRIGGER llm_run_applied_locked BEFORE UPDATE OF applied_json ON llm_run
+WHEN OLD.applied_json IS NOT NULL
+BEGIN SELECT RAISE(ABORT, '写回快照一经写下不可改 —— 要改就重跑一条'); END""",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in APPLIED_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -407,6 +417,8 @@ MIGRATIONS: dict[int, list[str]] = {
     15: PREMISE_DDL,
     # v17:集的节拍标注
     16: BEATS_DDL,
+    # v18:llm_run 记下写回前后的实际内容(修改回路的回滚)
+    17: APPLIED_DDL,
 }
 
 

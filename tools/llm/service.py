@@ -187,5 +187,7 @@ def approve(store: Store, run_id: int, data_root: Path | None = None, confirm_re
         repo.delete_segments(store, row["target_id"])
     extra = (decision,) if needs_decision else ()
     result = module.apply(store, row["target_id"], args, p.ctx, *extra)
-    runs.approve(store, run_id, decision)
+    # 修改回路的 apply 返回 {"applied": 写回前后, ...}:快照随批准一起落库(不可改),回滚按它恢复
+    applied = result.pop("applied", None) if isinstance(result, dict) else None
+    runs.approve(store, run_id, decision, applied)
     return result
