@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse
 
 from tools.drama import invalidation, repo, rules
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
-from tools.llm import critique, rewrite, runs
+from tools.llm import critique, revise, rewrite, runs, script_revise
 from tools.serve.panels.common import confirm_page, needs_confirm, render, rt
 
 router = APIRouter()
@@ -35,17 +35,22 @@ def page(request: Request, drama_id: int, rewrite_run: int | None = None, synced
     store = rt(request).store
     repo.get(store, "drama", drama_id)
     notice = _notice(store, rewrite_run, synced)
+    names = [r[0] for r in store.conn.execute("SELECT name FROM character WHERE drama_id = ? ORDER BY id", (drama_id,))]
     eps = []
     for e in store.conn.execute("SELECT * FROM episode WHERE drama_id = ? ORDER BY number", (drama_id,)):
         n = store.conn.execute("SELECT COUNT(*) FROM segment WHERE episode_id = ?", (e["id"],)).fetchone()[0]
+        descs = [r[0] for r in store.conn.execute("SELECT description FROM segment WHERE episode_id = ? ORDER BY number",
+                                                  (e["id"],))]
         lo, hi = rules.expected_segment_range(e["script"]) if e["script"].strip() else (0, 0)
         eps.append({"row": e, "n_segments": n, "range": (lo, hi),
                     "problems": rules.check_episode(e["script"], n) if e["script"].strip() and n else [],
                     "adopted": critique.adopted(store, e["id"]), "notice": notice[1] if notice and notice[0] == e["id"] else None,
+                    "rounds": revise.rounds(store, script_revise.TASK, e["id"], script_revise.rollback_problems),
+                    "drift": script_revise.drift(e["script"], descs, names) if descs and e["script"].strip() else None,
                     "llm_runs": [r for r in runs.history(store, "episode", e["id"])
                                  if r["task"].startswith("script_") or r["task"] in ("critique", "rewrite")]})
     return render(request, "script.html", "script", drama_id=drama_id, eps=eps, roles=list(critique.ROLES),
-                  intents=rewrite.INTENTS, adoption=critique.adoption(store, drama_id))
+                  intents=rewrite.INTENTS, adoption=critique.adoption(store, drama_id), names=names)
 
 
 @router.post("/drama/{drama_id}/episodes")

@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from tools.drama import blocking, framing, invalidation, repo, rules
 from tools.drama.readiness import KEY_GAP_SEC, KEY_MARGIN_SEC, KEY_MAX, key_frame_index
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
-from tools.llm import runs
+from tools.llm import revise, runs, script_revise, storyboard_revise
 from tools.serve.panels.common import confirm_page, needs_confirm, readiness, render, rt
 
 router = APIRouter()
@@ -80,8 +80,15 @@ def page(request: Request, episode_id: int):
                                    "WHERE sp.segment_id = ? ORDER BY sp.position", s["id"]),
             "missing": [c.msg for c in checks if not c.ok],
         })
-    return render(request, "storyboard.html", "storyboard", episode_id=episode_id, ep=ep, segs=segs,
-                  llm_runs=runs.history(store, "episode", episode_id, "storyboard"))
+    names = [r[0] for r in store.conn.execute("SELECT name FROM character WHERE drama_id = ? ORDER BY id",
+                                              (ep["drama_id"],))]
+    drift = script_revise.drift(ep["script"], [s["row"]["description"] for s in segs], names) \
+        if segs and ep["script"].strip() else None
+    return render(request, "storyboard.html", "storyboard", episode_id=episode_id, ep=ep, segs=segs, names=names,
+                  drift=drift, rounds=revise.rounds(store, storyboard_revise.TASK, episode_id,
+                                                    storyboard_revise.rollback_problems),
+                  llm_runs=[r for r in runs.history(store, "episode", episode_id)
+                            if r["task"] in ("storyboard", "storyboard_revise")])
 
 
 @router.post("/episode/{episode_id}/segments")

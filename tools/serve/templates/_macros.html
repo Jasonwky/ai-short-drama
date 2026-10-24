@@ -80,3 +80,38 @@
   依据:spike-results/2026-10-09-中间关键帧锚定实测.md(每种 1 个样本)
 </div>
 {% endmacro %}
+
+{# 修改回路:意见表单(一行一条,可填「针对」、勾「必须改」)#}
+{% macro revise_form(action, attr, target_placeholder, names) %}
+<form method="post" action="{{ action }}" {{ attr }}>
+  <label>修改意见(一行一条;AI 只改意见点到的地方,别处一个字不动)</label>
+  {% for i in range(10) %}
+    {% if i == 3 %}<details><summary>再加几条</summary>{% endif %}
+    <div class="row" data-revise-note="{{ i }}">
+      <input type="text" name="note-{{ i }}" placeholder="第 {{ i + 1 }} 条意见" style="flex: 3">
+      <input type="text" name="target-{{ i }}" placeholder="{{ target_placeholder }}" style="flex: 2">
+      <label><input type="checkbox" name="must-{{ i }}" value="1"> 必须改</label>
+    </div>
+  {% endfor %}
+  </details>
+  <p class="hint">本剧角色:{{ names | join("、") or "(还没有)" }}。意见里要加新角色,先去「资产」里建好。</p>
+  <button class="btn" type="submit">让 AI 按这些改</button>
+</form>
+{% endmacro %}
+
+{# 修改回路:修改历史(批准过的各轮)+「回到这一轮之前」#}
+{% macro revise_history(rounds) %}
+{% if rounds %}
+<details data-revise-history open><summary>修改历史({{ rounds | length }} 轮)</summary>
+  {% for r in rounds %}
+    <div class="card" data-revise-round="{{ r.id }}">
+      <p><a href="/llm/run/{{ r.id }}">第 {{ loop.index }} 轮</a> · {{ r.decided_at }} ·
+        接受意见 {{ r.accept | join("、") or "无" }} · 驳回 {{ r.reject | join("、") or "无" }}</p>
+      <ol>{% for n in r.notes %}<li>{{ n.text }}</li>{% endfor %}</ol>
+      {% if r.can_rollback %}<form method="post" action="/llm/run/{{ r.id }}/rollback">
+        <button class="btn small" type="submit" data-revise-rollback>回到这一轮之前</button></form>{% endif %}
+    </div>
+  {% endfor %}
+</details>
+{% endif %}
+{% endmacro %}

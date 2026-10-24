@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import llm_run_list %}
+{% from "_macros.html" import llm_run_list, revise_form, revise_history %}
 {% block content %}
 <h1>分镜 · 第 {{ ep.number }} 集</h1>
 <section class="card">
@@ -27,6 +27,20 @@
   </table>
   <form method="post" action="/episode/{{ ep.id }}/segments"><button class="btn primary" type="submit" data-add-segment>+ 新建段落</button></form>
 </section>
+{% if segs %}
+<section class="card">
+  <h2>按意见修改分镜(LLM)</h2>
+  <p class="hint">只改段落里的字段(子镜头 / 提示词 / 场记表 / 景别机位运镜 / 绑定),不增删段落;已生成的首帧和视频不作废,
+    改过的会在卡片上标「旧方案」。本集剧本和段落会发送给 LLM。</p>
+  {% if drift and (drift.missing or drift.orphan) %}
+    <p class="status-bad" data-drift>剧本和分镜的台词对不上(只提示,不拦):
+      {% if drift.missing %}剧本里有、段落里没有:{{ drift.missing | join(" / ") }}。{% endif %}
+      {% if drift.orphan %}段落里有、剧本里已经没有:{{ drift.orphan | join(" / ") }}。{% endif %}</p>
+  {% endif %}
+  {{ revise_form("/llm/start/storyboard_revise/" ~ ep.id, "data-llm-storyboard-revise", "针对第几段(可空,如 3 或 3、6)", names) }}
+  {{ revise_history(rounds) }}
+</section>
+{% endif %}
 <section class="card">
   <h2>LLM 拆分镜</h2>
   <p class="hint">按本集剧本自动拆段落:场景 / 角色 / 道具只能从这部剧已有的资产里选;台词逐字照抄剧本;时长由代码按台词字数算。

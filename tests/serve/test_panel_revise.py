@@ -53,3 +53,21 @@ def test_approve_by_note_then_rollback_with_confirmation(client, store, sample):
     client.post(f"/llm/run/{rid}/rollback", data={"confirm": "1"})
     assert repo.get(store, "episode", ep)["script"] == f"林小雨低头。\n{LINE}\n"
     assert client.post(f"/llm/run/{rid}/rollback", data={}).status_code == 400   # 回滚过了,不能再回滚
+
+
+def test_script_page_has_the_revise_form_history_and_drift(client, store, sample):
+    ep = _setup(store, sample)
+    repo.update(store, "segment", sample["seg"], description="【镜头1】林小雨说：「别的台词。」")
+    rid = _proposed(store, ep, [{"text": "台词太平", "target": "", "must": False}],
+                    [{"note": 1, "verdict": "改", "reason": "r", "edits": [
+                        {"old": LINE, "new": "林小雨说：「玉佩是娘的。」", "why": "w"}]}])
+    service.approve(store, rid, decision={"accept": [1], "reject": []})
+    page = client.get(f"/drama/{sample['drama']}/script").text
+    assert f'action="/llm/start/script_revise/{ep}"' in page and 'name="note-9"' in page and 'name="must-0"' in page
+    assert "data-revise-round" in page and "data-revise-rollback" in page
+    assert "data-drift" in page and "别的台词" in page
+
+
+def test_storyboard_page_has_the_revise_form(client, store, sample):
+    page = client.get(f"/episode/{sample['episode']}/storyboard").text
+    assert f'action="/llm/start/storyboard_revise/{sample["episode"]}"' in page and "data-llm-storyboard-revise" in page
