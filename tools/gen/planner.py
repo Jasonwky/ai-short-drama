@@ -313,7 +313,8 @@ def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = 
         "script": {"description": seg["description"],
                    "lines": [[w, line] for w, line in rules.dialogue_lines(seg["description"], names)],
                    "voices": {c["name"]: c["voice_desc"] for c in assets["characters"] if c["voice_desc"]},
-                   "video_prompt": seg["video_prompt"], "duration_sec": seg["duration_sec"]},
+                   "video_prompt": seg["video_prompt"], "duration_sec": seg["duration_sec"],
+                   "movement": seg["movement"]},
     }
     params = presets.stamp(store, "video", params)
     try:            # 规划时就试拼一次(内置拼法叠上当前预设):拼不出就拒绝规划,不等到交给云机时才失败

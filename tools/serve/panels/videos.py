@@ -98,6 +98,7 @@ def page(request: Request, episode_id: int):
                      "tasks": videos,
                      "stale_lines": rules.stale_lines(s["description"], rules.said_lines(cur)) if cur else [],
                      "dropped_lines": rules.dropped_lines(s["description"], rules.said_lines(cur)) if cur else [],
+                     "stale_fields": rules.stale_video_fields(s, cur) if cur else [],
                      "said": {t["id"]: rules.said_lines(t) for t in videos if t["state"] == "done"},
                      "align_tasks": [t for t in tasks if t["kind"] == "align"],
                      "align_problems": align_problems(store, s["id"]),

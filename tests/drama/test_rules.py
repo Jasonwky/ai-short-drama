@@ -98,3 +98,14 @@ def test_dropped_lines_are_what_the_video_said_but_the_description_no_longer_has
     assert rules.stale_lines(desc, said) == []                       # 只删不加:没有新台词
     same = "【镜头1】林小雨说：「这块玉佩，是我母亲留给我的。」【镜头2】沈墨说：「天快黑了。」"
     assert rules.dropped_lines(same, said) == [] and rules.stale_lines(same, said) == []
+
+
+def test_stale_video_fields_compare_the_snapshot_with_the_segment_now():
+    import json as _json
+    seg = {"description": "新描述", "video_prompt": "p", "duration_sec": 8.0, "movement": "推"}
+    old = {"params_json": _json.dumps({"script": {"description": "旧描述", "video_prompt": "p", "duration_sec": 8.0}})}
+    assert rules.stale_video_fields(seg, old) == ["描述"]                        # 旧快照没记运镜:不比
+    new = {"params_json": _json.dumps({"script": {"description": "新描述", "video_prompt": "q", "duration_sec": 9.0,
+                                                  "movement": ""}})}
+    assert rules.stale_video_fields(seg, new) == ["视频提示词", "时长", "运镜"]
+    assert rules.stale_video_fields(seg, {"params_json": "{}"}) == []           # 没快照的老视频:不猜

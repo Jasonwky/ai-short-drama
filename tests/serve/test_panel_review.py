@@ -92,3 +92,25 @@ def test_vision_check_button_and_result_on_the_card(client, runtime, store, samp
     page = client.get(f"/episode/{sample['episode']}/videos").text
     assert "data-vision-mismatch" in page and "应当跪,模型看到的是站" in page
     assert "应当跪,模型看到的是站" in client.get(f"/llm/run/{rid}").text
+
+
+def test_card_says_the_video_was_made_from_an_old_storyboard(client, runtime, store, sample):
+    """分镜修改回路(spec 2026-10-24 第 2.5 节):视频提示词改过、视频还是旧的 → 卡片提示「按旧分镜出的」。"""
+    from tools.drama.tasks import create_task, set_task_state
+    from tools.serve.dispatch import sha256_file
+    seg2 = _two(store, sample, runtime.data_root)
+    row = repo.get(store, "segment", seg2)
+    rel, root = "outputs/tasks/v8/clip.mp4", runtime.data_root
+    (root / rel).parent.mkdir(parents=True, exist_ok=True)
+    (root / rel).write_bytes(sample_mp4())
+    snap = {"description": row["description"], "lines": [], "video_prompt": row["video_prompt"],
+            "duration_sec": row["duration_sec"], "movement": row["movement"]}
+    t = create_task(store, kind="video", target_type="segment", target_id=seg2, model="m-video", seed=7, prompt="p",
+                    params={"writes": "video_path", "script": snap}, refs=[])
+    set_task_state(store, t, "queued", external_id=f"p{t}")
+    set_task_state(store, t, "done", result_path=rel, result_sha256=sha256_file(root / rel))
+    repo.update(store, "segment", seg2, video_path=rel)
+    assert "data-stale-fields" not in client.get(f"/episode/{sample['episode']}/videos").text
+    repo.update(store, "segment", seg2, video_prompt="改过的视频提示词", movement="推")
+    page = client.get(f"/episode/{sample['episode']}/videos").text
+    assert "data-stale-fields" in page and "视频提示词、运镜" in page

@@ -80,6 +80,18 @@ def stale_lines(description: str, said: list) -> list[str]:
     return [line for _, line in dialogue_lines(description) if line not in old]
 
 
+_VIDEO_SNAPSHOT = (("description", "描述"), ("video_prompt", "视频提示词"), ("duration_sec", "时长"), ("movement", "运镜"))
+
+
+def stale_video_fields(seg, task) -> list[str]:
+    """当前视频的台本快照与段落现在的值不一样的字段 —— 分镜改过、视频还是按旧分镜出的(spec 2026-10-24 第 2.5 节)。
+    快照里没有的字段(旧视频没记)不比:不知道当时用的什么,不猜。task:task 表的一行。"""
+    snap = json.loads(task["params_json"]).get("script")
+    if not snap:
+        return []
+    return [label for key, label in _VIDEO_SNAPSHOT if key in snap and snap[key] != seg[key]]
+
+
 def dropped_lines(description: str, said: list) -> list[str]:
     """当前视频说了、描述里现在已经没有的台词(删台词的另一半:视频里还留着旧话)。"""
     now = {line for _, line in dialogue_lines(description)}
