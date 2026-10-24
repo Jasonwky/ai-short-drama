@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -388,6 +388,10 @@ QUEUE_DDL = [
 ]
 SCHEMA += "".join(f"{stmt};\n" for stmt in QUEUE_DDL)
 
+# v20:原创分集的骨架(spec 2026-10-24-原创分集-design.md 第 1 节)—— 人挑的骨架 + 代码算的各幕集号区间,空 = 没做过
+SKELETON_DDL = ["ALTER TABLE drama ADD COLUMN skeleton_json TEXT NOT NULL DEFAULT ''"]
+SCHEMA += "".join(f"{stmt};\n" for stmt in SKELETON_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -441,6 +445,8 @@ MIGRATIONS: dict[int, list[str]] = {
     17: APPLIED_DDL,
     # v19:持久的 LLM 队列 + 暂停状态
     18: QUEUE_DDL,
+    # v20:剧的原创骨架
+    19: SKELETON_DDL,
 }
 
 

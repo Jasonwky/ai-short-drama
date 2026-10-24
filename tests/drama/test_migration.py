@@ -13,8 +13,15 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v20(s):
+    """退回 v19:删掉 v20 新增的 drama.skeleton_json。"""
+    if "skeleton_json" in _cols(s, "drama"):
+        s.conn.execute("ALTER TABLE drama DROP COLUMN skeleton_json")
+
+
 def _drop_v19(s):
-    """退回 v18:删掉 v19 新增的 LLM 队列两张表。"""
+    """退回 v18:删掉 v19 新增的 LLM 队列两张表;v20 的也一并退掉。"""
+    _drop_v20(s)
     s.conn.execute("DROP TABLE IF EXISTS llm_queue")
     s.conn.execute("DROP TABLE IF EXISTS llm_queue_state")
 
@@ -470,4 +477,20 @@ def test_v18_to_v19_adds_the_llm_queue_and_its_state_row(tmp_path):
     assert [tuple(r) for r in s.conn.execute("SELECT id, paused_reason FROM llm_queue_state")] == [(1, "")]
     with pytest.raises(sqlite3.IntegrityError):
         s.conn.execute("INSERT INTO llm_queue_state (id) VALUES (2)")
+    s.close()
+
+
+def test_v19_to_v20_dramas_gain_an_empty_skeleton(tmp_path):
+    """v20:原创骨架(spec 2026-10-24-原创分集-design.md 第 1 节)写进 drama.skeleton_json;老剧为空。"""
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "替嫁", "9:16")
+    _drop_v20(s)
+    s.conn.execute("UPDATE meta SET value = '19' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    assert repo.get(s, "drama", d)["skeleton_json"] == ""
+    repo.update(s, "drama", d, skeleton_json='{"total": 10}')
+    assert repo.get(s, "drama", d)["skeleton_json"] == '{"total": 10}'
     s.close()
