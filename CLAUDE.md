@@ -31,7 +31,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 真链路验收(要开卡):`python -X utf8 -m tools.serve.e2e_first_segment --help`;
   在 Git Bash 里跑要加 `MSYS_NO_PATHCONV=1`,否则 `/root/...` 会被改写成 Windows 路径
 - **启动控制台**:`python -X utf8 -m tools.serve.console --db <库> --data-root <素材根>`,浏览器开 http://127.0.0.1:8700/
-  (只听本机;后台 worker 随控制台一起跑;没有假后端开关)
+  (只听本机;后台 worker 随控制台一起跑;没有假后端开关)。
+  根目录 `start.bat` / `start.ps1` 一键启动或重启(默认题甲库,`-Db` / `-DataRoot` / `-Port` 可改;端口上是别的程序就拒绝,不乱杀)
 - **Playwright 全面自测**(一律有头,会弹浏览器;没有无头开关):`python -X utf8 -m tools.serve.selftest`;截图在 `outputs/selftest/<时间>/`
 - **验收**:`python -X utf8 -m tools.serve.accept`(四层:单测 → 真 LLM 契约 → Playwright 有头 → 真云机整链;
   本机找不到 Claude Code 命令行或不给云机参数时对应层 SKIP,总判决 PARTIAL,不算通过)
