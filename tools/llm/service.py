@@ -50,6 +50,9 @@ TASKS: dict[str, Spec] = {
                             resets_segments=True),
     "script_adapt": Spec(script_writer, "episode", script_writer.context_adapt, 12000, "大纲 + 原文 → 剧本",
                          resets_segments=True),
+    # 大纲 → 剧本(spec 2026-10-24-逐集批量出剧本分镜-design.md 第 3 节):只有大纲的集;带前后集大纲
+    "script_outline": Spec(script_writer, "episode", script_writer.context_outline, 12000, "大纲 → 剧本",
+                           resets_segments=True),
     # 分镜约束最多(段数 / 子镜头 / 台词逐字 / @绑定),实测默认模型 3 轮内约 1/12 收敛不了,多给一轮
     "storyboard": Spec(storyboard, "episode", storyboard.context, 16000, "剧本 → 分镜", max_rounds=4,
                        resets_segments=True),

@@ -21,7 +21,7 @@ router = APIRouter()
 
 # 各任务从表单里取哪些参数、什么类型
 PARAMS = {"outline": {"novel": str, "n_episodes": int}, "script_synopsis": {"synopsis": str, "minutes": int},
-          "script_adapt": {"minutes": int}, "storyboard": {}, "voice": {},
+          "script_adapt": {"minutes": int}, "script_outline": {"minutes": int}, "storyboard": {}, "voice": {},
           **{f"describe_{t}": {} for t in describe.FIELDS}, "vision_check": {"video_sha256": str},
           "critique": {"role": str}, "rewrite": {"span": str, "intent": str, "note": str},
           "premise": {"idea": str, "n": int, "constraint": str},

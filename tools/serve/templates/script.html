@@ -7,7 +7,7 @@
   <form method="post" action="/drama/{{ drama.id }}/episodes"><button class="btn" type="submit" data-add-episode>+ 新建一集</button></form>
 </section>
 {% for e in eps %}
-  <section class="card" data-episode="{{ e.row.id }}">
+  <section class="card" id="ep-{{ e.row.id }}" data-episode="{{ e.row.id }}">
     <h2>第 {{ e.row.number }} 集 <a class="btn small" href="/episode/{{ e.row.id }}/storyboard">去分镜 →</a></h2>
     <form method="post" action="/episode/{{ e.row.id }}/script">
       <textarea class="tall" name="script" placeholder="粘贴本集剧本">{{ e.row.script }}</textarea>
@@ -34,6 +34,13 @@
             <select name="minutes"><option>1</option><option selected>2</option><option>3</option></select>
             <button class="btn" type="submit">LLM 改写</button>
             <p class="hint">本集原文与大纲会发送给 LLM 服务。</p>
+          </form>
+        {% elif e.row.outline.strip() %}
+          <form method="post" action="/llm/start/script_outline/{{ e.row.id }}" style="flex: 1; min-width: 200px" data-llm-script-outline>
+            <label>按大纲写剧本(LLM)</label>
+            <select name="minutes"><option>1</option><option selected>2</option><option>3</option></select>
+            <button class="btn" type="submit">LLM 按大纲写</button>
+            <p class="hint">本集大纲(带前后集大纲)会发送给 LLM 服务。</p>
           </form>
         {% endif %}
       </div>
