@@ -239,3 +239,28 @@ def test_shot_type_is_a_closed_set_and_lying_pairs_need_a_close_shot():
 def test_apply_writes_the_shot_type(store):
     ids = sb.apply(store, _episode(store), good_args(), CTX)
     assert [repo.get(store, "segment", i)["shot_type"] for i in ids] == ["中景"] * len(ids)
+
+
+def _view(**kw):
+    v = {"scene": "老宅庭院", "characters": ["林小雨"], "props": ["玉佩"],
+         "description": "【镜头1】林小雨低头看着玉佩。【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」",
+         "duration": 8.0, "image_prompt": "@林小雨 在 @老宅庭院 里,低头看 @玉佩",
+         "video_prompt": "@林小雨 在 @老宅庭院 低头看 @玉佩", "blocking": [
+             {"character": "林小雨", "pose": "站", "facing": "镜头", "side": "中", "holding": "玉佩"}],
+         "shot_type": "中景"}
+    return {**v, **kw}
+
+
+def test_view_problems_flag_unbound_mentions_and_pose_words():
+    ctx = {"aspect": "9:16", "scene_info": {}}
+    assert sb.view_problems("段落1", _view(), ctx, None) == []
+    got = sb.view_problems("段落1", _view(image_prompt="@林小雨 站在 @老宅庭院 里,看 @沈墨"), ctx, None)
+    assert "段落1:image_prompt 里的 @沈墨 不是本段绑定的素材" in got
+    assert any("image_prompt 里写了姿态" in p for p in got) and any("没有 @ 它" in p for p in got)
+
+
+def test_line_problems_read_lines_from_descriptions():
+    script = "林小雨说：「这块玉佩，是我母亲留给我的。」\n沈墨说：「走吧。」\n"
+    assert sb.line_problems(script, [_view()], ["林小雨", "沈墨"]) == ["剧本台词「走吧。」没有出现在任何段落里"]
+    wrong = _view(description="【镜头1】沈墨说：「这块玉佩，是我母亲留给我的。」")
+    assert "段落1:说话人「沈墨」不在本段角色 ['林小雨'] 里" in sb.line_problems(script, [wrong], ["林小雨", "沈墨"])

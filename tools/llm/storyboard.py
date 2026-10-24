@@ -71,8 +71,8 @@ def context(store: Store, episode_id: int) -> dict:
             "props": names["prop"], "scene_info": info, "aspect": aspect}
 
 
-def schema(ctx: dict) -> dict:
-    subshot = {
+def subshot_schema(ctx: dict) -> dict:
+    return {
         "type": "object", "additionalProperties": False, "required": ["visual", "speaker", "line"],
         "properties": {
             "visual": {"type": "string"},
@@ -80,7 +80,10 @@ def schema(ctx: dict) -> dict:
             "line": {"type": ["string", "null"]},
         },
     }
-    entry = {
+
+
+def blocking_schema(ctx: dict) -> dict:
+    return {
         "type": "object", "additionalProperties": False, "required": ["character", "pose", "facing", "side", "holding"],
         "properties": {
             "character": {"type": "string", "enum": ctx["characters"]},
@@ -90,6 +93,11 @@ def schema(ctx: dict) -> dict:
             "holding": {"type": "string", "enum": [*ctx["props"], blocking.NONE]},
         },
     }
+
+
+def schema(ctx: dict) -> dict:
+    subshot = subshot_schema(ctx)
+    entry = blocking_schema(ctx)
     seg_props = {
         "scene": {"type": "string", "enum": ctx["scenes"]},
         "characters": {"type": "array", "items": {"type": "string", "enum": ctx["characters"]}},
@@ -142,6 +150,51 @@ def duration(description: str, pace: str, cap=MINIMAX_H3) -> float:
     return math.ceil(need * 2) / 2
 
 
+def view_problems(where: str, v: dict, ctx: dict, prev: dict | None, cap=MINIMAX_H3) -> list[str]:
+    """一段的判卷(段落视图:scene / characters / props / description / duration / image_prompt / video_prompt /
+    blocking / shot_type)。首次拆分镜与分镜修改共用;prev:同一集上一段的视图(同场景时对表)。"""
+    problems = [f"{where}:{p}" for p in rules.check_segment(v["description"], v["duration"], cap)]
+    bound = v["characters"] + [v["scene"]] + v["props"]
+    for field_name in ("image_prompt", "video_prompt"):
+        _, unknown = refs.find_mentions(v[field_name], bound)
+        problems += [f"{where}:{field_name} 里的 @{u} 不是本段绑定的素材" for u in unknown]
+    found, _ = refs.find_mentions(v["image_prompt"], bound)
+    problems += [f"{where}:绑定了「{b}」但 image_prompt 没有 @ 它" for b in bound if b not in found]
+    img = v["image_prompt"]
+    furn = ctx.get("scene_info", {}).get(v["scene"], {}).get("furnishings", "")
+    problems += [f"{where}:image_prompt 里{p} —— 首帧只许用场景清单上的陈设" for p in furnish.problems(img, furn)]
+    problems += [f"{where}:{p}" for p in blocking.problems(v["blocking"], v["characters"], v["props"])]
+    problems += [f"{where}:{p}" for p in framing.problems(ctx.get("aspect", ""), v["blocking"], v["shot_type"])]
+    if blocking.pose_words(img):
+        problems.append(f"{where}:image_prompt 里写了姿态 / 站位 / 朝向({'、'.join(blocking.pose_words(img))}),"
+                        "这些只写在 blocking 里 —— 两处说法不一样时模型会把人画两遍")
+    if prev is not None and prev["scene"] == v["scene"]:     # 同场景相邻段:对表
+        problems += [f"{where}:{p}" for p in
+                     blocking.transition_problems(prev["blocking"], prev["description"], v["blocking"])]
+    return problems
+
+
+def line_problems(script: str, views: list[dict], names: list[str]) -> list[str]:
+    """整集台词(从各段描述里取,分镜修改用):逐字出自剧本、顺序不变、说话人是本段角色、剧本台词一句不漏。"""
+    flat, pos, said, out = squash(script), -1, [], []
+    for n, v in enumerate(views, 1):
+        where = f"段落{v.get('number', n)}"
+        for who, line in rules.dialogue_lines(v["description"], names):
+            if who not in v["characters"]:
+                out.append(f"{where}:说话人「{who}」不在本段角色 {v['characters']} 里")
+            q = squash(line)
+            at = flat.find(q, pos + 1)
+            if at < 0:
+                hint = "(顺序错了)" if q in flat else "(剧本里找不到这句原文,台词必须逐字照抄)"
+                out.append(f"{where}:台词「{line[:30]}」{hint}")
+            else:
+                pos = at
+            said.append(q)
+    joined = "".join(said)
+    wanted = [squash(q) for q in _QUOTED.findall(script) if len(squash(q)) >= 2]
+    return out + [f"剧本台词「{w[:30]}」没有出现在任何段落里" for w in wanted if w not in joined]
+
+
 def judge_factory(ctx: dict, cap=MINIMAX_H3):
     script = squash(ctx["script"])
     wanted = [squash(q) for q in _QUOTED.findall(ctx["script"]) if len(squash(q)) >= 2]
@@ -151,6 +204,7 @@ def judge_factory(ctx: dict, cap=MINIMAX_H3):
         problems: list[str] = []
         pos = -1
         said: list[str] = []
+        views: list[dict] = []
         for n, seg in enumerate(segs, 1):
             where = f"段落{n}"
             chars = seg["characters"]
@@ -175,25 +229,11 @@ def judge_factory(ctx: dict, cap=MINIMAX_H3):
                     pos = at
                 said.append(line)
             desc = describe(seg)
-            problems += [f"{where}:{p}" for p in rules.check_segment(desc, duration(desc, seg["pace"], cap), cap)]
-            bound = chars + [seg["scene"]] + seg.get("props", [])
-            for field_name in ("image_prompt", "video_prompt"):
-                _, unknown = refs.find_mentions(seg[field_name], bound)
-                problems += [f"{where}:{field_name} 里的 @{u} 不是本段绑定的素材" for u in unknown]
-            found, _ = refs.find_mentions(seg["image_prompt"], bound)
-            problems += [f"{where}:绑定了「{b}」但 image_prompt 没有 @ 它" for b in bound if b not in found]
-            img = seg["image_prompt"]
-            furn = ctx.get("scene_info", {}).get(seg["scene"], {}).get("furnishings", "")
-            problems += [f"{where}:image_prompt 里{p} —— 首帧只许用场景清单上的陈设" for p in furnish.problems(img, furn)]
-            problems += [f"{where}:{p}" for p in blocking.problems(seg["blocking"], chars, seg.get("props", []))]
-            problems += [f"{where}:{p}" for p in framing.problems(ctx.get("aspect", ""), seg["blocking"], seg["shot_type"])]
-            if blocking.pose_words(img):
-                problems.append(f"{where}:image_prompt 里写了姿态 / 站位 / 朝向({'、'.join(blocking.pose_words(img))}),"
-                                "这些只写在 blocking 里 —— 两处说法不一样时模型会把人画两遍")
-            if n > 1 and segs[n - 2]["scene"] == seg["scene"]:     # 同场景相邻段:对表
-                prev = segs[n - 2]
-                problems += [f"{where}:{p}" for p in
-                             blocking.transition_problems(prev["blocking"], describe(prev), seg["blocking"])]
+            view = {"scene": seg["scene"], "characters": chars, "props": seg.get("props", []), "description": desc,
+                    "duration": duration(desc, seg["pace"], cap), "image_prompt": seg["image_prompt"],
+                    "video_prompt": seg["video_prompt"], "blocking": seg["blocking"], "shot_type": seg["shot_type"]}
+            problems += view_problems(where, view, ctx, views[-1] if views else None, cap)
+            views.append(view)
         joined = "".join(said)
         problems += [f"剧本台词「{w[:30]}」没有出现在任何段落里" for w in wanted if w not in joined]
         problems += rules.check_episode(ctx["script"], len(segs))
