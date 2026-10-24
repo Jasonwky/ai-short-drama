@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -368,6 +368,26 @@ BEGIN SELECT RAISE(ABORT, '写回快照一经写下不可改 —— 要改就重
 ]
 SCHEMA += "".join(f"{stmt};\n" for stmt in APPLIED_DDL)
 
+# v19:持久的 LLM 队列(spec 2026-10-24-逐集批量出剧本分镜-design.md 第 4、8 节)—— 批量出剧本、批准剧本后自动排分镜;
+# 重启后 waiting 的接着跑。暂停原因单独一行(setting.key 有 CHECK,不往里加键)。run_id 不设外键:llm_run 以后可能重建
+QUEUE_DDL = [
+    """CREATE TABLE llm_queue (
+  id INTEGER PRIMARY KEY,
+  task TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id INTEGER NOT NULL,
+  params_json TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'started', 'cancelled')),
+  run_id INTEGER,
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  started_at TEXT
+)""",
+    "CREATE TABLE llm_queue_state (id INTEGER PRIMARY KEY CHECK (id = 1), paused_reason TEXT NOT NULL DEFAULT '')",
+    "INSERT INTO llm_queue_state (id) VALUES (1)",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in QUEUE_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -419,6 +439,8 @@ MIGRATIONS: dict[int, list[str]] = {
     16: BEATS_DDL,
     # v18:llm_run 记下写回前后的实际内容(修改回路的回滚)
     17: APPLIED_DDL,
+    # v19:持久的 LLM 队列 + 暂停状态
+    18: QUEUE_DDL,
 }
 
 

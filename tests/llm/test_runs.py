@@ -53,6 +53,8 @@ def test_illegal_transitions_and_silent_failure(store):
 
 def test_v2_database_gets_the_llm_run_table(tmp_path):
     s = Store(tmp_path / "d.db")
+    s.conn.execute("DROP TABLE llm_queue")                                    # v19 新增
+    s.conn.execute("DROP TABLE llm_queue_state")
     s.conn.execute("ALTER TABLE episode DROP COLUMN beats_json")              # v17 新增
     s.conn.execute("ALTER TABLE drama DROP COLUMN premise_json")              # v16 新增
     s.conn.execute("DROP TABLE llm_run")

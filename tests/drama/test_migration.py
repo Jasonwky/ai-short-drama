@@ -13,8 +13,15 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v19(s):
+    """退回 v18:删掉 v19 新增的 LLM 队列两张表。"""
+    s.conn.execute("DROP TABLE IF EXISTS llm_queue")
+    s.conn.execute("DROP TABLE IF EXISTS llm_queue_state")
+
+
 def _drop_v18(s):
-    """退回 v17:删掉 v18 新增的 llm_run.applied_json 与它的触发器。"""
+    """退回 v17:删掉 v18 新增的 llm_run.applied_json 与它的触发器;v19 的也一并退掉。"""
+    _drop_v19(s)
     s.conn.execute("DROP TRIGGER IF EXISTS llm_run_applied_locked")
     if "applied_json" in _cols(s, "llm_run"):       # 更老的造库流程会先把 llm_run 整张删掉 / 换成旧表
         s.conn.execute("ALTER TABLE llm_run DROP COLUMN applied_json")
@@ -447,4 +454,20 @@ def test_v17_to_v18_llm_runs_gain_a_locked_applied_snapshot(tmp_path):
     s.conn.execute("UPDATE llm_run SET applied_json = '{}' WHERE id = ?", (rid,))
     with pytest.raises(sqlite3.DatabaseError, match="不可改"):
         s.conn.execute("UPDATE llm_run SET applied_json = '{\"a\": 1}' WHERE id = ?", (rid,))
+    s.close()
+
+
+def test_v18_to_v19_adds_the_llm_queue_and_its_state_row(tmp_path):
+    """v19:持久的 LLM 队列(spec 2026-10-24-逐集批量出剧本分镜-design.md 第 4 节);暂停原因单独一行,初始不暂停。"""
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    _drop_v19(s)
+    s.conn.execute("UPDATE meta SET value = '18' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    assert _cols(s, "llm_queue") >= {"task", "target_type", "target_id", "params_json", "state", "run_id", "reason"}
+    assert [tuple(r) for r in s.conn.execute("SELECT id, paused_reason FROM llm_queue_state")] == [(1, "")]
+    with pytest.raises(sqlite3.IntegrityError):
+        s.conn.execute("INSERT INTO llm_queue_state (id) VALUES (2)")
     s.close()
