@@ -146,3 +146,12 @@ def test_judge_parses_speakers_like_rules_and_rejects_empty(store):
     assert judge({"candidates": [plain, _c("林小雨攥紧玉佩。\n林小雨说：「谁也别想拿走。」")]}) == []
     assert any("是空的" in p for p in judge({"candidates": [ok, _c("   ")]}))
     assert any("格式" in p for p in judge({"candidates": [ok, _c("林小雨「这是我娘留下的唯一念想。」")]}))
+
+
+def test_sync_segment_reports_the_description_before_and_after(store):
+    ep = _ep(store)
+    sid = repo.add_segment(store, ep, 1, description="【镜头1】林小雨说：「这块玉佩，是我母亲留给我的。」")
+    hit = rw.sync_segment(store, ep, SPAN, "林小雨说：「玉佩是娘的。」", ["林小雨", "沈墨"])
+    assert hit == {"id": sid, "number": 1, "before": "【镜头1】林小雨说：「这块玉佩，是我母亲留给我的。」",
+                   "after": "【镜头1】林小雨说：「玉佩是娘的。」"}
+    assert rw.sync_segment(store, ep, "沈墨提灯走进院门。", "沈墨快步走进院门。", ["林小雨", "沈墨"]) is None

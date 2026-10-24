@@ -100,8 +100,9 @@ def decision_problems(args: dict, decision: dict) -> list[str]:
     return [] if isinstance(pick, int) and not isinstance(pick, bool) and 0 <= pick < len(args["candidates"]) else ["要从候选里挑一个"]
 
 
-def _sync_segment(store: Store, episode_id: int, old: str, new: str, names: list[str]) -> int | None:
-    """把对得上的那一个段落描述里的旧台词逐句换成新台词;返回段号,对不上返回 None(只改剧本)。"""
+def sync_segment(store: Store, episode_id: int, old: str, new: str, names: list[str]) -> dict | None:
+    """把对得上的那一个段落描述里的旧台词逐句换成新台词;返回 {"id", "number", "before", "after"}(描述改前改后),
+    对不上返回 None(只改剧本)。局部改写与剧本修改共用。"""
     before, after = rules.dialogue_lines(old, names), rules.dialogue_lines(new, names)
     if not before or len(before) != len(after) or [w for w, _ in before] != [w for w, _ in after]:
         return None
@@ -118,7 +119,7 @@ def _sync_segment(store: Store, episode_id: int, old: str, new: str, names: list
         at = i + len(a) + 2
     desc = "".join(out) + desc[at:]
     repo.update(store, "segment", hits[0]["id"], description=desc)
-    return hits[0]["number"]
+    return {"id": hits[0]["id"], "number": hits[0]["number"], "before": hits[0]["description"], "after": desc}
 
 
 def apply(store: Store, episode_id: int, args: dict, ctx: dict, decision: dict) -> int | None:
@@ -129,4 +130,5 @@ def apply(store: Store, episode_id: int, args: dict, ctx: dict, decision: dict) 
         raise ValueError("选中的片段已经不在剧本里(或不止一处)—— 剧本改过了,请重新选")
     new = args["candidates"][decision["pick"]]["text"].strip()
     repo.update(store, "episode", episode_id, script=script.replace(ctx["span"], new, 1))
-    return _sync_segment(store, episode_id, ctx["span"], new, ctx["characters"])
+    hit = sync_segment(store, episode_id, ctx["span"], new, ctx["characters"])
+    return hit["number"] if hit else None
