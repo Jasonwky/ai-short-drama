@@ -168,8 +168,12 @@ def _decision(task: str, form) -> dict | None:
             idx = k.split("-", 1)[1] if k.startswith("issue-") else ""
             if idx.isdigit():                       # 序号不是整数的键直接忽略,缺的表态由 decision_problems 报
                 stance[int(idx)] = str(v)
-        return {"adopt": sorted(i for i, v in stance.items() if v == "adopt"),
-                "reject": sorted(i for i, v in stance.items() if v == "reject")}
+        out = {"adopt": sorted(i for i, v in stance.items() if v == "adopt"),
+               "reject": sorted(i for i, v in stance.items() if v == "reject")}
+        if task == "drama_review":                  # 跨集问题人选「改哪一集」(只记被采纳的)
+            out["fix"] = {k[4:]: str(v) for k, v in form.items()
+                          if k.startswith("fix-") and k[4:].isdigit() and int(k[4:]) in out["adopt"]}
+        return out
     if task in ("rewrite", "outline_variants", "shot_options", "skeleton"):
         raw = str(form.get("pick", ""))
         return {"pick": int(raw) if raw.isdigit() else -1}

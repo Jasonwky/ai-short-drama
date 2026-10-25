@@ -72,3 +72,16 @@ def test_cast_review_page_lists_rows_coverage_and_images(client, store, sample):
     assert client.post(f"/llm/run/{rid}/approve", data={}, follow_redirects=False).status_code == 303
     assert repo.get(store, "character", sample["lin"])["styling"] == "蓝裙"
     assert "data-cast-approved" in client.get(f"/llm/run/{rid}").text
+
+
+def test_review_page_lets_the_reviewer_pick_the_episode_to_fix(client, store, sample):
+    d, ep = sample["drama"], sample["episode"]
+    repo.update(store, "episode", ep, script=EP1)
+    e2 = repo.add_episode(store, d, 2, "script", script=EP1)
+    it = {"where": "第1集", "quote": "沈墨说：「我知道。」", "category": "台词重复", "severity": "低",
+          "suggestion": "后一集换句台词", "also": [{"where": "第2集", "quote": "沈墨说：「我知道。」"}]}
+    rid = _proposed(store, "drama_review", d, {"stage": "script"}, {"issues": [it]})
+    assert 'data-issue-fix="0"' in client.get(f"/llm/run/{rid}").text
+    client.post(f"/llm/run/{rid}/approve", data={"issue-0": "adopt", "fix-0": "第2集"})
+    assert tuple(store.conn.execute("SELECT task, target_id FROM llm_queue").fetchone()) == ("script_revise", e2)
+    assert "采纳后改的是第2集" in client.get(f"/llm/run/{rid}").text

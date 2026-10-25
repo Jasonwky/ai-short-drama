@@ -138,3 +138,16 @@ def test_asset_issues_go_back_to_the_cast_task(drama):
     it = {**_issue("角色·陈老三", "中年"), "category": "造型与剧本冲突"}
     plan = dr.plan_queue(s, ctx, {"issues": [it]}, {"adopt": [0]})
     assert plan[0][:3] == ("cast", "drama", d) and plan[0][3][0]["text"].startswith("[造型与剧本冲突] 角色·陈老三:")
+
+
+def test_reviewer_can_move_the_fix_to_an_also_episode(drama):
+    """模型把「要改的那处」挂在先出现的那集(实战两轮都有):人选改哪一集,引用换成那一集的原文。"""
+    s, d, e1, e2 = drama
+    it = _issue("第1集", "燕无咎说：「我是伙夫。」", "后一集换句台词", also=[{"where": "第2集", "quote": "燕无咎说：「我是伙夫。」"}])
+    args = {"issues": [it]}
+    assert dr.decision_problems(args, {"adopt": [0], "reject": [], "fix": {"0": "第2集"}}) == []
+    assert dr.decision_problems(args, {"adopt": [0], "reject": [], "fix": {"0": "第9集"}})
+    ctx = {**dr.context(s, d, "script"), "drama_id": d}
+    plan = dr.plan_queue(s, ctx, args, {"adopt": [0], "fix": {"0": "第2集"}})
+    assert plan[0][2] == e2 and plan[0][3][0]["target"] == "燕无咎说：「我是伙夫。」"
+    assert "另见第1集" in plan[0][3][0]["text"]

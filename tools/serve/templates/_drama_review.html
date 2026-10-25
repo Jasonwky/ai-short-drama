@@ -15,6 +15,15 @@
         <pre>{{ it.quote }}</pre>
         {% for a in it.also %}<p class="hint" data-issue-also>另见{{ a.where }}:「{{ a.quote }}」</p>{% endfor %}
         <p>改法:{{ it.suggestion }}</p>
+        {% if it.also and run.state == "proposed" %}
+          <p><label>采纳后改哪一集:
+            <select name="fix-{{ it.n }}" form="approve-form" data-issue-fix="{{ it.n }}">
+              <option value="{{ it.where }}">{{ it.where }}(模型挂的)</option>
+              {% for a in it.also %}{% if a.where != it.where %}<option value="{{ a.where }}">{{ a.where }}</option>{% endif %}{% endfor %}
+            </select></label></p>
+        {% else %}
+          <p><span class="tag" data-issue-fix-where>采纳后改的是{{ it.fix }}</span></p>
+        {% endif %}
         {% if run.state == "proposed" %}
           <label><input type="radio" name="issue-{{ it.n }}" value="adopt" form="approve-form"> 采纳</label>
           <label><input type="radio" name="issue-{{ it.n }}" value="reject" form="approve-form" data-reject-radio> 驳回</label>
