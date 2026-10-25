@@ -1,6 +1,52 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>逐集</h1>
+<section class="card" data-flow>
+  <h2>全剧流程</h2>
+  <form method="post" action="/drama/{{ drama.id }}/flow/auto" class="row">
+    <input type="hidden" name="on" value="{{ 0 if flow_auto else 1 }}">
+    <span data-flow-auto="{{ flow_auto }}">自动推进:<b>{{ "开" if flow_auto else "关" }}</b></span>
+    <button class="btn small" type="submit" data-flow-toggle>{{ "关闭自动推进" if flow_auto else "开启自动推进" }}</button>
+  </form>
+  <p class="hint">每一关都是 AI 出、你批准才写回;全剧审你一条都不采纳 = 这一关通过。自动推进只把下一步排进队列,不替你批准;
+    同一份输入跑过就不再自动排,失败的不自动重试(点「跑这一关」)。</p>
+  <table>
+    <tr><th>关</th><th>状态</th><th>说明</th><th></th></tr>
+    {% for s in stages %}
+      <tr data-flow-stage="{{ s.key }}" data-state="{{ s.state }}">
+        <td>{{ s.title }}</td>
+        <td class="{{ 'status-bad' if s.state in ('failed', 'stuck') }}">{{ s.label }}{% if s.changed %} · <span data-flow-changed>通过后又改过</span>{% endif %}</td>
+        <td>{{ s.detail }}{% if s.run %} · <a href="/llm/run/{{ s.run }}">看这一轮</a>{% endif %}</td>
+        <td>{% if s.key != "scripts" %}
+          <form method="post" action="/drama/{{ drama.id }}/flow/run/{{ s.key }}">
+            <button class="btn small" type="submit" data-flow-run="{{ s.key }}"
+              {% if s.state in ("blocked", "queued", "running", "proposed", "fixing", "working") %}disabled title="{{ s.label }}"{% endif %}>
+              {{ "再审一次" if s.state == "passed" and s.key.startswith("r") else "跑这一关" }}</button></form>
+        {% endif %}</td>
+      </tr>
+    {% endfor %}
+  </table>
+  <details data-asset-wall {% if wall %}open{% endif %}>
+    <summary>资产图({{ wall | length }} 个资产)</summary>
+    {% if not wall %}<p class="empty">还没有资产 —— 等「② AI 出资产表」,或去「资产」面板手动建</p>{% endif %}
+    <div class="wall">
+      {% for a in wall %}
+        <div class="card wall-item" data-wall-item="{{ a.table }}-{{ a.id }}">
+          <p><b>{{ a.label }}「{{ a.name }}」</b> <a class="hint" href="/drama/{{ drama.id }}/assets#{{ a.table }}-{{ a.id }}">去资产面板</a></p>
+          <div class="row">
+          {% for c in a.cells %}
+            <figure data-wall-cell="{{ c.slot }}" data-task="{{ c.task }}">
+              {% if c.path %}<a href="/media/{{ c.path }}" target="_blank"><img src="/media/{{ c.path }}" alt="{{ a.name }} {{ c.slot }}" style="max-height: 160px"></a>
+              {% elif c.task %}<div class="empty {{ 'status-bad' if c.task == 'failed' }}">{{ {"pending": "排队", "queued": "排队", "running": "生成中", "waiting_host": "等云机", "failed": "失败", "done": "已出(未选用)"}.get(c.task, c.task) }}{% if c.error %}:{{ c.error }}{% endif %}</div>
+              {% else %}<div class="empty">{{ c.why or "还没出" }}</div>{% endif %}
+              <figcaption>{{ c.slot }}</figcaption></figure>
+          {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </details>
+</section>
 <section class="card" data-episodes {% if inflight %}data-inflight{% endif %}>
   {% if paused %}
     <p class="status-bad" data-queue-paused>{{ paused }}</p>

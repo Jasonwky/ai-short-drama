@@ -1,0 +1,40 @@
+{# 全剧审的审阅页(spec 2026-10-25-全剧审与资产表-design.md 第 2、5 节):按集 / 按资产分组列问题,逐条采纳 / 驳回 #}
+{% set dr = preview.drama_review %}
+<div data-drama-review="{{ dr.stage }}">
+  <p class="hint">全剧{{ dr.stage_label }}。每条都要选「采纳」或「驳回」才能批准;一条都不采纳 = 这一关通过。
+    批准时把采纳的问题排进「{{ dr.fix_task }}」(一集最多 10 条;引用定位不到、要增删段落的会当场拒批准并写明哪条)。
+    模型的判断只是提示,不打分、不排序。</p>
+  {% if run.state == "proposed" %}
+    <p><button class="btn small" type="button" data-reject-all>全部驳回(这一关通过)</button></p>
+  {% endif %}
+  {% for where, items in dr.groups.items() %}
+    <h2 data-review-where="{{ where }}">{{ where }}({{ items | length }} 条)</h2>
+    {% for it in items %}
+      <div class="card" data-issue="{{ it.n }}">
+        <p><b>{{ it.n + 1 }}. [{{ it.severity }}] {{ it.category }}</b>{% if it.segment %} · 第 {{ it.segment }} 段{% endif %}</p>
+        <pre>{{ it.quote }}</pre>
+        {% for a in it.also %}<p class="hint" data-issue-also>另见{{ a.where }}:「{{ a.quote }}」</p>{% endfor %}
+        <p>改法:{{ it.suggestion }}</p>
+        {% if run.state == "proposed" %}
+          <label><input type="radio" name="issue-{{ it.n }}" value="adopt" form="approve-form"> 采纳</label>
+          <label><input type="radio" name="issue-{{ it.n }}" value="reject" form="approve-form" data-reject-radio> 驳回</label>
+        {% elif it.stance %}
+          <p data-stance="{{ it.stance }}"><b>{{ "已采纳" if it.stance == "adopt" else "已驳回" }}</b></p>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% endfor %}
+  {% if dr.queued %}
+    <h2>批准时排进修改的</h2>
+    <ul>{% for q in dr.queued %}<li data-review-queued>{{ q.task }} → {{ q.target_type }} {{ q.target_id }}({{ q.notes }} 条意见)</li>{% endfor %}</ul>
+  {% endif %}
+</div>
+{% if run.state == "proposed" %}
+<script>
+  document.querySelectorAll("[data-reject-all]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll("[data-reject-radio]").forEach(function (r) { r.checked = true; });
+    });
+  });
+</script>
+{% endif %}

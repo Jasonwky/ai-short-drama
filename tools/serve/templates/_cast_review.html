@@ -1,0 +1,58 @@
+{# AI 出资产表的审阅页(spec 2026-10-25-全剧审与资产表-design.md 第 1、5 节):逐个资产写什么、覆盖检查、别名要排的修改 #}
+{% set cv = preview.cast %}
+<div data-cast-review>
+{% if cv.approved is defined %}
+  {% set a = cv.approved %}
+  <p data-cast-approved>已写回:新建 {{ a.created | length }} 个资产,改了 {{ a.updated | length }} 个字段
+    {%- if a.alias_episodes %};给第 {{ a.alias_episodes | join("、") }} 集排了统一称呼的剧本修改{% endif %}。</p>
+  <ul>
+    {% for c in a.created %}<li>新建{{ cv.kinds[c.kind] }}「{{ c.name }}」</li>{% endfor %}
+    {% for u in a.updated %}<li>{{ cv.kinds[u.kind] }} {{ u.id }} 的{{ cv.labels[u.kind][u.field] }}:「{{ u.old or "(空)" }}」→「{{ u.new }}」</li>{% endfor %}
+  </ul>
+  <form method="post" action="/llm/run/{{ run.id }}/rollback"><button class="btn small" type="submit" data-rollback>回到这一轮之前</button></form>
+{% else %}
+  <p class="hint">{% if cv.notes_mode %}带意见的一版:只写被你接受的意见认领的改动,没认领的一律不写。{% else %}
+    新名字建成资产(只有文字,出图等资产定稿后自动排);已有资产只填空字段,你写过的字不覆盖。{% endif %}
+    说话人、地点的归属由代码逐个核对过(漏一个都过不了判卷)。</p>
+  {% if cv.groups %}
+    <h2>逐条意见</h2>
+    {% for g in cv.groups %}
+      <div class="card" data-revise-group="{{ g.note }}">
+        <p><b>意见 {{ g.note }}</b>:{{ g.text }} —— <b>{{ g.verdict }}</b>{% if g.reason %}<span class="hint">({{ g.reason }})</span>{% endif %}</p>
+        {% if g.changes %}<p>认领:{% for c in g.changes %}{{ c.label }}{{ "、" if not loop.last }}{% endfor %}</p>{% endif %}
+        {% if run.state == "proposed" and g.verdict == "改" %}
+          <label><input type="radio" name="decide-{{ g.note }}" value="accept" form="approve-form"> 接受</label>
+          <label><input type="radio" name="decide-{{ g.note }}" value="reject" form="approve-form"> 驳回</label>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% endif %}
+  <h2>资产表</h2>
+  <table>
+    <tr><th>类型</th><th>名字</th><th>写回</th><th>别名 / 归入的地点</th><th>内容</th><th>现有图</th></tr>
+    {% for r in cv.rows %}
+      <tr data-cast-row="{{ r.kind }}-{{ r.name }}" data-status="{{ r.status }}">
+        <td>{{ r.kind_label }}</td><td><b>{{ r.name }}</b></td><td>{{ r.status }}</td>
+        <td>{{ (r.aliases or r.places) | join("、") }}</td>
+        <td>{% for f in r.fields %}<div><span class="hint">{{ f.label }}:</span>
+          {% if f.old is defined %}<s>{{ f.old or "(空)" }}</s> → {% endif %}{{ f.new }}</div>{% endfor %}</td>
+        <td>{% if r.image %}<img src="/media/{{ r.image }}" alt="{{ r.name }}" style="max-height: 96px">{% endif %}</td>
+      </tr>
+    {% endfor %}
+  </table>
+  <h2>说话人归属</h2>
+  <table>
+    <tr><th>剧本里的说话人</th><th>出现在</th><th>归到角色</th></tr>
+    {% for s in cv.speakers %}<tr data-cast-speaker="{{ s.who }}"><td>{{ s.who }}</td><td>第 {{ s.eps | join("、") }} 集</td><td>{{ s.owner }}</td></tr>{% endfor %}
+  </table>
+  <h2>地点归属</h2>
+  <table>
+    <tr><th>剧本里的地点</th><th>出现在</th><th>归到场景</th></tr>
+    {% for p in cv.places %}<tr data-cast-place="{{ p.place }}"><td>{{ p.place }}</td><td>第 {{ p.eps | join("、") }} 集</td><td>{{ p.scene }}</td></tr>{% endfor %}
+  </table>
+  {% if cv.aliases %}
+    <h2>批准后排的统一称呼修改</h2>
+    <ul>{% for n, text in cv.aliases.items() %}<li data-cast-alias="{{ n }}">第 {{ n }} 集:{{ text }}</li>{% endfor %}</ul>
+  {% endif %}
+{% endif %}
+</div>

@@ -20,7 +20,7 @@ from tools.drama import invalidation, repo
 from tools.drama.db import Store
 from tools.drama.invalidation import Impact
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
-from tools.llm import beats, critique, describe, expand, outline, outline_variants, premise, rewrite, runs, script_revise, script_writer, shot_options, skeleton, storyboard, storyboard_revise, vision_check, voices
+from tools.llm import beats, cast, critique, describe, drama_review, expand, outline, outline_variants, premise, rewrite, runs, script_revise, script_writer, shot_options, skeleton, storyboard, storyboard_revise, vision_check, voices
 from tools.llm.client import LLMError
 from tools.llm.gate import GateFailed, input_sha, run_gated
 
@@ -83,6 +83,9 @@ TASKS: dict[str, Spec] = {
     # 分镜修改回路(第 2 节):逐段逐字段补丁,只拦新引入的问题;已生成的首帧 / 视频不作废,只标过期
     "storyboard_revise": Spec(storyboard_revise, "episode", storyboard_revise.context, 12000,
                               "分镜修改:按你的意见逐段改", max_rounds=4),
+    # 全剧流程(spec 2026-10-25-全剧审与资产表-design.md):AI 出资产表(覆盖由代码判);全剧审只挑跨集毛病,批准时把采纳的排进修改回路
+    "cast": Spec(cast, "drama", cast.context, 16000, "AI 出资产表:从全剧剧本整理角色 / 场景 / 道具", max_rounds=4),
+    "drama_review": Spec(drama_review, "drama", drama_review.context, 12000, "全剧审:一次看完全剧,挑跨集的毛病"),
 }
 
 

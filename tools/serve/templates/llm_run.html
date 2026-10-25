@@ -58,6 +58,10 @@
         <tr><td>{{ f.index }}</td><td>{{ p.character }}</td><td>{{ p.visible }}</td><td>{{ p.pose }}</td><td>{{ p.facing }}</td></tr>
       {% endfor %}{% endfor %}
     </table>
+  {% elif preview.cast is defined %}
+    {% include "_cast_review.html" %}
+  {% elif preview.drama_review is defined %}
+    {% include "_drama_review.html" %}
   {% elif preview.issues is defined %}
     <p class="hint">视角:<b>{{ preview.role }}</b>。每条都要选「采纳」或「驳回」才能批准;采纳的问题可以在剧本面板「按这条改」。
       模型的判断只是提示,不打分、不排序。</p>

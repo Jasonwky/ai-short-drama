@@ -23,7 +23,7 @@ from tools.cut import export
 from tools.drama.db import Store
 from tools.gen import nodecache, preflight
 from tools.gen.comfy_client import ComfyClient, ComfyUnreachable
-from tools.llm import llm_queue, runs, service
+from tools.llm import flow, llm_queue, runs, service
 from tools.llm.claude_cli import ClaudeCLIClient
 from tools.llm.client import LLMUnavailable
 from tools.llm.service import LLMBackend
@@ -88,6 +88,7 @@ class Runtime:
         self._llm_jobs: list[Future] = []
         self._queue_lock = threading.Lock()   # 出队:判「没有在跑的」与「置 started」在同一把锁里(两个线程会同时来)
         self._queue_fails = 0                 # 连续几条队列项因 LLM 本身失败(断路器)
+        self._flow_lock = threading.Lock()    # 全剧流程推进:网页线程(批准后)和后台线程(每轮)都会来,判「排没排过」要串行
         self._cut_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="drama-cut")
         self._cut_jobs: list[Future] = []
         self.frontend_job: dict | None = None    # 「下载前端」的后台任务状态(工作流面板上显示)
@@ -115,6 +116,18 @@ class Runtime:
             st.last_tick = time.strftime("%H:%M:%S")
             st.last_lines = lines
             self.status[hid] = st
+        moved = [self.advance_flow(did) for (did,) in
+                 self.store.conn.execute("SELECT id FROM drama WHERE flow_auto = 1").fetchall()]
+        if any(moved):                        # 出图完成后接四视图、资产定稿后拆分镜等,靠这里每轮推一次
+            self.pump_queue()
+
+    def advance_flow(self, drama_id: int) -> list[str]:
+        """全剧流程排下一步(spec 2026-10-25-全剧审与资产表-design.md 第 4 节);没开自动推进的剧什么都不做。"""
+        with self._flow_lock:
+            did = flow.advance(self.store, drama_id)
+        if did:
+            journal.append(self.data_root, did, prefix="flow ")
+        return did
 
     def _refresh_nodes(self, host: Host) -> list[str]:
         try:

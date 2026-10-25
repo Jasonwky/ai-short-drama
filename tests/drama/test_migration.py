@@ -13,8 +13,15 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v21(s):
+    """退回 v20:删掉 v21 新增的 drama.flow_auto。"""
+    if "flow_auto" in _cols(s, "drama"):
+        s.conn.execute("ALTER TABLE drama DROP COLUMN flow_auto")
+
+
 def _drop_v20(s):
-    """退回 v19:删掉 v20 新增的 drama.skeleton_json。"""
+    """退回 v19:删掉 v20 新增的 drama.skeleton_json;v21 的也一并退掉。"""
+    _drop_v21(s)
     if "skeleton_json" in _cols(s, "drama"):
         s.conn.execute("ALTER TABLE drama DROP COLUMN skeleton_json")
 
@@ -493,4 +500,20 @@ def test_v19_to_v20_dramas_gain_an_empty_skeleton(tmp_path):
     assert repo.get(s, "drama", d)["skeleton_json"] == ""
     repo.update(s, "drama", d, skeleton_json='{"total": 10}')
     assert repo.get(s, "drama", d)["skeleton_json"] == '{"total": 10}'
+    s.close()
+
+
+def test_v20_to_v21_dramas_gain_flow_auto_off(tmp_path):
+    """v21:全剧流程自动推进按剧开启(spec 2026-10-25-全剧审与资产表-design.md 第 4 节);老剧默认关。"""
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "替嫁", "9:16")
+    _drop_v21(s)
+    s.conn.execute("UPDATE meta SET value = '20' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    assert repo.get(s, "drama", d)["flow_auto"] == 0
+    repo.update(s, "drama", d, flow_auto=1)
+    assert repo.get(s, "drama", d)["flow_auto"] == 1
     s.close()

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from tools.llm import expand, skeleton
+from tools.llm import cast, drama_review, expand, skeleton
 from tools.llm.client import NoToolCall, ToolResult
 
 CANNED = {
@@ -37,6 +37,9 @@ CANNED = {
     # P19-A 原创分集:样例由任务模块自己给(按 schema 的 minItems 出数量)
     "submit_skeletons": lambda schema: skeleton.fake_sample(schema),
     "submit_episode_outlines": lambda schema: expand.fake_sample(schema),
+    # P20 全剧流程:假样例过不了判卷(读不到剧本),自测演示的是「被拦住」
+    "submit_cast": lambda schema: cast.fake_sample(schema),
+    "submit_drama_issues": lambda schema: drama_review.fake_sample(schema),
 }
 
 

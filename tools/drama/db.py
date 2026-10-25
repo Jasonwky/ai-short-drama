@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -392,6 +392,10 @@ SCHEMA += "".join(f"{stmt};\n" for stmt in QUEUE_DDL)
 SKELETON_DDL = ["ALTER TABLE drama ADD COLUMN skeleton_json TEXT NOT NULL DEFAULT ''"]
 SCHEMA += "".join(f"{stmt};\n" for stmt in SKELETON_DDL)
 
+# v21:全剧流程自动推进按剧开启(spec 2026-10-25-全剧审与资产表-design.md 第 4 节)—— 默认关,老剧不会突然被排上全剧审
+FLOW_DDL = ["ALTER TABLE drama ADD COLUMN flow_auto INTEGER NOT NULL DEFAULT 0 CHECK (flow_auto IN (0, 1))"]
+SCHEMA += "".join(f"{stmt};\n" for stmt in FLOW_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -447,6 +451,8 @@ MIGRATIONS: dict[int, list[str]] = {
     18: QUEUE_DDL,
     # v20:剧的原创骨架
     19: SKELETON_DDL,
+    # v21:剧的全剧流程自动推进开关
+    20: FLOW_DDL,
 }
 
 

@@ -15,7 +15,7 @@ from tools.drama.db import Store, now
 
 # 各表允许调用方写入的字段。主键、外键归属、创建时间由本模块自己管。
 _COLUMNS: dict[str, set[str]] = {
-    "drama": {"premise_json", "skeleton_json"},   # 立项发散(v16)、原创骨架(v20);剧名、画幅不在这里 —— 画幅建后不可改
+    "drama": {"premise_json", "skeleton_json", "flow_auto"},   # 立项发散(v16)、原创骨架(v20)、自动推进(v21);剧名、画幅不在这里 —— 画幅建后不可改
     "episode": {"source_text", "outline", "script", "beats_json"},
     "character": {"appearance", "styling", "voice_desc", "final_prompt", "seed",
                   "turnaround_path", "fourview_path", "voice_ref_path"},
@@ -250,6 +250,34 @@ def _bind(store: Store, segment_id: int, table: str, link: str, col: str, ids: l
         c.execute(f"DELETE FROM {link} WHERE segment_id = ?", (segment_id,))
         c.executemany(f"INSERT INTO {link} (segment_id, {col}, position) VALUES (?, ?, ?)",
                       [(segment_id, i, pos) for pos, i in enumerate(ids)])
+
+
+_REFS = {"character": ("SELECT 1 FROM segment_character WHERE character_id = ?",),
+         "scene": ("SELECT 1 FROM segment WHERE scene_id = ?",),
+         "prop": ("SELECT 1 FROM segment_prop WHERE prop_id = ?",)}
+
+
+def asset_in_use(store: Store, table: str, row_id: int) -> str:
+    """资产删不得的原因(空串 = 可以删):被段落引用、出过图、有生成或 LLM 记录 —— 历史不能悬空。"""
+    if table not in _REFS:
+        raise ValueError(f"不是资产表:{table}")
+    c = store.conn
+    if any(c.execute(q, (row_id,)).fetchone() for q in _REFS[table]):
+        return "已被段落引用"
+    if c.execute("SELECT 1 FROM task WHERE target_type = ? AND target_id = ?", (table, row_id)).fetchone():
+        return "出过图(有生成记录)"
+    if c.execute("SELECT 1 FROM llm_run WHERE target_type = ? AND target_id = ?", (table, row_id)).fetchone():
+        return "有 LLM 记录"
+    return ""
+
+
+def delete_asset(store: Store, table: str, row_id: int) -> None:
+    """删一个从没用过的资产(AI 资产表回滚用);用过的当场拒绝。"""
+    why = asset_in_use(store, table, row_id)
+    if why:
+        raise ValueError(f"{table} {row_id} {why},不能删")
+    with store.write() as c:
+        c.execute(f"DELETE FROM {table} WHERE id = ?", (row_id,))
 
 
 def bind_characters(store: Store, segment_id: int, character_ids: list[int]) -> None:

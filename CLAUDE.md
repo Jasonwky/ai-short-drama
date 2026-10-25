@@ -105,6 +105,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   **原创分集**(P19-A,spec 2026-10-24-原创分集-design.md):大纲页「原创:从立项出分集」—— 骨架 `skeleton`(2–3 方案人挑,
   各幕集数由代码按相对权重分,存 `drama.skeleton_json`,v20)→ 逐段展开 `expand`(每批 ≤ 30 集,要求上一集已有大纲,已有大纲 / 剧本的集不覆盖)
   → 单集变体有骨架时带前后集与本幕目标。共用纯函数在 `skeleton.py` 文件头部分(allocate / batches / act_for / render)。
+  **全剧流程**(P20,spec 2026-10-25-全剧审与资产表-design.md):「逐集」面板顶上一栏 —— ①全剧审·剧本 → ②AI 出资产表 `cast`
+  → ③全剧审·资产 → 出图 / 声音 / 拆分镜 → ④全剧审·分镜。全剧审 `drama_review`(参数 `stage`)一次审全剧、只挑跨集毛病,
+  批准时把采纳的排进修改回路(排不进去当场拒批准);`cast` 覆盖由代码判(每个说话人 / 地点恰好一个归属、前后接话的两人不许并),
+  别名排「剧本修改」不在代码里替换。推进是 `llm/flow.py`(`status` 纯读、`advance` 只排不批),按剧开启(v21 `drama.flow_auto`,默认关);
+  **防空转**:同一份输入跑过(任何状态)就不再自动排,失败不自动重试,资产图「从没出过」才自动排。
+  `cast` / `drama_review` 要 `batch` 时在函数里取(`batch` 模块级引用 `service`,`service` 登记它们 —— 循环导入)
   派 worktree agent 前先推送或让它先 `git merge --ff-only main`:worktree 从远程 `origin/HEAD` 建(findings/2026-10-24-多agent并行开发复盘.md)
   ⚠️ `Store` 的连接被网页线程和后台线程共用:`cached_statements=0` 不能去掉(同一条 SQL 并发会拿到同一个缓存语句、读空,P19-B 实测)
   ⚠️ 传给模板的 dict 别用 `items` / `keys` / `values` 当键:Jinja 的 `g.items` 取到的是 dict 方法(P19-C 踩过)

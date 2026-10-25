@@ -27,7 +27,8 @@ PARAMS = {"outline": {"novel": str, "n_episodes": int}, "script_synopsis": {"syn
           "premise": {"idea": str, "n": int, "constraint": str},
           "beats": {}, "outline_variants": {"n": int}, "shot_options": {"n": int},
           "script_revise": {"notes": "notes"}, "storyboard_revise": {"notes": "notes"},
-          "skeleton": {"total": int, "n": int, "constraint": str}, "expand": {"start": int, "end": int}}
+          "skeleton": {"total": int, "n": int, "constraint": str}, "expand": {"start": int, "end": int},
+          "cast": {"notes": "notes"}, "drama_review": {"stage": str}}
 
 
 def _params(task: str, form) -> dict:
@@ -51,6 +52,8 @@ def _home(store, row) -> tuple[str, dict]:
     if t == "drama":
         if row["task"] == "premise":
             return f"/drama/{tid}/premise", {"panel_key": "projects", "drama_id": tid}
+        if row["task"] in ("cast", "drama_review"):          # 全剧流程:回「逐集」面板顶上那一栏
+            return f"/drama/{tid}/episodes", {"panel_key": "episodes", "drama_id": tid}
         return f"/drama/{tid}/outline", {"panel_key": "outline", "drama_id": tid}
     if t in ("character", "scene", "prop"):
         did = repo.get(store, t, tid)["drama_id"]
@@ -68,6 +71,15 @@ def _home(store, row) -> tuple[str, dict]:
     return f"/drama/{did}/script", {"panel_key": "script", "drama_id": did}
 
 
+def _drama_of(store, row) -> int:
+    t, tid = row["target_type"], row["target_id"]
+    if t == "drama":
+        return tid
+    if t == "segment":
+        tid, t = repo.get(store, "segment", tid)["episode_id"], "episode"
+    return repo.get(store, t, tid)["drama_id"]
+
+
 def _preview(store, row) -> dict:
     """把产物渲染成人能审的样子(与写回时用同一套代码)。"""
     if row["output_json"] is None:
@@ -76,7 +88,7 @@ def _preview(store, row) -> dict:
     task = row["task"]
     if task in ("script_revise", "storyboard_revise"):
         return {"revise": service.spec(task).module.preview(store, row)}
-    if task in ("skeleton", "expand"):                 # 原创分集:审阅页数据由任务模块自己算
+    if task in ("skeleton", "expand", "cast", "drama_review"):     # 审阅页数据由任务模块自己算
         return {task: service.spec(task).module.preview(store, row)}
     if task == "storyboard":
         segs = []
@@ -150,7 +162,7 @@ def _rounds(row) -> list[dict]:
 
 def _decision(task: str, form) -> dict | None:
     """审阅页上人做的选择 → decision(service.approve 再按模块规则核一遍)。不要选择的任务返回 None。"""
-    if task == "critique":
+    if task in ("critique", "drama_review"):
         stance = {}
         for k, v in form.items():
             idx = k.split("-", 1)[1] if k.startswith("issue-") else ""
@@ -168,7 +180,7 @@ def _decision(task: str, form) -> dict | None:
             if raw.isdecimal():
                 picks[f] = int(raw)
         return {"assemble": picks}
-    if task in ("script_revise", "storyboard_revise"):
+    if task in ("script_revise", "storyboard_revise", "cast"):
         stance = {}
         for k, v in form.items():
             idx = k.split("-", 1)[1] if k.startswith("decide-") else ""
@@ -213,7 +225,8 @@ async def approve(request: Request, run_id: int):
     row = runs.get(store, run_id)
     if row["task"] in batch.SCRIPT_TASKS:          # 整集剧本批准:没段落就自动排「拆分镜」(spec 2026-10-24 第 5 节)
         batch.after_script_approved(store, row["target_id"])
-        rt(request).pump_queue()
+    rt(request).advance_flow(_drama_of(store, row))   # 全剧流程(开了自动推进的剧):排下一步
+    rt(request).pump_queue()
     home = _home(store, runs.get(store, run_id))[0]
     if runs.get(store, run_id)["task"] == "rewrite":      # 改写写回后告诉剧本面板:台词同步到了第几段(没对上为 0)
         home += f"?rewrite_run={run_id}&synced={synced or 0}"

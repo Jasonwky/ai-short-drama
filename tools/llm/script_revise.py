@@ -36,7 +36,14 @@ SYSTEM = """你是短剧编剧。按用户的修改意见改这一集剧本,调�
 
 
 def _names(store: Store, drama_id: int) -> list[str]:
-    return [r[0] for r in store.conn.execute("SELECT name FROM character WHERE drama_id = ? ORDER BY id", (drama_id,))]
+    """允许的说话人:角色表。这部剧一个角色都还没建时(全剧审①在出资产表②之前),用全剧剧本里已出现过的说话人
+    (spec 2026-10-25-全剧审与资产表-design.md 第 4 节)—— 否则①采纳的修改一碰台词就过不了判卷。"""
+    names = [r[0] for r in store.conn.execute("SELECT name FROM character WHERE drama_id = ? ORDER BY id", (drama_id,))]
+    if names:
+        return names
+    scripts = [r[0] for r in store.conn.execute("SELECT script FROM episode WHERE drama_id = ? ORDER BY number",
+                                                (drama_id,))]
+    return sorted({w for s in scripts for w, _ in rules.dialogue_lines(s)})
 
 
 def locate(script: str, text: str) -> tuple[int, int] | None:

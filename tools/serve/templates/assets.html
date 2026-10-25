@@ -16,7 +16,7 @@
     <section data-asset-col="{{ col.table }}">
       <h2>{{ col.label }}</h2>
       {% for it in col.entries %}
-        <div class="card" data-asset="{{ col.table }}-{{ it.row.id }}">
+        <div class="card" id="{{ col.table }}-{{ it.row.id }}" data-asset="{{ col.table }}-{{ it.row.id }}">
           <h2>{{ it.row.name }}</h2>
           <div class="current-media">
             {% if it.current %}<img src="/media/{{ it.current }}" alt="{{ it.row.name }}">
