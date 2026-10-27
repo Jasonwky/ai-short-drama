@@ -141,8 +141,10 @@ def status(store: Store, d: int) -> list[Stage]:
         c2 = Stage("cast", "② AI 出资产表", "ready")
     cast_busy = c2.state in ("queued", "running", "proposed")
     last_cast = approved_cast[-1]["id"] if approved_cast else 0
-    r3 = _review(store, d, "assets", "r3", "③ 全剧审·资产", "" if approved_cast and not cast_busy else "等资产表批准",
-                 fixing=cast_busy, after=last_cast)
+    # 资产审拿剧本当参照:统一称呼等剧本修改没处理完就先等,否则批完修改、剧本一变,这一轮就批不了(2026-10-27 实战)
+    r3_wait = ("等资产表批准" if not approved_cast or cast_busy
+               else "等剧本修改处理完(资产审拿剧本当参照)" if _busy_any(store, eps, SCRIPT_FIX) else "")
+    r3 = _review(store, d, "assets", "r3", "③ 全剧审·资产", r3_wait, fixing=cast_busy, after=last_cast)
     final = r3.state == "passed"
     media = _media(store, d, final)
     boards = _boards(store, d, eps, final)

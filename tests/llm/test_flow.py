@@ -130,3 +130,18 @@ def test_fourview_follows_the_front_image(drama):
     assert [r[0] for r in fv] == [lao]
     wall = {w["name"]: w for w in flow.wall(s, d)}
     assert wall["陈老三"]["cells"][0]["path"] == "assets/lao.png" and wall["陈老三"]["cells"][1]["task"] == "pending"
+
+
+def test_asset_review_waits_for_pending_script_fixes(drama):
+    s, d, e1, e2 = drama
+    repo.update(s, "drama", d, flow_auto=1)
+    _pass_r1(s, d)
+    _take(s, "cast", d, {"notes": []}, CAST, {"accept": [], "reject": []})
+    llm_queue.enqueue(s, "script_revise", "episode", e2, {"notes": [{"text": "统一称呼", "target": "", "must": True}]})
+    st = _st(s, d)
+    assert st["r3"].state == "blocked" and "剧本修改" in st["r3"].detail
+    flow.advance(s, d)
+    assert [t for t, *_ in _queue(s)] == ["script_revise"]
+    s.conn.execute("DELETE FROM llm_queue")
+    flow.advance(s, d)
+    assert [t for t, *_ in _queue(s)] == ["drama_review"]
