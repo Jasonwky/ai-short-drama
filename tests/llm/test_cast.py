@@ -176,3 +176,10 @@ def test_notes_mode_claims_must_be_real_and_images_lock_text(drama):
 def test_decision_without_notes_must_be_empty():
     assert cast.decision_problems(GOOD, {"accept": [], "reject": []}) == []
     assert cast.decision_problems(GOOD, {"accept": [1], "reject": []})
+
+
+def test_constraint_goes_into_the_prompt_only_when_given(drama):
+    s, d, *_ = drama
+    plain = cast.user_message(cast.context(s, d, []))
+    assert "<constraint>" not in plain and plain == cast.user_message(cast.context(s, d, [], ""))
+    assert "<constraint>\n场景合并到 10 个左右\n</constraint>" in cast.user_message(cast.context(s, d, [], "场景合并到 10 个左右"))

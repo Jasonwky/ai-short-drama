@@ -109,7 +109,8 @@ def places(scripts: list[tuple[int, str]]) -> dict[str, list[int]]:
     return out
 
 
-def context(store: Store, drama_id: int, notes: list[dict]) -> dict:
+def context(store: Store, drama_id: int, notes: list[dict], constraint: str = "") -> dict:
+    """constraint:人对整张表的要求(比如「场景合并到 10 个左右」),原样进提示词;空 = 没有(提示词逐字节不变)。"""
     repo.get(store, "drama", drama_id)
     if notes:
         revise.check_notes(notes)
@@ -120,7 +121,7 @@ def context(store: Store, drama_id: int, notes: list[dict]) -> dict:
     who, pairs = speakers_and_pairs(scripts, [c["name"] for c in have["character"]])
     p = premise.load(store, drama_id)
     return {"premise": premise.render(p) if p else "", "scripts": scripts, "existing": have, "speakers": who,
-            "pairs": pairs, "places": places(scripts), "notes": notes,
+            "pairs": pairs, "places": places(scripts), "notes": notes, "constraint": constraint.strip(),
             "rejected": _last_rejected(store, drama_id) if notes else []}
 
 
@@ -178,6 +179,8 @@ def user_message(ctx: dict) -> str:
     if ctx["notes"]:
         notes = (f"<notes>\n{revise.render_notes(ctx['notes'])}\n</notes>\n"
                  + revise.render_rejected(ctx["rejected"], lambda c: _render_change(c)))
+    if ctx.get("constraint"):
+        notes += f"<constraint>\n{ctx['constraint']}\n</constraint>\n人对整张表的要求,尽量照做(覆盖规则不变)。\n"
     return (f"{pre}<existing>\n{render_existing(ctx['existing'])}\n</existing>\n\n"
             f"<speakers>\n{speakers or '(没有台词)'}\n</speakers>\n\n<places>\n{where or '(没有场景标题)'}\n</places>\n\n"
             f"{eps}\n\n{notes}")

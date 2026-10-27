@@ -85,3 +85,12 @@ def test_review_page_lets_the_reviewer_pick_the_episode_to_fix(client, store, sa
     client.post(f"/llm/run/{rid}/approve", data={"issue-0": "adopt", "fix-0": "第2集"})
     assert tuple(store.conn.execute("SELECT task, target_id FROM llm_queue").fetchone()) == ("script_revise", e2)
     assert "采纳后改的是第2集" in client.get(f"/llm/run/{rid}").text
+
+
+def test_cast_can_be_rerun_with_a_constraint(client, runtime, store, sample):
+    d = sample["drama"]
+    repo.update(store, "episode", sample["episode"], script=EP1)
+    assert "data-cast-constraint" in client.get(f"/drama/{d}/episodes").text
+    r = client.post(f"/drama/{d}/flow/run/cast", data={"constraint": "场景合并到 10 个左右"}, follow_redirects=False)
+    rid = int(r.headers["location"].rsplit("/", 1)[1])
+    assert runs.params(runs.get(store, rid)) == {"notes": [], "constraint": "场景合并到 10 个左右"}

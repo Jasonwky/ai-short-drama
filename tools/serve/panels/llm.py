@@ -28,7 +28,7 @@ PARAMS = {"outline": {"novel": str, "n_episodes": int}, "script_synopsis": {"syn
           "beats": {}, "outline_variants": {"n": int}, "shot_options": {"n": int},
           "script_revise": {"notes": "notes"}, "storyboard_revise": {"notes": "notes"},
           "skeleton": {"total": int, "n": int, "constraint": str}, "expand": {"start": int, "end": int},
-          "cast": {"notes": "notes"}, "drama_review": {"stage": str}}
+          "cast": {"notes": "notes", "constraint": str}, "drama_review": {"stage": str}}
 
 
 def _params(task: str, form) -> dict:

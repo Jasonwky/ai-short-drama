@@ -97,13 +97,16 @@ def flow_auto(request: Request, drama_id: int, on: int = Form(...)):
 
 
 @router.post("/drama/{drama_id}/flow/run/{key}")
-def flow_run(request: Request, drama_id: int, key: str):
+def flow_run(request: Request, drama_id: int, key: str, constraint: str = Form("")):
     """手动跑某一关(自动推进关着、失败了、通过后又改过时用)。LLM 的当场开、去审阅页;出图 / 拆分镜排上就回来。"""
     runtime = rt(request)
     store = runtime.store
     repo.get(store, "drama", drama_id)
     if key in REVIEW_KEYS or key == "cast":
-        task, params = ("drama_review", {"stage": REVIEW_KEYS[key]}) if key in REVIEW_KEYS else ("cast", {"notes": []})
+        if key in REVIEW_KEYS:
+            task, params = "drama_review", {"stage": REVIEW_KEYS[key]}
+        else:                       # 资产表可带「给 AI 的要求」(比如场景合并到 10 个左右);没写就和自动推进排的那条一样
+            task, params = "cast", ({"notes": [], "constraint": constraint.strip()} if constraint.strip() else {"notes": []})
         rid, _ = runtime.start_llm(task, drama_id, params)
         return RedirectResponse(f"/llm/run/{rid}", status_code=303)
     if key == "media":

@@ -19,6 +19,8 @@
         <td>{{ s.detail }}{% if s.run %} · <a href="/llm/run/{{ s.run }}">看这一轮</a>{% endif %}</td>
         <td>{% if s.key != "scripts" %}
           <form method="post" action="/drama/{{ drama.id }}/flow/run/{{ s.key }}">
+            {% if s.key == "cast" %}<input type="text" name="constraint" placeholder="给 AI 的要求(可空),如:场景合并到 10 个左右"
+              data-cast-constraint style="width: 260px">{% endif %}
             <button class="btn small" type="submit" data-flow-run="{{ s.key }}"
               {% if s.state in ("blocked", "queued", "running", "proposed", "fixing", "working") %}disabled title="{{ s.label }}"{% endif %}>
               {{ "再审一次" if s.state == "passed" and s.key.startswith("r") else "跑这一关" }}</button></form>
