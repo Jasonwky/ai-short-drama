@@ -20,7 +20,8 @@ TOOL = "submit_drama_issues"
 TARGET = "drama"
 MIN_ISSUES, MAX_ISSUES = 1, 20
 MAX_ALSO = 2
-MAX_INPUT_CHARS = 150_000           # 初值;按 Claude 命令行实测再定(spec 第 2 节)
+MAX_INPUT_CHARS = 150_000
+SCENE_WRONG = "场景用错"            # 分镜阶段的这一类只能人在段落编辑页换,不进修改回路(2026-10-27 实战)           # 初值;按 Claude 命令行实测再定(spec 第 2 节)
 STAGES = {
     "script": ("剧本", ("称呼不一致", "人设冲突", "与立项冲突", "情节重复", "台词重复", "时间线或因果错",
                        "前后集接不上", "伏笔没回收")),
@@ -213,6 +214,9 @@ def plan_queue(store: Store, ctx: dict, args: dict, decision: dict) -> list[tupl
                 raise ValueError(f"第 {i + 1} 条的引用在{where}剧本里定位不到唯一一行,排不进剧本修改 —— 驳回它,或手动去剧本页改")
             target = quote
         else:
+            if it["category"] == SCENE_WRONG:      # 分镜修改不许换场景(storyboard_revise 的绑定补丁锁场景)
+                raise ValueError(f"第 {i + 1} 条是「{SCENE_WRONG}」,分镜修改换不了场景 —— 驳回它,去{where}那一段的段落编辑页换场景"
+                                 "(首帧提示词里的 @场景名一并改)")
             hit = [w for w in storyboard_revise.STRUCTURE_WORDS if w in it["suggestion"]]
             if hit:
                 raise ValueError(f"第 {i + 1} 条要「{hit[0]}」段落,分镜修改只改段落里的字段 —— 驳回它,用「LLM 重拆分镜」")

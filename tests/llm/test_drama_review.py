@@ -151,3 +151,13 @@ def test_reviewer_can_move_the_fix_to_an_also_episode(drama):
     plan = dr.plan_queue(s, ctx, args, {"adopt": [0], "fix": {"0": "第2集"}})
     assert plan[0][2] == e2 and plan[0][3][0]["target"] == "燕无咎说：「我是伙夫。」"
     assert "另见第1集" in plan[0][3][0]["text"]
+
+
+def test_wrong_scene_issues_cannot_go_into_storyboard_revisions(drama):
+    """分镜修改锁场景:「场景用错」采纳了也改不动,批准时当场拒,让人去段落编辑页换(2026-10-27 实战)。"""
+    s, d, e1, e2 = drama
+    _boards(s, d, e1, e2)
+    ctx = {**dr.context(s, d, "storyboard"), "drama_id": d}
+    it = {**_issue("第2集", "霍猛冷笑", "改成伙房"), "category": dr.SCENE_WRONG}
+    with pytest.raises(ValueError, match="段落编辑页换场景"):
+        dr.plan_queue(s, ctx, {"issues": [it]}, {"adopt": [0]})

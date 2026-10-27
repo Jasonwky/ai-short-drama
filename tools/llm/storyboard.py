@@ -34,6 +34,8 @@ SYSTEM = """你是短剧分镜师。把用户给的一集剧本拆成视频段�
 2. 子镜头的 visual 写画面(人物动作、表情、机位),**不要写台词、不要用【】「」符号**。
 3. 台词放在 speaker / line 里:line 必须**逐字照抄**剧本里的原句(不改字、不加舞台提示、不合并);
    没有台词的子镜头 speaker 与 line 都填 null。剧本里的每一句台词都要出现且只出现一次,顺序不变。
+   剧本里的「旁白：」**不是台词**:写在那个子镜头 visual 的末尾,写成「旁白：原句」,speaker / line 填 null,
+   画面里的人不张嘴(比如写「他闭口不语」)。
 4. scene / characters / props 只能从给定名单里选;speaker 必须是本段 characters 里的人。
 5. image_prompt 描述本段首帧画面,用 @名字 引用本段绑定的每一个角色、场景、道具;
    video_prompt 描述本段的动作与运镜,同样用 @名字 引用。
@@ -177,12 +179,16 @@ def view_problems(where: str, v: dict, ctx: dict, prev: dict | None, cap=MINIMAX
 def line_problems(script: str, views: list[dict], names: list[str]) -> list[str]:
     """整集台词(从各段描述里取,分镜修改用):逐字出自剧本、顺序不变、说话人是本段角色、剧本台词一句不漏。"""
     flat, pos, said, out = squash(script), -1, [], []
+    spoken = squash("".join(line for _, line in rules.dialogue_lines(script, names)))
+    narrated = [squash(t) for t in rules._NARRATION.findall(script)]
     for n, v in enumerate(views, 1):
         where = f"段落{v.get('number', n)}"
         for who, line in rules.dialogue_lines(v["description"], names):
             if who not in v["characters"]:
                 out.append(f"{where}:说话人「{who}」不在本段角色 {v['characters']} 里")
             q = squash(line)
+            if q not in spoken and any(q in t for t in narrated):     # 2026-10-27 实战:旁白被写成主角的台词
+                out.append(f"{where}:「{line[:30]}」在剧本里是旁白,不是「{who}」的台词 —— 旁白不进人物台词")
             at = flat.find(q, pos + 1)
             if at < 0:
                 hint = "(顺序错了)" if q in flat else "(剧本里找不到这句原文,台词必须逐字照抄)"
@@ -198,6 +204,8 @@ def line_problems(script: str, views: list[dict], names: list[str]) -> list[str]
 def judge_factory(ctx: dict, cap=MINIMAX_H3):
     script = squash(ctx["script"])
     wanted = [squash(q) for q in _QUOTED.findall(ctx["script"]) if len(squash(q)) >= 2]
+    spoken = squash("".join(line for _, line in rules.dialogue_lines(ctx["script"], ctx["characters"])))
+    narrated = [squash(t) for t in rules._NARRATION.findall(ctx["script"])]
 
     def judge(args: dict) -> list[str]:
         segs = args["segments"]
@@ -221,6 +229,9 @@ def judge_factory(ctx: dict, cap=MINIMAX_H3):
                 if s["speaker"] not in chars:
                     problems.append(f"{where}镜头{i}:说话人「{s['speaker']}」不在本段角色 {chars} 里")
                 line = squash(s["line"])
+                if line not in spoken and any(line in t for t in narrated):    # 2026-10-27 实战:旁白被写成主角台词
+                    problems.append(f"{where}镜头{i}:「{s['line'][:30]}」在剧本里是旁白,不是台词 —— "
+                                    "写进 visual 末尾「旁白：原句」,speaker / line 填 null")
                 at = script.find(line, pos + 1)
                 if at < 0:
                     hint = "(顺序错了)" if line in script else "(剧本里找不到这句原文,台词必须逐字照抄)"

@@ -264,3 +264,16 @@ def test_line_problems_read_lines_from_descriptions():
     assert sb.line_problems(script, [_view()], ["林小雨", "沈墨"]) == ["剧本台词「走吧。」没有出现在任何段落里"]
     wrong = _view(description="【镜头1】沈墨说：「这块玉佩，是我母亲留给我的。」")
     assert "段落1:说话人「沈墨」不在本段角色 ['林小雨'] 里" in sb.line_problems(script, [wrong], ["林小雨", "沈墨"])
+
+
+def test_first_split_rejects_narration_as_a_line():
+    """2026-10-27 实战:首次拆分镜把剧本旁白写成了燕无咎的台词(画面里会对嘴说内心独白)。"""
+    from tools.llm import storyboard
+    script = "【校场 · 白天】\n霍猛说：「伙夫也配?」\n旁白：三天前,我还只是个人人可欺的伙夫。"
+    ctx = {"script": script, "characters": ["燕无咎", "霍猛"], "scenes": ["校场"], "props": [], "aspect": "9:16"}
+    seg = {"scene": "校场", "characters": ["燕无咎", "霍猛"], "props": [], "pace": "normal",
+           "image_prompt": "@燕无咎 @霍猛 @校场", "video_prompt": "", "blocking": [], "shot_type": "中景",
+           "subshots": [{"visual": "霍猛冷笑", "speaker": "霍猛", "line": "伙夫也配?"},
+                        {"visual": "燕无咎沉默", "speaker": "燕无咎", "line": "三天前,我还只是个人人可欺的伙夫。"}]}
+    problems = storyboard.judge_factory(ctx)({"segments": [seg]})
+    assert any("在剧本里是旁白" in p for p in problems)

@@ -15,6 +15,7 @@
         <pre>{{ it.quote }}</pre>
         {% for a in it.also %}<p class="hint" data-issue-also>另见{{ a.where }}:「{{ a.quote }}」</p>{% endfor %}
         <p>改法:{{ it.suggestion }}</p>
+        {% if dr.stage == "storyboard" and it.category == "场景用错" %}<p class="status-bad" data-issue-manual>分镜修改换不了场景:驳回这条,去这一段的段落编辑页换场景(首帧提示词里的 @场景名一并改)</p>{% endif %}
         {% if it.also and run.state == "proposed" %}
           <p><label>采纳后改哪一集:
             <select name="fix-{{ it.n }}" form="approve-form" data-issue-fix="{{ it.n }}">

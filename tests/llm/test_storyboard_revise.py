@@ -138,3 +138,13 @@ def test_rollback_restores_the_touched_fields_once(store, tmp_path, monkeypatch)
     seg = repo.get(store, "segment", ids[0])
     assert (seg["shot_type"], seg["angle"], seg["movement"]) == ("中景", "", "")    # 库默认是空串(写计划时核实)
     assert sv.rollback_problems(store, row) == ["第 1 段在这一轮之后又改过 —— 先回滚更晚的轮次"]
+
+
+def test_narration_written_as_a_characters_line_is_caught():
+    """2026-10-27 实战:分镜修改把剧本旁白「满营笑他拿锅铲的手,今天,拉的是弓。」写成了燕无咎的台词。"""
+    from tools.llm import storyboard
+    script = "【山口 · 白天】\n燕无咎说：「西风,偏三寸。」\n旁白：满营笑他拿锅铲的手,今天,拉的是弓。"
+    view = {"number": 1, "characters": ["燕无咎"],
+            "description": "【镜头1】燕无咎说：「西风,偏三寸。」【镜头2】燕无咎说：「满营笑他拿锅铲的手,今天,拉的是弓。」"}
+    problems = storyboard.line_problems(script, [view], ["燕无咎"])
+    assert any("在剧本里是旁白" in p for p in problems)
