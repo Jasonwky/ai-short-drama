@@ -87,3 +87,18 @@ def test_port_change_with_adopted_tunnel_tells_the_human(store, host_id, world):
 def test_cli_requires_a_mode(tmp_path):
     with pytest.raises(SystemExit):
         main(["--db", str(tmp_path / "x.db"), "--host-id", "1", "--data-root", str(tmp_path)])
+
+
+def test_queue_depth_keeps_several_tasks_in_the_comfy_queue(store, sample, world, host_id):
+    """v22:共用云机被别人插队时调大深度,在途少于深度就接着交(用户 2026-10-28 定)。"""
+    from tools.serve.hosts import set_queue_depth
+    w, comfy, _ = world
+    set_queue_depth(store, host_id, 2)
+    a, b, c = (plan_first_frame(store, sample["seg"], seed=n) for n in (1, 2, 3))
+    w.tick()
+    assert [_state(store, t) for t in (a, b, c)] == ["queued", "queued", "pending"] and len(comfy.submitted) == 2
+    comfy.finish("p1", "a.png")
+    w.tick()
+    assert [_state(store, t) for t in (a, b, c)] == ["done", "queued", "queued"]
+    with pytest.raises(ValueError):
+        set_queue_depth(store, host_id, 0)

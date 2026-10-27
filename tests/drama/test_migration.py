@@ -13,8 +13,15 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v22(s):
+    """退回 v21:删掉 v22 新增的 host.queue_depth。"""
+    if "queue_depth" in _cols(s, "host"):
+        s.conn.execute("ALTER TABLE host DROP COLUMN queue_depth")
+
+
 def _drop_v21(s):
-    """退回 v20:删掉 v21 新增的 drama.flow_auto。"""
+    """退回 v20:删掉 v21 新增的 drama.flow_auto;v22 的也一并退掉。"""
+    _drop_v22(s)
     if "flow_auto" in _cols(s, "drama"):
         s.conn.execute("ALTER TABLE drama DROP COLUMN flow_auto")
 
@@ -516,4 +523,19 @@ def test_v20_to_v21_dramas_gain_flow_auto_off(tmp_path):
     assert repo.get(s, "drama", d)["flow_auto"] == 0
     repo.update(s, "drama", d, flow_auto=1)
     assert repo.get(s, "drama", d)["flow_auto"] == 1
+    s.close()
+
+
+def test_v21_to_v22_hosts_gain_queue_depth_one(tmp_path):
+    """v22:云机队列深度,老机器默认 1(空闲才交,与原来一样)。"""
+    from tools.serve.hosts import add_host, get_host
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    h = add_host(s, label="4080", ssh_host="x", ssh_port=1, ssh_user="root", key_ref="k", local_port=8188,
+                 vram_gb=16, models_dir="/m")
+    _drop_v22(s)
+    s.conn.execute("UPDATE meta SET value = '21' WHERE key = 'schema_version'")
+    s.close()
+    s = Store(path)
+    assert get_host(s, h).queue_depth == 1
     s.close()

@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """常驻 worker:一台云机一个。每轮做三件事 —— 保隧道、推进在途任务、空闲时派下一条。
 
-- **每台机器同时只交一条**:ComfyUI 本来就串行跑,多交只是在它的队列里排队;
+- **每台机器默认同时只交一条**:ComfyUI 本来就串行跑,多交只是在它的队列里排队;
   留在我们的库里排,才能按模型分组挑、才能在交出去之前取消。这台 ComfyUI 还是多个项目共用的。
+  共用者一直在交时只交一条会被不停插队 —— host 的 `queue_depth`(v22)可调大,在途少于它就接着交;
+  字幕对齐在本轮同步跑、占显存,仍只在机器上没有我们的在途任务时才跑。
 - **每轮重读 host**:SSH 端口在界面上改了,下一轮就按新端口重建隧道。
   接管来的隧道(不是本进程起的)杀不掉,如实提示人去结束它,不假装已处理。
 - 没有单独的「恢复」流程:重启后库里的在途任务带着 external_id,照常推进就是接管。
@@ -87,16 +89,20 @@ class Worker:
         busy = self.store.conn.execute(
             f"SELECT COUNT(*) FROM task WHERE host_id = ? AND state IN ({','.join('?' * len(IN_FLIGHT))})",
             (host.id, *IN_FLIGHT)).fetchone()[0]
-        if busy == 0:
-            task = pick_next(self.store, host.id)
-            if task is not None:
-                if task["kind"] == "align":
-                    out = aligner.run(self.store, client, host, task, data_root=self.data_root,
-                                      run=self.align_for(host))
-                else:
-                    out = dispatch(self.store, client, host, task, data_root=self.data_root, run=self.run_for(host))
-                log.append(f"task {task['id']}: pending → {out.state} {out.message}".rstrip())
-                log += [f"task {task['id']} 告警: {w}" for w in out.warnings]
+        while busy < host.queue_depth:
+            task = pick_next(self.store, host.id, allow_align=busy == 0)
+            if task is None:
+                break
+            if task["kind"] == "align":
+                out = aligner.run(self.store, client, host, task, data_root=self.data_root,
+                                  run=self.align_for(host))
+            else:
+                out = dispatch(self.store, client, host, task, data_root=self.data_root, run=self.run_for(host))
+            log.append(f"task {task['id']}: pending → {out.state} {out.message}".rstrip())
+            log += [f"task {task['id']} 告警: {w}" for w in out.warnings]
+            if out.state not in IN_FLIGHT:       # 当场失败 / 同步跑完(对齐):不占位,但这一轮不再连着交,下一轮再看
+                break
+            busy += 1
         return log
 
 

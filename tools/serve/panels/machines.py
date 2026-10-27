@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse
 from tools.gen import nodecache
 from tools.gen.capability import GPU_TIMINGS
 from tools.serve import journal
-from tools.serve.hosts import add_host, get_host, set_gpu, set_ssh_port
+from tools.serve.hosts import add_host, get_host, set_gpu, set_queue_depth, set_ssh_port
 from tools.serve.panels.common import render, rt
 
 router = APIRouter()
@@ -52,4 +52,11 @@ def change_port(request: Request, host_id: int, ssh_port: int = Form(...)):
 def change_gpu(request: Request, host_id: int, gpu: str = Form(...)):
     """卡的型号只给估时用(按已登记里最慢的一张算);改它不重建隧道。"""
     set_gpu(rt(request).store, host_id, gpu)
+    return RedirectResponse("/hosts", status_code=303)
+
+
+@router.post("/host/{host_id}/queue_depth")
+def change_queue_depth(request: Request, host_id: int, depth: int = Form(...)):
+    """一次往云机交几条(v22)。改它不重建隧道,下一轮 worker 就按新深度交。"""
+    set_queue_depth(rt(request).store, host_id, depth)
     return RedirectResponse("/hosts", status_code=303)

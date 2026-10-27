@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -396,6 +396,11 @@ SCHEMA += "".join(f"{stmt};\n" for stmt in SKELETON_DDL)
 FLOW_DDL = ["ALTER TABLE drama ADD COLUMN flow_auto INTEGER NOT NULL DEFAULT 0 CHECK (flow_auto IN (0, 1))"]
 SCHEMA += "".join(f"{stmt};\n" for stmt in FLOW_DDL)
 
+# v22:每台云机一次往 ComfyUI 队列里交几条(默认 1 = 空闲才交)。共用云机上别人一直在交时,只交一条会被不停插队
+# (用户 2026-10-28 定:「所有任务都排到云机队列里,今晚一直跑」)
+QUEUE_DEPTH_DDL = ["ALTER TABLE host ADD COLUMN queue_depth INTEGER NOT NULL DEFAULT 1 CHECK (queue_depth BETWEEN 1 AND 100)"]
+SCHEMA += "".join(f"{stmt};\n" for stmt in QUEUE_DEPTH_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -453,6 +458,8 @@ MIGRATIONS: dict[int, list[str]] = {
     19: SKELETON_DDL,
     # v21:剧的全剧流程自动推进开关
     20: FLOW_DDL,
+    # v22:云机队列深度
+    21: QUEUE_DEPTH_DDL,
 }
 
 

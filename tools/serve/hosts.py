@@ -6,6 +6,8 @@
 - **SSH 端口可改**:AutoDL 每次重启都会换端口,改端口是日常操作。
 - `models_dir` 是云机上 ComfyUI 模型根目录,LoRA 预检要按它定位文件。
 - `gpu` 是卡的型号,只给估时用(`gen/estimate.py`);只收有实测耗时的型号,没登记 = 无法估时。
+- `queue_depth` 一次往这台机器的 ComfyUI 队列里交几条(v22,默认 1 = 空闲才交)。交出去的就取消不了了,
+  只在共用云机上被别人不停插队、又想一口气跑完时调大。
 """
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ class Host:
     vram_gb: float
     models_dir: str
     gpu: str | None = field(default=None, compare=False)   # 不参与相等:worker 拿相等判断要不要重建隧道
+    queue_depth: int = field(default=1, compare=False)
 
     @property
     def local_endpoint(self) -> str:
@@ -70,6 +73,17 @@ def get_host(store: Store, host_id: int) -> Host:
 def set_ssh_port(store: Store, host_id: int, ssh_port: int) -> None:
     with store.write() as c:
         if c.execute("UPDATE host SET ssh_port = ? WHERE id = ?", (ssh_port, host_id)).rowcount == 0:
+            raise KeyError(f"host {host_id} 不存在")
+
+
+MAX_QUEUE_DEPTH = 100
+
+
+def set_queue_depth(store: Store, host_id: int, depth: int) -> None:
+    if not 1 <= depth <= MAX_QUEUE_DEPTH:
+        raise ValueError(f"队列深度要在 1–{MAX_QUEUE_DEPTH} 之间,填的是 {depth}")
+    with store.write() as c:
+        if c.execute("UPDATE host SET queue_depth = ? WHERE id = ?", (depth, host_id)).rowcount == 0:
             raise KeyError(f"host {host_id} 不存在")
 
 

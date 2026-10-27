@@ -22,6 +22,11 @@
           {% for g in gpus %}<option value="{{ g }}"{% if g == h.host.gpu %} selected{% endif %}>{{ g }}</option>{% endfor %}</select></div>
       <div><button class="btn" type="submit">登记型号</button></div>
     </form>
+    <form method="post" action="/host/{{ h.host.id }}/queue_depth" class="row" data-host-queue-depth>
+      <div><label>队列深度(一次往云机 ComfyUI 交几条;1 = 空闲才交。共用云机被别人插队时调大,交出去的就取消不了)</label>
+        <input type="number" name="depth" min="1" max="100" value="{{ h.host.queue_depth }}"></div>
+      <div><button class="btn" type="submit">改深度</button></div>
+    </form>
     <form method="post" action="/host/{{ h.host.id }}/object_info">
       <button class="btn" type="submit" data-refresh-nodes>刷新节点清单</button>
     </form>

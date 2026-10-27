@@ -44,13 +44,15 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def pick_next(store: Store, host_id: int) -> sqlite3.Row | None:
-    """挑下一条要派的 pending 任务。
+def pick_next(store: Store, host_id: int, allow_align: bool = True) -> sqlite3.Row | None:
+    """挑下一条要派的 pending 任务。allow_align=False:机器上还有我们的在途任务,字幕对齐(同步跑、占显存)先不挑。
 
     **按模型分组**:优先挑和这台机器上一条派发同模型的 —— 换模型要重新加载几十 GB 权重。
     同模型内、以及没有同模型任务时,都按创建先后。
     """
     pending = store.conn.execute("SELECT * FROM task WHERE state = 'pending' ORDER BY id").fetchall()
+    if not allow_align:
+        pending = [r for r in pending if r["kind"] != "align"]
     if not pending:
         return None
     last = store.conn.execute("SELECT model FROM task WHERE host_id = ? AND external_id IS NOT NULL"
