@@ -192,3 +192,26 @@ def test_asset_review_stage_checks_then_waits_for_people(drama, tmp_path):
     assert _st(s, d)["a5"].state == "working"
     flow.advance(s, d)
     assert len([x for x in _queue(s) if x[0] == "asset_check_character"]) == 1        # 只排一次
+
+
+def test_new_front_image_gets_a_new_fourview(drama):
+    """换了正面图(旧四视图被清掉)且定稿后,按新正面图再排一次四视图;同一张正面图不重复排。"""
+    s, d, *_ = drama
+    repo.update(s, "drama", d, flow_auto=1)
+    _pass_r1(s, d)
+    _take(s, "cast", d, {"notes": []}, CAST, {"accept": [], "reject": []})
+    _take(s, "drama_review", d, {"stage": "assets"}, {"issues": [_issue("角色·陈老三", "瘦")]}, {"adopt": [], "reject": [0]})
+    flow.advance(s, d)
+    s.conn.execute("UPDATE task SET state = 'done'")
+    lao = s.conn.execute("SELECT id FROM character WHERE name = '陈老三'").fetchone()[0]
+    fourviews = "SELECT COUNT(*) FROM task WHERE json_extract(params_json, '$.writes') = 'fourview_path'"
+    repo.update(s, "character", lao, turnaround_path="assets/lao.png")
+    approve_all(s)
+    flow.advance(s, d)
+    s.conn.execute("UPDATE task SET state = 'done'")
+    assert s.conn.execute(fourviews).fetchone()[0] == 1
+    repo.update(s, "character", lao, turnaround_path="assets/lao2.png", fourview_path=None)    # 换了正面图
+    approve_all(s)
+    flow.advance(s, d)
+    flow.advance(s, d)
+    assert s.conn.execute(fourviews).fetchone()[0] == 2

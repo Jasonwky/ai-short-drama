@@ -19,15 +19,19 @@
   </div>
 </section>
 
-<div class="wall">
+<div class="review-grid">
 {% for c in cards %}
-  <section class="card wall-item" id="{{ c.anchor }}" data-review-card="{{ c.anchor }}"
-           data-approved="{{ 1 if c.approval else 0 }}" style="max-width: 560px">
+  <section class="card" id="{{ c.anchor }}" data-review-card="{{ c.anchor }}"
+           data-approved="{{ 1 if c.approval else 0 }}">
     <h2>{{ {"character": "角色", "scene": "场景", "prop": "道具"}[c.table] }}「{{ c.name }}」{{ c.label or "" }}</h2>
     {% if not c.path %}
       <p class="empty">{{ "正在出图" if c.flying else "还没有图(出图 / 声音那一关会排)" }}</p>
+      {% if c.slot == "fourview" and not c.flying %}
+        <form method="post" action="/asset/{{ c.table }}/{{ c.id }}/{{ c.slot }}/regenerate">
+          <button class="btn small" type="submit" data-generate-missing>生成四视图(正面图要先定稿)</button></form>
+      {% endif %}
     {% else %}
-      <a href="/media/{{ c.path }}" target="_blank"><img src="/media/{{ c.path }}" alt="{{ c.name }}" style="max-height: 280px; max-width: 100%"></a>
+      <a href="/media/{{ c.path }}" target="_blank"><img src="/media/{{ c.path }}" alt="{{ c.name }}"></a>
       <ul class="checklist" data-code-checks>
         {% for x in c.code %}<li class="{{ 'ok' if x.ok else 'bad' }}">代码 · {{ x.name }}:{{ x.detail }}</li>{% endfor %}
         {% if c.code_error %}<li class="bad">代码检查出错:{{ c.code_error }}</li>{% endif %}

@@ -56,8 +56,10 @@ def test_judge_wants_every_dim_evidence_and_the_check_number(store, sample, worl
     fix["items"][0] = {"dim": "时代与服饰", "verdict": "不通过", "evidence": "胸前两个贴袋", "fix": "改描述",
                        "suggestion": "换成交领短褐"}
     assert any("完整的英文生成描述" in p for p in judge(fix))
-    fix["items"][0]["suggestion"] = "Elderly camp veteran in a cross-collared hemp tunic, no pockets, no buttons."
+    fix["items"][0]["suggestion"] = "Elderly camp veteran in a cross-collared hemp tunic tied with a sash."
     assert judge(fix) == [] and asset_check.failed(fix) == ["时代与服饰"]
+    fix["items"][0]["suggestion"] = "Elderly camp veteran in a cross-collared hemp tunic, no uniform."
+    assert any("含禁用词 uniform" in p for p in judge(fix))                            # 否定写法也拦:图像模型看到词就会画
 
 
 def test_drama_sheet_numbers_cells_and_judge_checks_them(store, sample, world):

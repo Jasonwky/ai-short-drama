@@ -41,7 +41,8 @@ RULES = {
 SYSTEM = """你是短剧的美术质检。看资产参考图,按给定维度逐项检查,调用工具 submit_asset_check 提交。
 - 每个维度都要给结论:通过 / 不通过 / 看不出;**看不清就说看不出,不要猜**;
 - 「不通过」必须在 evidence 里写看得见的证据(画面哪里、是什么),并选修法:重出(换种子再出)或改描述(生成描述本身写错了);
-  选「改描述」时 suggestion 写一条**完整的新英文生成描述**(一两句,不超过 600 字符);选「重出」时 suggestion 写重出要注意什么(中文);
+  选「改描述」时 suggestion 写一条**完整的新英文生成描述**(一两句,不超过 600 字符),只写要什么,
+  <art> 的禁用词一个都不许出现(「no buttons」这种否定写法也不行 —— 图像模型看到词就会画);选「重出」时 suggestion 写重出要注意什么(中文);
 - 「通过」和「看不出」的 fix 填「无」,suggestion 可以空;
 - 「时代与服饰」对照 <art> 里的时代、服饰总则和禁用物件(口袋、纽扣、翻领、现代面料等);没有 <art> 就按 <asset> 的描述判;
 - 只描述看得见的,不辨认、不推测画面里的人是现实中的谁;
@@ -185,6 +186,9 @@ def judge_factory(ctx: dict):
                     s = it["suggestion"].strip()
                     if not s or sum(ch.isascii() for ch in s) / len(s) < 0.95 or len(s) > MAX_PROMPT:
                         problems.append(f"「{it['dim']}」选了改描述,suggestion 要写一条完整的英文生成描述(不超过 {MAX_PROMPT} 字符)")
+                    hits = art.banned_hits(s, tuple(ctx["art"]["banned"]))
+                    if hits:
+                        problems.append(f"「{it['dim']}」的 suggestion 含禁用词 {'、'.join(hits)} —— 否定写法也不行,只写要什么")
             elif it["fix"] != "无":
                 problems.append(f"「{it['dim']}」是{it['verdict']},fix 要填「无」")
         return problems

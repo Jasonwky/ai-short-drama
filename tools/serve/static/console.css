@@ -187,3 +187,100 @@ pre.log { background: var(--ink); color: var(--paper); padding: 10px 12px; font-
 .wall { display: flex; flex-wrap: wrap; gap: 12px; }
 .wall-item figure { margin: 0; }
 .wall-item img { display: block; background: var(--ink); border: 1px solid var(--line); }
+
+/* ─────────────────────────────────────────────────────────────
+   版式修订(2026-10-28,用户:「有些页面布局挤在一起不合理」)
+   只调间距、对齐、栅格与可读宽度,不加颜色、不加阴影圆角(上面三条硬规则照旧)。
+   ───────────────────────────────────────────────────────────── */
+
+/* 步骤条:13 步要在 1360 宽里放得下,不出横向滚动条;窄屏才滚 */
+.step { flex: 1 1 0; min-width: 0; gap: 7px; padding: 11px 10px; }
+.step b { overflow: hidden; text-overflow: ellipsis; }
+.steps { scrollbar-width: thin; }
+
+/* 版心与卡片:更松的内边距和统一的竖向节奏 */
+main.wrap { padding-top: 28px; }
+h1 { margin-bottom: 10px; }
+main > .hint { line-height: 1.75; }
+.card { padding: 18px 20px; margin-bottom: 16px; }
+.card > h2:first-child, .card > p:first-child { margin-top: 0; }
+.card > *:last-child { margin-bottom: 0; }
+.card + h3, .card h3:first-child { margin-top: 4px; }
+/* 卡片里再套卡片(美术设定、逐条意见):不再叠一层白底粗框,用浅底区分层级 */
+.card .card { background: var(--bg); border-color: var(--line); padding: 14px 16px; margin: 12px 0; }
+
+/* 说明文字:限制行宽,长段不再横跨整屏 */
+.card p.hint, .card > p:not(.status-bad) { max-width: 78ch; }
+p.hint { line-height: 1.7; margin: 6px 0 10px; }
+
+/* 一行表单:控件底边对齐(按钮不再比输入框高半截);标签贴着自己的输入框 */
+form.row { align-items: flex-end; gap: 12px; }
+form.row label { margin-top: 0; }
+form.row .btn, form.row > div > .btn, .row > form > .btn { margin-top: 0; }
+form.row input[type=number], form.row input[type=text], form.row select { min-width: 180px; }
+form.row > div:has(textarea), form.row > div:has(input[type=text]) { flex: 1 1 260px; }
+.btn + .btn, .btn + form, form + .btn { margin-left: 6px; }
+.row > form { margin: 0; }
+
+/* 表格:行内操作居中对齐、按钮成组,链接和按钮之间有间距 */
+td { vertical-align: middle; }
+td .btn { margin-top: 0; }
+td form { display: inline-flex; gap: 6px; align-items: center; margin: 0; }
+td > a + a, td > a + form, td > form + a, td > form + form { margin-left: 10px; }
+td a:not(.btn) { text-decoration: none; border-bottom: 1px solid var(--ink-3); }
+td a:not(.btn):hover { border-bottom-color: var(--ink); }
+th { padding-top: 6px; padding-bottom: 6px; }
+
+/* 折叠区 */
+details > summary { cursor: pointer; font-weight: 700; font-size: 12.5px; margin: 8px 0; }
+details[open] > summary { margin-bottom: 10px; }
+
+/* 资产三栏:图不再撑满整列把卡片拉得很长,居中放在浅底上 */
+.cols .card > img, .cols .card .current-media img, .cols .card figure img {
+  display: block; max-width: 100%; max-height: 300px; width: auto; margin: 0 auto 10px;
+  background: var(--bg); border: 1px solid var(--line); }
+.cols .card { padding: 16px; }
+
+/* 图墙(逐集面板):等宽栅格,不再宽窄不一 */
+.wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; align-items: start; }
+.wall-item { margin: 0; }
+.wall-item .row { gap: 10px; flex-wrap: nowrap; }
+.wall-item figure { flex: 1 1 0; min-width: 0; }
+.wall-item img { width: 100%; height: 170px; object-fit: contain; background: var(--bg); }
+.wall-item figcaption { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 4px; letter-spacing: .6px; }
+.wall-item .empty { height: 170px; display: grid; place-items: center; text-align: center; border: 1px dashed var(--line);
+                    padding: 8px; }
+
+/* 资产图审:卡片等宽栅格,图有固定观看区 */
+.review-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; align-items: start; }
+.review-grid > .card { margin: 0; }
+.review-grid .card > a > img { display: block; max-width: 100%; max-height: 300px; width: auto; margin: 0 auto 12px;
+                               background: var(--bg); border: 1px solid var(--line); }
+.review-grid .checklist { margin: 8px 0; }
+.review-grid .row { gap: 8px; align-items: center; }
+.review-grid .row .btn { margin-top: 0; }
+
+/* 生成历史:版本卡更规整 */
+.history { gap: 12px; }
+.ver { padding: 8px; }
+
+/* 修订二:说明行宽放宽一点(78ch 时短说明会落一两个字到第二行);卡片里的表单之间留出节奏;三栏里的输入不撑出栏 */
+.card p.hint, .card > p:not(.status-bad) { max-width: 96ch; }
+section.card:has(> form[data-fill]) { padding-top: 14px; padding-bottom: 12px; }
+section.card:has(> form[data-fill]) p.hint { margin-bottom: 0; }
+.card > form + form, .card > form + .row, .card > .row + form, .card > form + label { margin-top: 14px; }
+.cols .card form.row { flex-wrap: wrap; }
+.cols .card form.row > div { flex: 1 1 150px; min-width: 0; }
+.cols .card form.row input[type=number], .cols .card form.row input[type=text], .cols .card form.row select { min-width: 0; }
+.cols .card hr, .cols .card h3 { margin-top: 18px; }
+
+/* 修订三:补全卡片(首帧 / 尾帧 / 关键帧 / 资产图 / 四视图…)内容很少,并排放,最多三张一行,不再各占一整行 */
+main > section.card:has(> form[data-fill]) {
+  display: inline-block; vertical-align: top; width: calc((100% - 56px) / 3); min-width: 300px; margin-right: 12px; }
+main > section.card:has(> form[data-fill]) form.row input[type=number] { min-width: 0; width: 160px; }
+@media (max-width: 980px) { main > section.card:has(> form[data-fill]) { width: 100%; margin-right: 0; } }
+
+/* 修订四:段落卡片里的单项表单(种子、档位)不拉满整行;历史版本卡按自身高度,不被最高那张撑长 */
+form:not(.row) > input[type=number], form:not(.row) > select, form:not(.row) > input[type=text]:not([name=reason]) { max-width: 420px; }
+.history { align-items: flex-start; }
+.ver .btn { margin-left: 0; }

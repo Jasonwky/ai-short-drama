@@ -163,6 +163,13 @@ def _never_tried(store: Store, table: str, row_id: int, writes: str) -> bool:
                               " AND json_extract(params_json, '$.writes') = ?", (table, row_id, writes)).fetchone() is None
 
 
+def _fourview_never_tried(store: Store, character_id: int, front: str) -> bool:
+    """**这张正面图**还没出过四视图(换了正面图,旧四视图被清掉,要按新正面图再出;spec 2026-10-28 第 6.1 节)。"""
+    return store.conn.execute("SELECT 1 FROM task WHERE target_type = 'character' AND target_id = ?"
+                              " AND json_extract(params_json, '$.writes') = 'fourview_path'"
+                              " AND json_extract(params_json, '$.image_refs[0]') = ?", (character_id, front)).fetchone() is None
+
+
 def _in_flight(store: Store, table: str, row_id: int) -> bool:
     return store.conn.execute(f"SELECT 1 FROM task WHERE target_type = ? AND target_id = ? AND state IN"
                               f" ({','.join('?' * len(IN_FLIGHT))})", (table, row_id, *IN_FLIGHT)).fetchone() is not None
@@ -261,7 +268,7 @@ def plan_media(store: Store, d: int) -> list[str]:
                 plan_asset_image(store, table, r["id"], seed=locked if locked is not None else random.randrange(1, 2**31))
                 did.append(f"drama {d} 排了 {table}「{r['name']}」的图")
             if (table == "character" and r[writes] and not r["fourview_path"]
-                    and _never_tried(store, table, r["id"], "fourview_path") and not fourview_problems(store, r["id"])):
+                    and _fourview_never_tried(store, r["id"], r[writes]) and not fourview_problems(store, r["id"])):
                 plan_fourview(store, r["id"], seed=random.randrange(1, 2**31))
                 did.append(f"drama {d} 排了角色「{r['name']}」的四视图")
     return did
