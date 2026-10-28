@@ -71,7 +71,7 @@ def test_fill_last_frames_and_fourviews(client, store, sample):
     repo.update(store, "segment", sample["seg"], reference_mode="first_last", last_image_prompt=LAST)
     r = client.post(f"/fill/lastframes/{sample['episode']}", data={"base_seed": "7"})
     assert "将提交 1 条尾帧" in r.text and 'data-panel="frames"' in r.text
-    repo.update(store, "character", sample["lin"], final_prompt="A young woman.")
+    repo.update(store, "character", sample["lin"], final_prompt="A young woman.", fourview_path=None)
     store.conn.execute("UPDATE drama SET style = 'realistic' WHERE id = ?", (sample["drama"],))
     r = client.post(f"/fill/fourviews/{sample['drama']}", data={"base_seed": "7"})
     assert "将提交 1 条四视图" in r.text and 'data-panel="assets"' in r.text

@@ -35,6 +35,11 @@ _NARRATION = re.compile(r"旁白[：:]\s*([^【\n]*)")
 _SUBSHOT = re.compile(r"【镜头\s*\d+】")
 
 
+def narration(description: str) -> list[str]:
+    """旁白原句(按出现顺序)。视频模型不念画外音:旁白在成片里只出字幕(spec 2026-10-28 第 4 节)。"""
+    return [s.strip() for s in _NARRATION.findall(description) if s.strip()]
+
+
 def count_chars(text: str) -> int:
     """计字数:去掉标点和空白。"""
     return sum(1 for ch in text if ch not in _PUNCT)

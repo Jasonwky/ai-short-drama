@@ -12,10 +12,11 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
-from tools.drama import repo
+from tools.drama import art, repo
 from tools.drama.db import Store
+from tools.gen.align import align_problems, plan_align
 from tools.gen.assets import SPEC as ASSET_SPEC, asset_problems, fourview_problems, locked_seed, plan_asset_image, plan_fourview
-from tools.llm import batch, llm_queue, runs, service
+from tools.llm import asset_review, batch, llm_queue, runs, service
 from tools.llm.batch import busy
 
 REVIEW = "drama_review"
@@ -133,6 +134,8 @@ def status(store: Store, d: int) -> list[Stage]:
         c2 = Stage("cast", "② AI 出资产表", casts[-1]["state"], run=casts[-1]["id"])
     elif r1.state != "passed" and not approved_cast:
         c2 = Stage("cast", "② AI 出资产表", "blocked", "等①通过(一条都不采纳)")
+    elif not approved_cast and not art.of(repo.get(store, "drama", d)).era:      # 待定但不可跳过(spec 2026-10-28 第 2 节)
+        c2 = Stage("cast", "② AI 出资产表", "blocked", "先填美术设定(时代必填)")
     elif casts and casts[-1]["state"] == "failed":
         c2 = Stage("cast", "② AI 出资产表", "failed", (casts[-1]["error"] or "")[:200], run=casts[-1]["id"])
     elif approved_cast:
@@ -147,10 +150,12 @@ def status(store: Store, d: int) -> list[Stage]:
     r3 = _review(store, d, "assets", "r3", "③ 全剧审·资产", r3_wait, fixing=cast_busy, after=last_cast)
     final = r3.state == "passed"
     media = _media(store, d, final)
+    state, detail = asset_review.summary(store, d)
+    a5 = Stage("a5", "⑤ 资产图审", state if final else "blocked", detail if final else "等资产定稿(③一条都不采纳)")
     boards = _boards(store, d, eps, final)
     r4 = _review(store, d, "storyboard", "r4", "④ 全剧审·分镜", "" if boards.state == "done" else "等全集分镜完成",
                  fixing=_busy_any(store, eps, BOARD_FIX))
-    return [s1, r1, c2, r3, media, boards, r4]
+    return [s1, r1, c2, r3, media, a5, boards, r4]
 
 
 def _never_tried(store: Store, table: str, row_id: int, writes: str) -> bool:
@@ -224,6 +229,24 @@ def advance(store: Store, d: int) -> list[str]:
             if busy(store, e["id"], BOARD_FIX) or batch.storyboard_gaps(store, e["id"]):
                 continue
             llm("storyboard", "episode", e["id"], {}, f"第 {e['number']} 集拆分镜")
+    did += plan_checks(store, d)
+    if st["r3"].state == "passed":                       # 资产图出来就排 AI 检查;单张都查完再排全剧对照(spec 2026-10-28 第 6.5 节)
+        did += asset_review.plan_checks(store, d) + asset_review.plan_drama_check(store, d)
+    return did
+
+
+def plan_checks(store: Store, d: int) -> list[str]:
+    """出完的视频排一次对齐 / 语音检查(spec 2026-10-28 第 3 节;导出要它)。同一条视频排过(任何状态)就不再排。"""
+    did = []
+    rows = store.conn.execute("SELECT s.id, s.number, s.video_path, e.number AS ep FROM segment s"
+                              " JOIN episode e ON e.id = s.episode_id WHERE e.drama_id = ? AND s.video_path IS NOT NULL"
+                              " ORDER BY e.number, s.number", (d,)).fetchall()
+    for r in rows:
+        seen = store.conn.execute("SELECT 1 FROM task WHERE kind = 'align' AND target_type = 'segment' AND target_id = ?"
+                                  " AND json_extract(params_json, '$.video') = ?", (r["id"], r["video_path"])).fetchone()
+        if seen is None and not align_problems(store, r["id"]):
+            plan_align(store, r["id"])
+            did.append(f"drama {d} 排了第 {r['ep']} 集段落 {r['number']} 的语音检查")
     return did
 
 

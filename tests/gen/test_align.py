@@ -18,8 +18,15 @@ def test_align_task_freezes_video_and_lines(store, sample):
     assert json.loads(t["refs_json"]) == ["videos/s1.mp4"]
 
 
-def test_no_video_or_no_dialogue_cannot_be_aligned(store, sample):
-    repo.update(store, "segment", sample["seg"], video_path=None, description="【镜头1】林小雨低头看着玉佩。")
-    assert align_problems(store, sample["seg"]) == ["还没有视频", "段落描述里没有台词(「某某说：「……」」),不需要字幕"]
+def test_no_video_cannot_be_aligned(store, sample):
+    repo.update(store, "segment", sample["seg"], video_path=None)
+    assert align_problems(store, sample["seg"]) == ["还没有视频"]
     with pytest.raises(ValueError, match="还没有视频"):
         plan_align(store, sample["seg"])
+
+
+def test_no_dialogue_is_planned_as_a_speech_check(store, sample):
+    """spec 2026-10-28 第 3 节:没台词的段落也要查 —— 第 1 集第 2 段没台词却在说话。"""
+    repo.update(store, "segment", sample["seg"], description="【镜头1】林小雨低头看着玉佩。")
+    p = json.loads(repo.get(store, "task", plan_align(store, sample["seg"]))["params_json"])
+    assert (p["lines"], p["writes"], p["expect_ext"]) == ([], "speech_check", ".json")

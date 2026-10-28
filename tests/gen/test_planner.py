@@ -3,9 +3,15 @@ import json
 
 import pytest
 
-from tools.drama import repo
+from tools.drama import art, repo
+from tests.drama.conftest import approve_all
+from tools.drama.styles import get_style
 from tools.gen.planner import plan_first_frame, plan_last_frame, plan_video
 from tools.gen.workflows import H3_MODEL, QWEN_MODEL
+
+# 首帧类提示词末尾由代码拼的画风(spec 2026-10-28 第 2 节;样例剧是写实、没填美术设定)
+TAIL = art.frame_suffix(get_style("realistic"), art.Art())
+LOOK = art.video_phrase(get_style("realistic"), art.Art())      # 视频提示词末尾由代码拼的画风
 
 
 def _task(store, t):
@@ -18,7 +24,7 @@ def _task(store, t):
 def test_first_frame_task_is_fully_specified(store, sample):
     row, p = _task(store, plan_first_frame(store, sample["seg"], seed=42))
     assert (row["kind"], row["model"], row["seed"], row["state"]) == ("image", QWEN_MODEL, 42, "pending")
-    assert row["prompt"] == "Picture 1(林小雨) 站在 Picture 2(老宅庭院) 里,手里拿着 Picture 3(玉佩)"
+    assert row["prompt"] == "Picture 1(林小雨) 站在 Picture 2(老宅庭院) 里,手里拿着 Picture 3(玉佩)" + TAIL
     assert p["image_refs"] == ["assets/lin.png", "assets/yard.png", "assets/jade.png"]
     assert (p["size"], p["preset"], p["writes"], p["dropped"]) == ([928, 1664], "fast", "first_frame_path", [])
 
@@ -31,7 +37,7 @@ def test_first_frame_records_assets_that_fell_out_of_slots(store, sample):
     row, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
     assert p["dropped"] == ["玉佩"]
     # 进槽的是林小雨(台词多)、场景、沈墨;玉佩出槽,退化成纯文字。编号按提示词里出场的先后
-    assert row["prompt"] == "Picture 1(林小雨) 把 玉佩 递给 Picture 2(沈墨),Picture 3(老宅庭院) 黄昏"
+    assert row["prompt"] == "Picture 1(林小雨) 把 玉佩 递给 Picture 2(沈墨),Picture 3(老宅庭院) 黄昏" + TAIL
     assert p["image_refs"] == ["assets/lin.png", "assets/shen.png", "assets/yard.png"]
 
 
@@ -53,10 +59,11 @@ def test_video_task_carries_voice_description_not_reference_audio(store, sample)
     row, p = _task(store, plan_video(store, sample["seg"], seed=7))
     assert (row["kind"], row["model"]) == ("video", H3_MODEL)
     # 台词必须逐字进提示词:P2 真链路里漏了它,H3 说出的是无意义音节(ASR 相似度 0.05)
-    assert row["prompt"] == ("<Picture 1> 是本段的首帧。林小雨 在 老宅庭院 低头看 玉佩,然后抬眼说话 "
-                             "林小雨用普通话说:「这块玉佩，是我母亲留给我的。」 林小雨的声音:清亮女声。")
+    assert row["prompt"] == ("<Picture 1> 是本段的首帧。<Picture 2> 是林小雨的四视图(正面、左侧、背面、右侧)。"
+                             "林小雨 在 老宅庭院 低头看 玉佩,然后抬眼说话 "
+                             "林小雨用普通话说:「这块玉佩，是我母亲留给我的。」 林小雨的声音:清亮女声。 " + LOOK)
     assert (p["frames"], p["size"], p["audio_ref"]) == (192, [768, 1344], None)
-    assert p["image_refs"] == ["frames/s1.png"] and p["writes"] == "video_path"
+    assert p["image_refs"] == ["frames/s1.png", "assets/lin_4v.png"] and p["writes"] == "video_path"
     assert p["anchors"] == [["frames/s1.png", 0]]           # 首帧既是参考图,又钉在第 0 帧
 
 
@@ -100,9 +107,9 @@ def test_first_last_mode_pins_both_ends(store, sample):
     repo.update(store, "segment", sample["seg"], reference_mode="first_last", last_frame_path="frames/s1_end.png",
                 last_image_prompt="@林小雨 走出 @老宅庭院")
     row, p = _task(store, plan_video(store, sample["seg"], seed=1))
-    assert p["image_refs"] == ["frames/s1.png"]
+    assert p["image_refs"] == ["frames/s1.png", "assets/lin_4v.png"]
     assert p["anchors"] == [["frames/s1.png", 0], ["frames/s1_end.png", -1]]
-    assert json.loads(row["refs_json"]) == ["frames/s1.png", "frames/s1_end.png"]     # 溯源里两张都在
+    assert json.loads(row["refs_json"]) == ["frames/s1.png", "assets/lin_4v.png", "frames/s1_end.png"]     # 溯源里两张都在
     assert row["prompt"].startswith("<Picture 1> 是本段的首帧。")
 
 
@@ -110,7 +117,7 @@ def test_last_mode_pins_the_last_frame(store, sample):
     repo.update(store, "segment", sample["seg"], reference_mode="last", first_frame_path=None,
                 last_frame_path="frames/s1_end.png", last_image_prompt="@林小雨 走出 @老宅庭院")
     row, p = _task(store, plan_video(store, sample["seg"], seed=1))
-    assert p["image_refs"] == ["frames/s1_end.png"] and p["anchors"] == [["frames/s1_end.png", -1]]
+    assert p["image_refs"] == ["frames/s1_end.png", "assets/lin_4v.png"] and p["anchors"] == [["frames/s1_end.png", -1]]
     assert row["prompt"].startswith("<Picture 1> 是本段的尾帧(最后一个画面)。")
 
 
@@ -122,6 +129,7 @@ def test_fourviews_join_as_references_most_lines_first(store, sample):
     repo.update(store, "segment", sample["seg"],
                 video_prompt="@林小雨 把 @玉佩 递给 @沈墨,@老宅庭院 黄昏",
                 description="【镜头1】沈墨说：「好。」【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」")
+    approve_all(store)                      # 测试里新建 / 换的资产图要定稿(spec 2026-10-28 第 6.1 节)
     row, p = _task(store, plan_video(store, sample["seg"], seed=1))
     assert p["image_refs"] == ["frames/s1.png", "fv/lin.png", "fv/shen.png"]
     assert row["prompt"].startswith("<Picture 1> 是本段的首帧。<Picture 2> 是林小雨的四视图(正面、左侧、背面、右侧)。"
@@ -134,7 +142,7 @@ def test_last_frame_is_composed_from_its_own_prompt(store, sample):
     repo.update(store, "segment", sample["seg"], reference_mode="first_last",
                 last_image_prompt="@林小雨 转身走向 @老宅庭院 深处,手里握着 @玉佩")
     row, p = _task(store, plan_last_frame(store, sample["seg"], seed=3))
-    assert row["prompt"] == "Picture 1(林小雨) 转身走向 Picture 2(老宅庭院) 深处,手里握着 Picture 3(玉佩)"
+    assert row["prompt"] == "Picture 1(林小雨) 转身走向 Picture 2(老宅庭院) 深处,手里握着 Picture 3(玉佩)" + TAIL
     assert (p["writes"], p["size"], p["preset"]) == ("last_frame_path", [928, 1664], "fast")
 
 
@@ -158,10 +166,11 @@ def _crowd(store, sample, prompt):
 def test_more_than_three_references_leave_a_spot_then_add(store, sample):
     from tools.gen.planner import frame_passes
     _crowd(store, sample, "@林小雨 把 @玉佩 递给 @沈墨,@王五 站在一旁,@老宅庭院 黄昏")
+    approve_all(store)                      # 测试里新建 / 换的资产图要定稿(spec 2026-10-28 第 6.1 节)
     row, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
     assert p["image_refs"] == ["assets/lin.png", "assets/shen.png", "assets/yard.png"]
     # 王五单独一句:第一遍拿掉、留位,第二遍加入;玉佩和别人同句:拿不出来,照旧写成名字
-    assert row["prompt"] == "Picture 1(林小雨) 把 玉佩 递给 Picture 2(沈墨),画面中给另一个人留出位置,Picture 3(老宅庭院) 黄昏"
+    assert row["prompt"] == "Picture 1(林小雨) 把 玉佩 递给 Picture 2(沈墨),画面中给另一个人留出位置,Picture 3(老宅庭院) 黄昏" + TAIL
     sp = p["second_pass"]
     assert (sp["image_refs"], sp["names"], p["dropped"]) == (["assets/wang.png"], ["王五"], ["玉佩"])
     assert sp["prompt"] == "保持 Picture 1 的画面、构图、光线和已有人物完全不变,在画面中加入:Picture 2(王五) 站在一旁。"
@@ -180,6 +189,7 @@ def test_frame_task_records_the_text_it_was_drawn_from(store, sample):
 def test_nothing_to_add_means_one_pass_as_before(store, sample):
     from tools.gen.planner import frame_passes
     _crowd(store, sample, "@林小雨 把 @玉佩 递给 @沈墨,@王五 和 @沈墨 对视,@老宅庭院 黄昏")
+    approve_all(store)                      # 测试里新建 / 换的资产图要定稿(spec 2026-10-28 第 6.1 节)
     _, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
     assert "second_pass" not in p and p["dropped"] == ["玉佩", "王五"] and frame_passes(store, sample["seg"]) == 1
 
@@ -191,7 +201,7 @@ def test_pictures_are_numbered_in_the_order_the_prompt_mentions_them(store, samp
     repo.bind_props(store, sample["seg"], [])
     repo.update(store, "segment", sample["seg"], image_prompt="@沈墨 端坐主位,@林小雨 跪在地上,@老宅庭院 夜")
     row, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
-    assert row["prompt"] == "Picture 1(沈墨) 端坐主位,Picture 2(林小雨) 跪在地上,Picture 3(老宅庭院) 夜"
+    assert row["prompt"] == "Picture 1(沈墨) 端坐主位,Picture 2(林小雨) 跪在地上,Picture 3(老宅庭院) 夜" + TAIL
     assert p["image_refs"] == ["assets/shen.png", "assets/lin.png", "assets/yard.png"] and p["dropped"] == []
 
 
@@ -255,7 +265,7 @@ def test_first_frame_appends_the_blocking_written_by_code(store, sample):
     repo.update(store, "segment", sample["seg"], blocking_json=_blocking())
     row, _ = _task(store, plan_first_frame(store, sample["seg"], seed=1))
     assert row["prompt"] == ("Picture 1(林小雨) 站在 Picture 2(老宅庭院) 里,手里拿着 Picture 3(玉佩)。"
-                             "Picture 1(林小雨) 跪着,面朝镜头,在画面左侧,手里拿着Picture 3(玉佩)")
+                             "Picture 1(林小雨) 跪着,面朝镜头,在画面左侧,手里拿着Picture 3(玉佩)") + TAIL
 
 
 def test_last_frame_does_not_use_the_blocking(store, sample):
@@ -292,7 +302,7 @@ def test_shot_design_reaches_the_first_frame_prompt(store, sample):
     repo.update(store, "segment", sample["seg"], shot_type="中景", angle="俯拍")
     assert planner.frame_text(store, sample["seg"], "first_frame_path").endswith("。中景镜头,俯拍")
     row, _ = _task(store, plan_first_frame(store, sample["seg"], seed=1))
-    assert row["prompt"].endswith("中景镜头,俯拍")
+    assert row["prompt"].endswith("中景镜头,俯拍" + TAIL)
     before = json.loads(row["params_json"])["frame"]["text"]
     repo.update(store, "segment", sample["seg"], angle="仰拍")          # 只改机位,快照也要变(帧面板据此提示旧方案)
     assert planner.frame_text(store, sample["seg"], "first_frame_path") != before
@@ -317,11 +327,61 @@ def test_movement_is_appended_to_the_video_prompt(store, sample):
     assert "运镜" not in plain["prompt"]
     repo.update(store, "segment", sample["seg"], movement="推")
     row, _ = _task(store, plan_video(store, sample["seg"], seed=2))
-    assert row["prompt"].endswith(" 运镜:推镜头")
+    assert row["prompt"].endswith(" 运镜:推镜头 " + LOOK)
 
 
 def test_close_shot_phrase_is_appended_after_the_blocking(store, sample):
     _lying_pair(store, sample, "近景")
     row, _ = _task(store, plan_first_frame(store, sample["seg"], seed=1))
-    assert row["prompt"].endswith("。近景,画面只拍到躺着的人胸口以上,站着的人在画面上方")
+    assert row["prompt"].endswith("。近景,画面只拍到躺着的人胸口以上,站着的人在画面上方" + TAIL)
     assert "全身完整" not in row["prompt"] and "在画面左侧" not in row["prompt"]
+
+
+# ── 成片质量闸门第一期(spec 2026-10-28-成片质量闸门-第一期-design.md)──────────
+
+def test_video_waits_for_a_fourview_still_being_made(store, sample):
+    """第 1 集 4 段的视频在四视图出完之前就规划了,参数定死后再也补不上 —— 在途的四视图要拦。"""
+    from tools.drama.tasks import create_task
+    create_task(store, kind="image", target_type="character", target_id=sample["lin"], model=QWEN_MODEL,
+                params={"writes": "fourview_path"}, seed=1, prompt="p", refs=[])
+    with pytest.raises(ValueError, match="林小雨」的四视图还在生成"):
+        plan_video(store, sample["seg"], seed=1)
+
+
+def test_speaker_without_fourview_blocks_but_silent_extra_does_not(store, sample):
+    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])     # 沈墨不说话、没四视图
+    repo.update(store, "segment", sample["seg"], image_prompt="@林小雨 和 @沈墨 站在 @老宅庭院 里,手里拿着 @玉佩",
+                video_prompt="@林小雨 在 @老宅庭院 低头看 @玉佩,@沈墨 在一旁")
+    plan_video(store, sample["seg"], seed=1)
+    repo.update(store, "character", sample["lin"], fourview_path=None)
+    with pytest.raises(ValueError, match="林小雨」在本段说话,但还没有四视图"):
+        plan_video(store, sample["seg"], seed=1)
+
+
+def test_voices_only_for_speakers_and_silence_is_spelled_out(store, sample):
+    repo.update(store, "character", sample["shen"], voice_desc="低沉男声", fourview_path="assets/shen_4v.png")
+    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])
+    repo.update(store, "segment", sample["seg"], video_prompt="@林小雨 在 @老宅庭院 低头看 @玉佩,@沈墨 在一旁")
+    approve_all(store)                      # 测试里新建 / 换的资产图要定稿(spec 2026-10-28 第 6.1 节)
+    row, p = _task(store, plan_video(store, sample["seg"], seed=1))
+    assert "林小雨的声音" in row["prompt"] and "沈墨的声音" not in row["prompt"]
+    assert p["script"]["voices"] == {"林小雨": "清亮女声"}
+    repo.update(store, "segment", sample["seg"], description="【镜头1】林小雨低头看着玉佩。【镜头2】她握紧玉佩。")
+    row, p = _task(store, plan_video(store, sample["seg"], seed=1))
+    assert "的声音" not in row["prompt"] and "全程没有人说话,只有环境声。" in row["prompt"]
+    assert p["script"]["voices"] == {}
+
+
+def test_art_setting_reaches_frame_and_video_and_banned_words_block(store, sample):
+    store.conn.execute("UPDATE drama SET art_json = ? WHERE id = ?",
+                       ('{"era": "架空古代", "costume": "", "banned": ["uniform", "口袋"]}', sample["drama"]))
+    row, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
+    assert "Setting: 架空古代." in row["prompt"] and p["art"]["era"] == "架空古代"
+    row, _ = _task(store, plan_video(store, sample["seg"], seed=1))
+    assert row["prompt"].endswith("时代:架空古代。")
+    repo.update(store, "segment", sample["seg"], image_prompt="@林小雨 穿着带口袋的衣服站在 @老宅庭院,拿着 @玉佩",
+                video_prompt="@林小雨 in a grey uniform 在 @老宅庭院 看 @玉佩")
+    with pytest.raises(ValueError, match="首帧图提示词含本剧禁用词「口袋」"):
+        plan_first_frame(store, sample["seg"], seed=1)
+    with pytest.raises(ValueError, match="视频提示词含本剧禁用词「uniform」"):
+        plan_video(store, sample["seg"], seed=1)

@@ -17,8 +17,11 @@ worker 只负责把它原样交给云机 —— 这样「当时到底用了什�
 """
 from __future__ import annotations
 
-from tools.drama import blocking, framing, refs, repo, rules, tags
+import json
+
+from tools.drama import approval, art, blocking, framing, refs, repo, rules, tags
 from tools.drama.db import Store
+from tools.drama.styles import get_style
 from tools.drama.readiness import key_frame_index, segment_readiness
 from tools.drama.targets import KEY_WRITES
 from tools.drama.tasks import create_task
@@ -34,6 +37,11 @@ def _aspect(store: Store, segment_id: int) -> str:
     row = store.conn.execute("SELECT d.aspect_ratio FROM segment s JOIN episode e ON e.id = s.episode_id "
                              "JOIN drama d ON d.id = e.drama_id WHERE s.id = ?", (segment_id,)).fetchone()
     return row[0]
+
+
+def _drama(store: Store, segment_id: int):
+    return store.conn.execute("SELECT d.* FROM segment s JOIN episode e ON e.id = s.episode_id "
+                              "JOIN drama d ON d.id = e.drama_id WHERE s.id = ?", (segment_id,)).fetchone()
 
 
 def _slot_refs(seg, assets) -> tuple[list[refs.Ref], list[refs.Ref], list[refs.Ref]]:
@@ -81,6 +89,9 @@ VIDEO_MODES = {
     "first_last": ("first_frame_path", "是本段的首帧。", (("first_frame_path", 0), ("last_frame_path", -1))),
 }
 
+
+# 没有台词的段落:不写任何人的声音,明说没人说话(spec 2026-10-28-成片质量闸门-第一期-design.md 第 3 节)
+SILENT = "全程没有人说话,只有环境声。"
 
 # 纯文字(只给四视图、不给首帧):不做(用户 2026-10-15 定),原因写给人看
 TEXT_ONLY_REFUSED = ("纯文字模式不支持出视频:实测场景和道具守不住(黄昏院子 → 白天砖墙,大块雕花绿玉 → 小块浅色坠子;"
@@ -136,6 +147,13 @@ def _image_problems(store: Store, segment_id: int, text: str, label: str) -> lis
     problems += [f"@{u} 不是本镜绑定的素材" for u in unknown]
     if len(bound) >= 2:
         problems += [f"绑定了「{n}」但{label}图提示词从未 @ 它" for n in bound if n not in found]
+    problems += approval.unapproved(store, [("character", c["id"], "image") for c in chars]
+                                    + ([("scene", scene["id"], "image")] if scene is not None else [])
+                                    + [("prop", p["id"], "image") for p in props])
+    drama = _drama(store, segment_id)
+    if not drama["style"]:
+        problems.append("这部剧还没选风格预设(在「立项」里选)—— 画风要由代码拼进提示词")
+    problems += art.problems(text, art.of(drama), f"{label}图提示词")
     return problems
 
 
@@ -151,12 +169,16 @@ def _plan_image(store: Store, segment_id: int, text: str, seed: int, writes: dic
     seg = repo.get(store, "segment", segment_id)
     assets = repo.segment_assets(store, segment_id)
     kept, first_text, moved, added, dropped = _passes(seg, assets, text)
-    prompt = tags.expand(first_text, kept, added + dropped, "qwen")
+    drama = _drama(store, segment_id)
+    setting = art.of(drama)
+    # 画风 + 时代由代码拼(spec 2026-10-28 第 2 节):第 1 集首帧一个风格词都没有,Qwen 自行发挥出了卡通脸
+    prompt = tags.expand(first_text, kept, added + dropped, "qwen") + art.frame_suffix(get_style(drama["style"]), setting)
     params = {
         "workflow": "qwen_image", "preset": "fast", "size": list(FRAME_SIZE[_aspect(store, segment_id)]),
         "image_refs": [r.path for r in kept], **writes, "expect_ext": ".png",
         "dropped": [r.name for r in dropped],   # 退化成文字的素材,溯源里要看得到(就绪清单提示用局部替换补)
         "frame": {"text": text},                # 生成时的图提示词拼句:镜头改过时比对用;改参重跑沿用(serve/rerun.py)
+        **({"art": json.loads(art.dumps(setting))} if setting != art.Art() else {}),
     }
     if added:                                   # 第一遍留位、第二遍加入(spike-results/2026-10-20-多人同框留位加人实测.md)
         params["second_pass"] = {"image_refs": [r.path for r in added], "names": [r.name for r in added],
@@ -270,7 +292,34 @@ def video_problems(store: Store, segment_id: int) -> list[str]:
         return [TEXT_ONLY_REFUSED]
     if seg["reference_mode"] not in VIDEO_MODES:
         return [f"参考模式 {seg['reference_mode']} 的视频生成尚未实现(已实现:{'、'.join(VIDEO_MODES)})"]
-    return []
+    views, _ = fourview_refs(store, segment_id)
+    by_name = {c["name"]: c["id"] for c in repo.segment_assets(store, segment_id)["characters"]}
+    return _fourview_problems(store, segment_id) + approval.unapproved(
+        store, [("character", by_name[v.name], "fourview") for v in views]) + art.problems(
+        seg["video_prompt"], art.of(_drama(store, segment_id)), "视频提示词")
+
+
+FOURVIEW_IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
+
+
+def _fourview_problems(store: Store, segment_id: int) -> list[str]:
+    """视频参数一旦建好就定死:四视图还在出时规划,这条视频就永远没有人物参考图
+    (第 1 集 5 段里 4 段就是这样出的,spike-results/2026-10-28-第1集成片问题根因.md)。
+    说话的角色缺四视图也拦;不说话的(群演、背影)不拦。"""
+    seg = repo.get(store, "segment", segment_id)
+    chars = repo.segment_assets(store, segment_id)["characters"]
+    spoken = rules.dialogue_by_speaker(seg["description"], [c["name"] for c in chars])
+    problems = []
+    for c in chars:
+        flying = store.conn.execute(
+            f"SELECT 1 FROM task WHERE target_type = 'character' AND target_id = ? AND state IN"
+            f" ({','.join('?' * len(FOURVIEW_IN_FLIGHT))}) AND json_extract(params_json, '$.writes') = 'fourview_path'",
+            (c["id"], *FOURVIEW_IN_FLIGHT)).fetchone()
+        if flying:
+            problems.append(f"角色「{c['name']}」的四视图还在生成,等它出完再规划视频(视频参数建好就定死,之后补不上)")
+        elif not c["fourview_path"] and any(who.startswith(c["name"]) for who in spoken):
+            problems.append(f"角色「{c['name']}」在本段说话,但还没有四视图(视频靠它守住长相)")
+    return problems
 
 
 def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = None) -> int:
@@ -293,11 +342,16 @@ def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = 
     # 台词逐字进提示词:模型不会从别处知道要说什么(P2 真链路漏了它,说出的是无意义音节)
     # 说话人按本段角色名认:「说」前常连着动作描写,原样写进来会被 H3 烧成画面字幕(实战《替嫁冲喜》第 6 段)
     names = [c["name"] for c in assets["characters"]]
-    lines = "".join(f"{who}用普通话说:「{line}」" for who, line in rules.dialogue_lines(seg["description"], names))
-    voices = "".join(f"{c['name']}的声音:{c['voice_desc']}。" for c in assets["characters"] if c["voice_desc"])
+    said = rules.dialogue_lines(seg["description"], names)
+    lines = "".join(f"{who}用普通话说:「{line}」" for who, line in said)
+    # 声音只写本段说话的人;没人说话就明说(spec 2026-10-28 第 3 节:第 2 段没台词却写了声音,模型自己编着说)
+    speakers = [c for c in assets["characters"] if c["voice_desc"] and any(who.startswith(c["name"]) for who, _ in said)]
+    voices = "".join(f"{c['name']}的声音:{c['voice_desc']}。" for c in speakers) if said else SILENT
+    drama = _drama(store, segment_id)
+    look = art.video_phrase(get_style(drama["style"]), art.of(drama))
     who = "".join(f"<Picture {k}> 是{r.name}的四视图(正面、左侧、背面、右侧)。" for k, r in enumerate(views, 2))
     move = framing.move_phrase(seg["movement"])      # 运镜由代码写,没填不拼(老段落提示词不变)
-    prompt = f"<Picture 1> {intro}" + who + body + "".join(f" {part}" for part in (lines, voices, move) if part)
+    prompt = f"<Picture 1> {intro}" + who + body + "".join(f" {part}" for part in (lines, voices, move, look) if part)
 
     image_refs = [seg[ref_field]] + [r.path for r in views]
     anchors = [[seg[f], idx] for f, idx in pins]
@@ -312,7 +366,7 @@ def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = 
         # 挑历史版本时看得到每一版说的是什么,台词改过也比得出来(rules.stale_lines)
         "script": {"description": seg["description"],
                    "lines": [[w, line] for w, line in rules.dialogue_lines(seg["description"], names)],
-                   "voices": {c["name"]: c["voice_desc"] for c in assets["characters"] if c["voice_desc"]},
+                   "voices": {c["name"]: c["voice_desc"] for c in speakers} if said else {},
                    "video_prompt": seg["video_prompt"], "duration_sec": seg["duration_sec"],
                    "movement": seg["movement"]},
     }

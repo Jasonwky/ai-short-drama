@@ -4,11 +4,15 @@ import json
 
 import pytest
 
-from tools.drama import repo
+from tools.drama import art, repo
+from tools.drama.styles import get_style
 from tools.gen.planner import key_frame_problems, plan_first_frame, plan_key_frame, plan_video
 from tools.gen.workflows import QWEN_MODEL
 
 TURN = "@林小雨 在 @老宅庭院 转身,背对镜头,握着 @玉佩"
+
+# 首帧类提示词末尾由代码拼的画风(spec 2026-10-28 第 2 节;样例剧是写实、没填美术设定)
+TAIL = art.frame_suffix(get_style("realistic"), art.Art())
 
 
 def _task(store, t):
@@ -25,7 +29,7 @@ def test_keyframe_image_goes_the_same_way_as_the_first_frame(store, sample):
     row, p = _task(store, plan_key_frame(store, k, seed=7))
     first, fp = _task(store, plan_first_frame(store, sample["seg"], seed=7))
     assert (row["kind"], row["model"], row["seed"], row["target_id"]) == ("image", QWEN_MODEL, 7, sample["seg"])
-    assert row["prompt"] == "Picture 1(林小雨) 在 Picture 2(老宅庭院) 转身,背对镜头,握着 Picture 3(玉佩)"
+    assert row["prompt"] == "Picture 1(林小雨) 在 Picture 2(老宅庭院) 转身,背对镜头,握着 Picture 3(玉佩)" + TAIL
     assert (p["writes"], p["keyframe_id"]) == ("key_frame_path", k)              # 任务挂在段落上,参数里记写回哪一张
     assert p["frame"]["text"] == TURN                                            # 快照记的是这张关键帧自己的句子
     skip = ("writes", "keyframe_id", "frame")
@@ -51,8 +55,8 @@ def test_video_pins_the_keyframe_after_the_mode_anchors(store, sample):
     _key(store, sample["seg"])
     row, p = _task(store, plan_video(store, sample["seg"], seed=1))
     assert p["anchors"] == [["frames/s1.png", 0], ["frames/k.png", 96]]
-    assert p["image_refs"] == ["frames/s1.png"]                                  # 只当锚点,不占参考图槽
-    assert json.loads(row["refs_json"]) == ["frames/s1.png", "frames/k.png"]     # 溯源链里有它
+    assert p["image_refs"] == ["frames/s1.png", "assets/lin_4v.png"]             # 只当锚点,不占参考图槽
+    assert json.loads(row["refs_json"]) == ["frames/s1.png", "assets/lin_4v.png", "frames/k.png"]     # 溯源链里有它
 
 
 def test_several_keyframes_are_pinned_in_time_order(store, sample):

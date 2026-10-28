@@ -62,10 +62,28 @@ def page(request: Request, episode_id: int):
         cards.append({"row": c, "curve": _curve(c, speech, axis),
                       "preview": rel if (runtime.data_root / rel).is_file() else None})
     return render(request, "final.html", "final", episode_id=episode_id, ep=ep, segs=segs, few_steps=few,
+                  preview=_preview(runtime, episode_id),
                   problems=export.readiness(store, runtime.data_root, episode_id),
                   producer=export.saved_producer(store), exports=rows, label_text=media.LABEL_TEXT,
                   cues=cards, total=total, axis=axis, timeline_exact=exact, curve=(CURVE_W, CURVE_H, CURVE_FLOOR),
                   music_exts=",".join(music.EXTS), music_note=music.NOTE)
+
+
+def _preview(runtime, episode_id: int) -> dict:
+    job = runtime.previews.get(episode_id)
+    rel = export.preview_path(episode_id)
+    f = runtime.data_root / rel
+    state = "running" if job is not None and not job.done() else (
+        "failed" if job is not None and job.exception() is not None else "")
+    return {"state": state, "error": str(job.exception()) if state == "failed" else "",
+            "path": rel if f.is_file() else None, "mtime": int(f.stat().st_mtime) if f.is_file() else 0}
+
+
+@router.post("/episode/{episode_id}/preview")
+def start_preview(request: Request, episode_id: int):
+    repo.get(rt(request).store, "episode", episode_id)
+    rt(request).start_preview(episode_id)
+    return RedirectResponse(f"/episode/{episode_id}/final#preview", status_code=303)
 
 
 @router.post("/episode/{episode_id}/export")

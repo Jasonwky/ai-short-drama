@@ -30,7 +30,7 @@ IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
 PATH_FIELDS = {"character": ("turnaround_path", "fourview_path", "voice_ref_path"), "scene": ("image_path",), "prop": ("image_path",),
                "segment": ("first_frame_path", "last_frame_path", "video_path", "subtitle_path"),
                "segment_keyframe": ("frame_path",), "music_cue": ("path",), "blank_override": ("video_path",),
-               "segment_review": ("video_path",)}
+               "segment_review": ("video_path",), "asset_approval": ("path",)}
 # task.params_json 里存路径的键(video:字幕对齐的输入;source / ref:局部替换的原图与参考图)
 PARAM_PATH_KEYS = ("image_refs", "audio_ref", "video", "source", "ref")
 
@@ -67,6 +67,9 @@ def collect(store: Store, drama_id: int) -> dict:
     t["blank_override"] = _rows(store, f"SELECT * FROM blank_override WHERE segment_id IN ({_in(segs)}) ORDER BY id", ())
     t["segment_review"] = _rows(store, f"SELECT * FROM segment_review WHERE segment_id IN ({_in(segs)}) ORDER BY id", ())
     t["music_cue"] = _rows(store, f"SELECT * FROM music_cue WHERE episode_id IN ({_in(eps)}) ORDER BY id", ())
+    t["asset_approval"] = _rows(store, " UNION ".join(       # 资产图定稿(v23):按路径 + sha256 认,文件带过去照样有效
+        f"SELECT * FROM asset_approval WHERE table_name = '{k}' AND row_id IN ({_in([r['id'] for r in t[k]])})"
+        for k in ("character", "scene", "prop")) + " ORDER BY id", ())
     owned = {"segment": segs, **{k: [r["id"] for r in t[k]] for k in ("character", "scene", "prop")}}
     t["task"] = _rows(store, " UNION ".join(
         f"SELECT * FROM task WHERE target_type = '{k}' AND target_id IN ({_in(v)})" for k, v in owned.items())
@@ -226,8 +229,17 @@ def _insert(store: Store, m: dict, prefix: str, root: Path) -> int:
                    result_path=mv(r["result_path"]), refs_json=json.dumps([mv(p) for p in json.loads(r["refs_json"])],
                                                                           ensure_ascii=False),
                    params_json=json.dumps(params, ensure_ascii=False, sort_keys=True))
+        runs_ = {}
         for r in t["llm_run"]:
             j = m["llm_journals"].get(str(r["id"]))
-            insert(c, "llm_run", r, target_id=ids[r["target_type"]][r["target_id"]],
-                   journal_path=str(root / prefix / j) if j else None)
+            over = {}
+            if r["task"].startswith("asset_check_") and r["target_type"] != "drama":    # 资产图 AI 检查认的是图的路径
+                params = json.loads(r["params_json"])
+                params["path"] = mv(params.get("path"))
+                over["params_json"] = json.dumps(params, ensure_ascii=False)
+            runs_[r["id"]] = insert(c, "llm_run", r, target_id=ids[r["target_type"]][r["target_id"]],
+                                    journal_path=str(root / prefix / j) if j else None, **over)
+        for r in t.get("asset_approval", []):
+            insert(c, "asset_approval", r, row_id=ids[r["table_name"]][r["row_id"]], path=mv(r["path"]),
+                   check_run=runs_.get(r["check_run"]))
     return new_drama

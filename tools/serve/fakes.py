@@ -148,21 +148,41 @@ def sample_mp4() -> bytes:
 
 
 class FakeGpu:
-    """把假云机队列里的任务一次跑完:H3(工作流里有 noise_seed)出 mp4,其余出 png。"""
-    def __init__(self, comfy: FakeComfy):
+    """把假云机队列里的任务一次跑完:H3(工作流里有 noise_seed)出 mp4,其余出 png。
+    demo:自测给的真产物 {"videos": [mp4…], "frames": [竖版 png…], "fourview": 横版 png} —— 轮流交出去,
+    页面上看到的是真画面(用户 2026-10-28:自测别用彩条 / 灰图);没给就现造测试图样(单测用)。"""
+    def __init__(self, comfy: FakeComfy, demo: dict | None = None):
         self.comfy = comfy
+        self.demo = demo
         self._png = _png(96, 160, 90)
         self._mp4: bytes | None = None
+        self._n = {"videos": 0, "frames": 0}
+
+    def _next(self, kind: str) -> bytes:
+        items = self.demo[kind]
+        self._n[kind] += 1
+        return items[(self._n[kind] - 1) % len(items)]
+
+    def _image(self, graph: dict) -> bytes:
+        if not self.demo:
+            return self._png
+        size = next(((n["inputs"]["width"], n["inputs"]["height"]) for n in graph.values()
+                     if isinstance(n["inputs"].get("width"), int) and isinstance(n["inputs"].get("height"), int)), (0, 1))
+        return self.demo["fourview"] if size[0] > size[1] else self._next("frames")    # 横版的是四视图
 
     def run_pending(self) -> int:
         done = 0
         for pid in list(self.comfy.pending) + list(self.comfy.running):
-            is_h3 = any("noise_seed" in n["inputs"] for n in self.comfy.submitted[pid].values())
+            graph = self.comfy.submitted[pid]
+            is_h3 = any("noise_seed" in n["inputs"] for n in graph.values())
             if is_h3:
-                self._mp4 = self._mp4 or sample_mp4()
-                self.comfy.finish(pid, f"{pid}.mp4", self._mp4)
+                if self.demo:
+                    self.comfy.finish(pid, f"{pid}.mp4", self._next("videos"))
+                else:
+                    self._mp4 = self._mp4 or sample_mp4()
+                    self.comfy.finish(pid, f"{pid}.mp4", self._mp4)
             else:
-                self.comfy.finish(pid, f"{pid}.png", self._png)
+                self.comfy.finish(pid, f"{pid}.png", self._image(graph))
             done += 1
         return done
 
@@ -181,14 +201,14 @@ class FakeAligner:
         return 0, "Loading weights ...\n" + json.dumps({"chars": chars, "asr_sec": 0.1}, ensure_ascii=False)
 
 
-def fake_backend():
+def fake_backend(demo: dict | None = None):
     """(Backend, FakeComfy):界面上标明「假后端」;每轮 tick 前假 GPU 把队列跑完。LoRA 预检一律放行(假后端没有模型文件)。
     LLM 用假 LLM:产物标 fake,永远过不了审批。"""
     from tools.llm.fake import FakeLLM
     from tools.llm.service import DEFAULT_MODEL, LLMBackend
     from tools.serve.runtime import Backend   # 延迟导入:runtime → worker → … 不依赖本模块,避免环
     comfy = FakeComfy()
-    gpu = FakeGpu(comfy)
+    gpu = FakeGpu(comfy, demo)
     aligner = FakeAligner()
     backend = Backend("假后端(测试专用)", lambda host: comfy, FakeTunnel(), lambda host: (lambda args, stdin: (0, "")),
                       fake=True, before_tick=gpu.run_pending,

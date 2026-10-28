@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tools.drama import repo, targets
+from tools.drama import repo, rules, targets
 from tools.drama.db import Store
 from tools.gen import estimate, presets
 from tools.gen.align import align_problems, plan_align
@@ -114,9 +114,12 @@ def plan_fill(store: Store, kind: str, scope_id: int) -> FillPlan:
                 for k in repo.keyframes(store, s["id"]):
                     items.append(_item(store, "segment_keyframe", k, f"{label} · 第 {k['time_sec']:g} 秒", "image",
                                        "frame_path", lambda kid=k["id"]: key_frame_problems(store, kid), frame_est))
-            elif kind == "subtitles":
+            elif kind == "subtitles":                           # 没台词的段落只做语音检查,不出字幕:全剧流程自动排,或在视频面板点
                 items.append(_item(store, "segment", s, label, "align", "subtitle_path",
-                                   lambda sid=s["id"]: align_problems(store, sid), b.item(WHISPER_ALIGN)))
+                                   lambda sid=s["id"], row=s: align_problems(store, sid) + (
+                                       [] if rules.dialogue_lines(row["description"])
+                                       else ["没有台词,不出字幕(语音检查由全剧流程自动排,或在视频面板点)"]),
+                                   b.item(WHISPER_ALIGN)))
             else:
                 est = (b.video(MINIMAX_H3, MINIMAX_H3.frames_for(s["duration_sec"]), presets.video_steps(store))
                        if s["duration_sec"] else 0.0)

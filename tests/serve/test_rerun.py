@@ -22,7 +22,7 @@ NO_SSH = lambda a, s: (0, "")  # noqa: E731
 
 @pytest.fixture
 def world(store, sample, host_id, tmp_path):
-    for rel in ("assets/lin.png", "assets/yard.png", "assets/jade.png", "frames/s1.png", "videos/s1.mp4"):
+    for rel in ("assets/lin.png", "assets/lin_4v.png", "assets/yard.png", "assets/jade.png", "frames/s1.png", "videos/s1.mp4"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_bytes(b"x")
     comfy = FakeComfy()

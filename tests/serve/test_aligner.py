@@ -126,3 +126,22 @@ def test_vram_still_short_after_freeing_fails_loudly(store, sample, world, monke
     runner = FakeAligner(LINE)
     out = _run(store, world, tid, runner)
     assert out.state == "failed" and "释放后显存仍只有 3.8 GiB" in out.message and runner.calls == []
+
+
+def test_silent_segment_passes_the_speech_check_without_subtitles(store, sample, world):
+    repo.update(store, "segment", sample["seg"], description="【镜头1】林小雨低头看着玉佩。")
+    tid = plan_align(store, sample["seg"])
+    out = _run(store, world, tid, FakeAligner(""))
+    t = repo.get(store, "task", tid)
+    assert out.state == "done" and t["result_path"] == f"outputs/tasks/{tid}/align.json"
+    assert repo.get(store, "segment", sample["seg"])["subtitle_path"] is None
+
+
+def test_voice_in_a_silent_segment_fails_the_speech_check(store, sample, world):
+    """样片音轨是持续的正弦音:识别出的字都有能量支撑,算真说话(whisper 在静音上编的字不算)。"""
+    repo.update(store, "segment", sample["seg"], description="【镜头1】林小雨低头看着玉佩。")
+    tid = plan_align(store, sample["seg"])
+    out = _run(store, world, tid, FakeAligner("火中又可火也不回"))
+    assert out.state == "failed" and "没有台词,视频里却有人说话" in out.message and "火中又可火也不回" in out.message
+    saved = json.loads((world["root"] / f"outputs/tasks/{tid}/align.json").read_text(encoding="utf-8"))
+    assert saved["extra"][0]["text"] == "火中又可火也不回"

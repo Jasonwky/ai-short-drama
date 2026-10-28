@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{# 资产图审(spec 2026-10-28-成片质量闸门-第一期-design.md 第 6.4 节):代码检查 + AI 逐维度 + 人定稿 #}
+{% block content %}
+<h1>资产图审</h1>
+<section class="card" data-asset-review data-state="{{ state }}">
+  <p><b>{{ detail }}</b> · <a href="/drama/{{ drama.id }}/episodes">回全剧流程</a> · <a href="/drama/{{ drama.id }}/assets">去资产面板</a></p>
+  <p class="hint">每张资产图要你定稿才能拿去出首帧 / 四视图 / 视频。先由代码查(浅色底、有没有被裁切、四视图四格),
+    再由 AI 逐维度看(时代与服饰、画风、与描述一致、构图规范、瑕疵;四视图多查「与正面图同一人」)。AI 只提示不拦:
+    有不通过项也能定稿,但要写理由。重出的新图进历史,「用这一版」后会自动再查。</p>
+  <div class="row">
+    <form method="post" action="/drama/{{ drama.id }}/asset-review/approve-clean">
+      <button class="btn primary" type="submit" data-approve-clean {% if not clean %}disabled{% endif %}>全部通过的一键定稿({{ clean }} 张)</button>
+    </form>
+    <form method="post" action="/drama/{{ drama.id }}/asset-review/drama-check">
+      <button class="btn" type="submit" data-drama-check>全剧对照(画风统一 / 角色撞脸 / 时代统一)</button>
+    </form>
+    {% if drama_run %}<span class="hint" data-drama-run="{{ drama_run.state }}">全剧对照:<a href="/llm/run/{{ drama_run.id }}">{{ drama_run.state }}</a>
+      {% if drama_run.state == "failed" %}<span class="status-bad">{{ (drama_run.error or "")[:120] }}</span>{% endif %}</span>{% endif %}
+  </div>
+</section>
+
+<div class="wall">
+{% for c in cards %}
+  <section class="card wall-item" id="{{ c.anchor }}" data-review-card="{{ c.anchor }}"
+           data-approved="{{ 1 if c.approval else 0 }}" style="max-width: 560px">
+    <h2>{{ {"character": "角色", "scene": "场景", "prop": "道具"}[c.table] }}「{{ c.name }}」{{ c.label or "" }}</h2>
+    {% if not c.path %}
+      <p class="empty">{{ "正在出图" if c.flying else "还没有图(出图 / 声音那一关会排)" }}</p>
+    {% else %}
+      <a href="/media/{{ c.path }}" target="_blank"><img src="/media/{{ c.path }}" alt="{{ c.name }}" style="max-height: 280px; max-width: 100%"></a>
+      <ul class="checklist" data-code-checks>
+        {% for x in c.code %}<li class="{{ 'ok' if x.ok else 'bad' }}">代码 · {{ x.name }}:{{ x.detail }}</li>{% endfor %}
+        {% if c.code_error %}<li class="bad">代码检查出错:{{ c.code_error }}</li>{% endif %}
+      </ul>
+      <div data-ai-checks>
+        {% if c.out %}
+          <ul class="checklist">
+            {% for x in c.out["items"] %}<li class="{{ 'bad' if x.verdict == '不通过' else ('ok' if x.verdict == '通过' else '') }}"
+                data-ai-dim="{{ x.dim }}" data-verdict="{{ x.verdict }}">AI · {{ x.dim }}:<b>{{ x.verdict }}</b>
+              {% if x.evidence %}—— {{ x.evidence }}{% endif %}{% if x.fix != "无" %}(建议:{{ x.fix }}{% if x.suggestion %}:{{ x.suggestion }}{% endif %}){% endif %}</li>{% endfor %}
+          </ul>
+        {% elif c.queued or (c.run and c.run.state == "running") %}<p class="hint" data-ai-state="checking">AI 检查排队 / 进行中</p>
+        {% elif c.run and c.run.state == "failed" %}<p class="status-bad" data-ai-state="failed">AI 检查失败:{{ (c.run.error or "")[:200] }}</p>
+        {% else %}<p class="hint" data-ai-state="none">还没做 AI 检查</p>{% endif %}
+        {% for i in c.drama_issues %}<p class="status-bad" data-drama-issue>全剧对照 · {{ i }}</p>{% endfor %}
+        {% if c.run %}<p class="hint"><a href="/llm/run/{{ c.run.id }}">看这次 AI 检查</a></p>{% endif %}
+      </div>
+      {% if c.approval %}
+        <p data-approval>已定稿({{ c.approval.created_at[:16] | replace("T", " ") }}){% if c.approval.reason %}· 理由:{{ c.approval.reason }}{% endif %}</p>
+      {% else %}
+        <form method="post" action="/asset/{{ c.table }}/{{ c.id }}/{{ c.slot }}/approve" data-approve-form>
+          {% if c.failed %}<label>有不通过的项({{ c.failed | join("、") }}),写理由才能定稿</label>
+            <input type="text" name="reason" required style="width: 100%" data-approve-reason>{% endif %}
+          <button class="btn primary" type="submit" data-approve>定稿</button>
+        </form>
+        <div class="row">
+          <form method="post" action="/asset/{{ c.table }}/{{ c.id }}/{{ c.slot }}/check">
+            <button class="btn small" type="submit" data-recheck>{{ "再查一次" if c.run else "AI 检查" }}</button></form>
+          <form method="post" action="/asset/{{ c.table }}/{{ c.id }}/{{ c.slot }}/regenerate">
+            <button class="btn small" type="submit" data-regenerate {% if c.locked is not none %}disabled title="种子已锁定,改描述再重出"{% endif %}>换种子重出</button></form>
+        </div>
+        <details {% if c.suggestion %}open{% endif %}>
+          <summary>改生成描述再重出</summary>
+          <form method="post" action="/asset/{{ c.table }}/{{ c.id }}/{{ c.slot }}/rewrite" data-rewrite-form>
+            <textarea name="final_prompt" rows="4" style="width: 100%">{{ c.suggestion or c.final_prompt }}</textarea>
+            {% if c.suggestion %}<p class="hint">已预填 AI 的建议,可以改;原来是:{{ c.final_prompt }}</p>{% endif %}
+            <button class="btn small" type="submit" data-rewrite>保存并重出</button>
+          </form>
+        </details>
+      {% endif %}
+    {% endif %}
+    {% if c.versions %}
+      <p class="hint">重出过、还没用上的版本:</p>
+      <div class="row">
+      {% for v in c.versions %}
+        <figure style="margin: 0"><img src="/media/{{ v.result_path }}" alt="版本 {{ v.id }}" style="max-height: 120px">
+          <form method="post" action="/task/{{ v.id }}/pick">
+            <input type="hidden" name="next" value="/drama/{{ drama.id }}/asset-review#{{ c.anchor }}">
+            <button class="btn small" type="submit" data-pick-version="{{ v.id }}">用这一版</button></form></figure>
+      {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+{% else %}
+  <section class="card empty">这部剧还没有资产</section>
+{% endfor %}
+</div>
+{% endblock %}

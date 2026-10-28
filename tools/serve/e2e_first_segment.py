@@ -33,7 +33,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from tools.drama import repo
+from tools.drama import approval, repo
 from tools.drama.db import Store
 from tools.gen.align import plan_align
 from tools.gen import graphs, presets
@@ -76,6 +76,8 @@ DRAFT_MAX_RATIO = 0.75           # 草稿档(10 步)耗时 / 定稿耗时的上�
 
 
 TUNNEL_WAIT_SEC = 60
+# 资产图定稿闸门(spec 2026-10-28 第 6.1 节):验收的输入图由跑验收的人提供,链路里出的四视图由脚本接着用 —— 记明不是人审
+AUTO_APPROVE = "验收脚本自动定稿(输入图由跑验收的人提供;链路自测,不是人审)"
 
 
 def _use_frame_preset(store: Store, worker: Worker, host_id: int, sleep: Callable[[float], None]) -> dict:
@@ -153,6 +155,9 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
 
     store = Store(data_root / "drama.db")
     seg, lin, keys = build_drama(store, assets)
+    for table in ("character", "scene", "prop"):
+        for (row_id,) in store.conn.execute(f"SELECT id FROM {table}").fetchall():
+            approval.approve(store, data_root, table, row_id, "image", failed=[], reason=AUTO_APPROVE)
     host_id = add_host(store, **host)
     worker = make_worker(store, host_id, data_root)
     try:
@@ -167,6 +172,8 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
             state = run_until_final(worker, store, tid, timeout_sec=timeout_sec, sleep=sleep)
             if state == "failed":
                 raise RuntimeError(f"task {tid} 失败:{repo.get(store, 'task', tid)['error']}")
+            if json.loads(repo.get(store, "task", tid)["params_json"]).get("writes") == "fourview_path":
+                approval.approve(store, data_root, "character", lin, "fourview", failed=[], reason=AUTO_APPROVE)
             report["tasks"].append(provenance(store, tid))
         s = repo.get(store, "segment", seg)
         report["first_frame_path"], report["video_path"] = s["first_frame_path"], s["video_path"]

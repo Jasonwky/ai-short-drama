@@ -2,7 +2,7 @@
 """成片面板。导出是真 ffmpeg(两段 1 秒样片)。"""
 import subprocess
 
-from tests.cut.conftest import SRT, done_task
+from tests.cut.conftest import SRT, done_task, speech_checked
 from tools.cut import checklist, export, review
 from tools.drama import repo
 from tools.serve.fakes import sample_mp4
@@ -19,6 +19,7 @@ def two_videos(store, sample, root):
         done_task(store, root, seg, "video", f"outputs/tasks/v{n}/clip.mp4", mp4)
     done_task(store, root, sample["seg"], "align", "outputs/tasks/a1/subtitles.srt", SRT.encode("utf-8"),
               refs=["outputs/tasks/v1/clip.mp4"])
+    speech_checked(store, root, seg2, "outputs/tasks/v2/clip.mp4")
     for seg in (sample["seg"], seg2):                    # 看片确认(v13):人看过才许导
         review.confirm(store, root, seg, list(checklist.MANUAL))
     return seg2
@@ -119,3 +120,25 @@ def test_delete_cue_keeps_the_file(client, runtime, store, sample, tmp_path):
     [cue] = repo.music_cues(store, sample["episode"])
     assert client.post(f"/music/{cue['id']}/delete", follow_redirects=False).status_code == 303
     assert repo.music_cues(store, sample["episode"]) == [] and (runtime.data_root / cue["path"]).is_file()
+
+
+def test_preview_burns_subtitles_without_the_export_gates(client, runtime, store, sample):
+    """spec 2026-10-28 第 5 节:整集预览不查看片确认等闸门,拼好烧上字幕;页面标明「预览,不是成片」。"""
+    two_videos(store, sample, runtime.data_root)
+    store.conn.execute("DELETE FROM segment_review")                           # 没看片确认也能预览
+    page = client.get(f"/episode/{sample['episode']}/final").text
+    assert "data-preview-start" in page and "预览,不是成片" in page and "data-preview-video" not in page
+    r = client.post(f"/episode/{sample['episode']}/preview", follow_redirects=False)
+    assert r.status_code == 303
+    runtime.wait_exports()
+    page = client.get(f"/episode/{sample['episode']}/final").text
+    assert f'src="/media/outputs/preview/episode-{sample["episode"]}.mp4' in page
+    srt = (runtime.data_root / f"outputs/preview/episode-{sample['episode']}.srt").read_text(encoding="utf-8")
+    assert "00:00:00,200 --> 00:00:00,900" in srt
+
+
+def test_preview_failure_is_shown(client, runtime, store, sample):
+    r = client.post(f"/episode/{sample['episode']}/preview", follow_redirects=False)
+    for f in runtime.previews.values():                                        # 段落 1 的视频不在本机:拼不了
+        f.exception(timeout=60)
+    assert r.status_code == 303 and "上次预览失败" in client.get(f"/episode/{sample['episode']}/final").text

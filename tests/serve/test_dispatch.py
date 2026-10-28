@@ -3,6 +3,7 @@ import pytest
 
 from tests.serve.fakes import FakeComfy
 from tools.drama import repo
+from tests.drama.conftest import approve_all
 from tools.drama.tasks import create_task
 from tools.gen.planner import plan_first_frame, plan_video
 from tools.serve.dispatch import dispatch, pick_next
@@ -15,7 +16,7 @@ def _no_ssh(args, stdin):
 
 @pytest.fixture
 def data_root(tmp_path, sample):
-    for rel in ("assets/lin.png", "assets/shen.png", "assets/yard.png", "assets/jade.png", "frames/s1.png"):
+    for rel in ("assets/lin.png", "assets/lin_4v.png", "assets/shen.png", "assets/yard.png", "assets/jade.png", "frames/s1.png"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_bytes(b"png")
     return tmp_path
@@ -45,7 +46,7 @@ def test_video_task_submits_h3_without_audio(store, sample, host_id, data_root):
     out = dispatch(store, comfy, get_host(store, host_id), _task(store, tid), data_root=data_root, run=_no_ssh)
     wf = comfy.submitted[out.message]
     assert "11" not in wf and wf["19"]["inputs"]["noise_seed"] == 3
-    assert comfy.uploaded == [(data_root / "frames/s1.png").as_posix()]
+    assert comfy.uploaded == [(data_root / p).as_posix() for p in ("frames/s1.png", "assets/lin_4v.png")]
 
 
 def test_missing_reference_fails_loudly(store, sample, host_id, data_root):
@@ -107,6 +108,7 @@ def test_same_named_references_do_not_collide(store, sample, host_id, data_root)
     (data_root / "b/ComfyUI_00001_.png").write_bytes(b"yard")
     repo.update(store, "character", sample["lin"], turnaround_path="a/ComfyUI_00001_.png")
     repo.update(store, "scene", sample["yard"], image_path="b/ComfyUI_00001_.png")
+    approve_all(store)                      # 测试里新建 / 换的资产图要定稿(spec 2026-10-28 第 6.1 节)
     tid = plan_first_frame(store, sample["seg"], seed=1)
     comfy = FakeComfy()
     out = dispatch(store, comfy, get_host(store, host_id), _task(store, tid), data_root=data_root, run=_no_ssh)
@@ -170,6 +172,7 @@ def test_second_pass_images_are_uploaded_and_chained(store, sample, host_id, dat
     (data_root / "assets/wang.png").write_bytes(b"wang")
     repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"], wang])
     repo.update(store, "segment", sample["seg"], image_prompt="@林小雨 把 @玉佩 递给 @沈墨,@王五 旁观,@老宅庭院")
+    approve_all(store)                      # 测试里新建 / 换的资产图要定稿(spec 2026-10-28 第 6.1 节)
     tid = plan_first_frame(store, sample["seg"], seed=7)
     comfy = FakeComfy()
     out = dispatch(store, comfy, get_host(store, host_id), _task(store, tid), data_root=data_root, run=_no_ssh)

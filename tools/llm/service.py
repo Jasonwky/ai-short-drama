@@ -20,7 +20,7 @@ from tools.drama import invalidation, repo
 from tools.drama.db import Store
 from tools.drama.invalidation import Impact
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
-from tools.llm import beats, cast, critique, describe, drama_review, expand, outline, outline_variants, premise, rewrite, runs, script_revise, script_writer, shot_options, skeleton, storyboard, storyboard_revise, vision_check, voices
+from tools.llm import asset_check, beats, cast, critique, describe, drama_review, expand, outline, outline_variants, premise, rewrite, runs, script_revise, script_writer, shot_options, skeleton, storyboard, storyboard_revise, vision_check, voices
 from tools.llm.client import LLMError
 from tools.llm.gate import GateFailed, input_sha, run_gated
 
@@ -86,6 +86,14 @@ TASKS: dict[str, Spec] = {
     # 全剧流程(spec 2026-10-25-全剧审与资产表-design.md):AI 出资产表(覆盖由代码判);全剧审只挑跨集毛病,批准时把采纳的排进修改回路
     "cast": Spec(cast, "drama", cast.context, 16000, "AI 出资产表:从全剧剧本整理角色 / 场景 / 道具", max_rounds=4),
     "drama_review": Spec(drama_review, "drama", drama_review.context, 12000, "全剧审:一次看完全剧,挑跨集的毛病"),
+    # 资产图 AI 检查(spec 2026-10-28-成片质量闸门-第一期-design.md 第 6.3 节):只提示不拦,定稿由人做
+    **{f"asset_check_{t}": Spec(asset_check, t, lambda store, rid, slot, data_root, path="", t=t:
+                                asset_check.context(store, t, rid, slot, data_root, path),
+                                4000, f"资产图 AI 检查:{describe.KIND[t]}图逐维度看", model=VISION_MODEL, needs_root=True)
+       for t in ("character", "scene", "prop")},
+    "asset_check_drama": Spec(asset_check, "drama", lambda store, d, data_root, key="":
+                              asset_check.drama_context(store, d, data_root, key),
+                              4000, "资产图 AI 检查:全剧对照(画风、撞脸、时代)", model=VISION_MODEL, needs_root=True),
 }
 
 

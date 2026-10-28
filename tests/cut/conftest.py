@@ -25,11 +25,24 @@ def done_task(store, root, seg_id, kind, rel, data, refs=()):  # noqa: F811
     writes = {"video": "video_path", "image": "first_frame_path", "align": "subtitle_path"}[kind]
     prompt = (repo.get(store, "segment", seg_id)["description"] if kind == "video"       # 视频提示词带着当时的台词
               else f"{kind} prompt")
+    params = {"writes": writes, **({"video": refs[0]} if kind == "align" else {})}    # 对齐认的是哪条视频
     t = create_task(store, kind=kind, target_type="segment", target_id=seg_id, model=f"m-{kind}",
-                    params={"writes": writes}, seed=7, prompt=prompt, refs=list(refs))
+                    params=params, seed=7, prompt=prompt, refs=list(refs))
     set_task_state(store, t, "queued", external_id=f"p{t}")
     set_task_state(store, t, "done", result_path=rel, result_sha256=sha256_file(root / rel))
     repo.update(store, "segment", seg_id, **{writes: rel})
+    return t
+
+
+def speech_checked(store, root, seg_id, video):
+    """没台词的段落:记一条通过的语音检查(spec 2026-10-28 第 3 节,没过的拦导出)。"""
+    t = create_task(store, kind="align", target_type="segment", target_id=seg_id, model="m-align",
+                    params={"writes": "speech_check", "video": video, "lines": []}, seed=0, prompt="", refs=[video])
+    rel = f"outputs/tasks/{t}/align.json"
+    (root / rel).parent.mkdir(parents=True, exist_ok=True)
+    (root / rel).write_text('{"lines": [], "chars": [], "envelope": [], "extra": []}', encoding="utf-8")
+    set_task_state(store, t, "queued", external_id=f"p{t}")
+    set_task_state(store, t, "done", result_path=rel, result_sha256=sha256_file(root / rel))
     return t
 
 
@@ -47,6 +60,7 @@ def two_segments(store, sample, tmp_path, mp4_bytes):  # noqa: F811
                   refs=[f"outputs/tasks/f{n}/frame.png"])
     done_task(store, root, seg1, "align", "outputs/tasks/a1/subtitles.srt", SRT.encode("utf-8"),
               refs=["outputs/tasks/v1/clip.mp4"])
+    speech_checked(store, root, seg2, "outputs/tasks/v2/clip.mp4")
     for seg, n in ((seg1, 1), (seg2, 2)):           # 看片确认(v13):人看过才许导
         repo.add_review(store, seg, video_path=f"outputs/tasks/v{n}/clip.mp4",
                         sha256=sha256_file(root / f"outputs/tasks/v{n}/clip.mp4"), checks=list(checklist.MANUAL))

@@ -11,7 +11,9 @@
 """
 from __future__ import annotations
 
-from tools.drama import repo, rules
+import json
+
+from tools.drama import art, repo, rules
 from tools.drama.db import Store
 from tools.llm import llm_queue, premise, revise, runs
 from tools.llm.describe import TIMES
@@ -38,6 +40,7 @@ SYSTEM = """你是短剧的美术统筹。读完全剧剧本,整理出这部剧�
 - appearance / styling / location / lighting / furnishings / description 用中文,只写看得见的;
   final_prompt 是给图像模型的英文描述,一两句,不超过 600 个字符;time 从给定选项里选;
 - 角色一律是虚构人物,不写「像某某明星」;
+- 有 <art> 时:造型、陈设、生成描述都要符合其中的时代与服饰总则,banned 里的词一个都不许出现(中英文都算);
 - 有 <notes> 时:逐条回应(verdict 选「改」或「不改」,「不改」写理由),「改」在 changes 里认领这一条改了哪些
   (kind + name + field;新建的资产 field 填「新建」);只有被认领的改动会写回;
   <rejected> 里是上一轮被驳回的改法,不要再这样改;
@@ -111,7 +114,7 @@ def places(scripts: list[tuple[int, str]]) -> dict[str, list[int]]:
 
 def context(store: Store, drama_id: int, notes: list[dict], constraint: str = "") -> dict:
     """constraint:人对整张表的要求(比如「场景合并到 10 个左右」),原样进提示词;空 = 没有(提示词逐字节不变)。"""
-    repo.get(store, "drama", drama_id)
+    drama = repo.get(store, "drama", drama_id)
     if notes:
         revise.check_notes(notes)
     scripts = _scripts(store, drama_id)
@@ -122,7 +125,8 @@ def context(store: Store, drama_id: int, notes: list[dict], constraint: str = ""
     p = premise.load(store, drama_id)
     return {"premise": premise.render(p) if p else "", "scripts": scripts, "existing": have, "speakers": who,
             "pairs": pairs, "places": places(scripts), "notes": notes, "constraint": constraint.strip(),
-            "rejected": _last_rejected(store, drama_id) if notes else []}
+            "rejected": _last_rejected(store, drama_id) if notes else [],
+            "art": json.loads(art.dumps(art.of(drama)))}
 
 
 def _last_rejected(store: Store, drama_id: int) -> list[dict]:
@@ -179,6 +183,10 @@ def user_message(ctx: dict) -> str:
     if ctx["notes"]:
         notes = (f"<notes>\n{revise.render_notes(ctx['notes'])}\n</notes>\n"
                  + revise.render_rejected(ctx["rejected"], lambda c: _render_change(c)))
+    if ctx.get("art", {}).get("era"):
+        a = ctx["art"]
+        notes += (f"<art>\n时代:{a['era']}\n服饰总则:{a['costume'] or '(没写)'}\n"
+                  f"banned:{'、'.join(a['banned']) or '(没有)'}\n</art>\n")
     if ctx.get("constraint"):
         notes += f"<constraint>\n{ctx['constraint']}\n</constraint>\n人对整张表的要求,尽量照做(覆盖规则不变)。\n"
     return (f"{pre}<existing>\n{render_existing(ctx['existing'])}\n</existing>\n\n"
@@ -257,9 +265,28 @@ def judge_factory(ctx: dict):
                 problems.append(f"地点「{p}」没有归到任何场景")
             elif len(where[p]) > 1:
                 problems.append(f"地点「{p}」同时归到了 {'、'.join(where[p])}")
+        problems += _banned_problems(ctx, args)
         problems += _claim_problems(ctx, args)
         return problems
     return judge
+
+
+def _banned_problems(ctx: dict, args: dict) -> list[str]:
+    """美术设定里的禁用词(spec 2026-10-28 第 2 节;孙老栓的 uniform 出成了近代制服)。
+    已出图的老资产文字不动(改字不改图,图要另走资产图审),只查能改的。"""
+    banned = tuple(ctx.get("art", {}).get("banned", ()))
+    if not banned:
+        return []
+    out = []
+    for kind in KINDS:
+        locked = {r["name"] for r in ctx["existing"][kind] if r["image"]}
+        for r in args[LISTS[kind]]:
+            if r["name"] in locked:
+                continue
+            for f in FIELDS[kind]:
+                for w in art.banned_hits(r[f], banned):
+                    out.append(f"{KINDS[kind]}「{r['name']}」的 {f} 含本剧禁用词「{w}」")
+    return out
 
 
 def _claim_problems(ctx: dict, args: dict) -> list[str]:

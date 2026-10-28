@@ -91,6 +91,7 @@ class Runtime:
         self._flow_lock = threading.Lock()    # 全剧流程推进:网页线程(批准后)和后台线程(每轮)都会来,判「排没排过」要串行
         self._cut_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="drama-cut")
         self._cut_jobs: list[Future] = []
+        self.previews: dict[int, Future] = {}      # 整集预览:集 → 后台任务(面板看在拼 / 失败原因)
         self.frontend_job: dict | None = None    # 「下载前端」的后台任务状态(工作流面板上显示)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -246,6 +247,14 @@ class Runtime:
         except Exception as e:     # 不吞:落成 failed 带原因、进 journal
             export.fail(self.store, eid, f"{type(e).__name__}: {e}")
             journal.append(self.data_root, [f"export {eid} 失败:{type(e).__name__}: {e}"], prefix="runtime ")
+
+    def start_preview(self, episode_id: int) -> None:
+        """后台拼整集预览;同一集正在拼就不重复开。结果 / 失败原因留在 previews 里给面板看。"""
+        cur = self.previews.get(episode_id)
+        if cur is not None and not cur.done():
+            return
+        self.previews[episode_id] = f = self._cut_pool.submit(export.preview, self.store, self.data_root, episode_id)
+        self._cut_jobs.append(f)
 
     def wait_exports(self, timeout: float = 300) -> None:
         """测试用:等后台导出全部结束。"""

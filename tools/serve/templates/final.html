@@ -76,6 +76,19 @@
   </form>
 </section>
 
+<section class="card" id="preview" data-preview {% if preview.state == "running" %}data-inflight{% endif %}>
+  <h2>整集预览</h2>
+  <p class="hint">把当前各段视频拼起来、烧上台词与旁白字幕,先看整体效果。<b>预览,不是成片</b>:不查看片确认等导出闸门,不加标识与元数据。</p>
+  {% if preview.state == "running" %}<p class="hint" data-preview-state="running">正在拼……(刷新页面看结果)</p>
+  {% elif preview.state == "failed" %}<p class="bad" data-preview-state="failed">上次预览失败:{{ preview.error }}</p>{% endif %}
+  {% if preview.path %}<video controls preload="metadata" src="/media/{{ preview.path }}?v={{ preview.mtime }}" data-preview-video
+         style="max-height: 70vh"></video>{% endif %}
+  <form method="post" action="/episode/{{ ep.id }}/preview">
+    <button class="btn" type="submit" data-preview-start {% if preview.state == "running" %}disabled{% endif %}>
+      {{ "重新拼预览" if preview.path else "预览整集" }}</button>
+  </form>
+</section>
+
 <section class="card">
   <h2>导出</h2>
   <ul class="checklist" data-export-readiness>

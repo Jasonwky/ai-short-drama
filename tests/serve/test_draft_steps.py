@@ -54,7 +54,7 @@ def test_draft_beats_the_preset_steps(store, sample):
 
 
 def test_submitted_workflow_has_the_draft_steps(store, sample, tmp_path):
-    for rel in ("frames/s1.png", "assets/lin.png"):
+    for rel in ("frames/s1.png", "assets/lin.png", "assets/lin_4v.png"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_bytes(b"x")
     comfy, host = FakeComfy(), get_host(store, add_host(store, label="a", ssh_host="h", ssh_port=1, ssh_user="root",

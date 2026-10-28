@@ -16,7 +16,7 @@ def _no_ssh(host):
 
 @pytest.fixture
 def world(store, sample, host_id, tmp_path):
-    for rel in ("assets/lin.png", "assets/yard.png", "assets/jade.png"):
+    for rel in ("assets/lin.png", "assets/lin_4v.png", "assets/yard.png", "assets/jade.png"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_bytes(b"png")
     repo.update(store, "segment", sample["seg"], first_frame_path=None, video_path=None)
@@ -41,7 +41,7 @@ def test_segment_goes_from_nothing_to_frame_and_video(store, sample, world):
 
     video = plan_video(store, sample["seg"], seed=12)
     w.tick()
-    assert comfy.uploaded[-1].endswith(f"outputs/tasks/{frame}/frame.png")   # 视频吃的是刚出的首帧
+    assert comfy.uploaded[-2].endswith(f"outputs/tasks/{frame}/frame.png")   # 视频吃的是刚出的首帧(之后是四视图)
     comfy.finish("p2", "clip.mp4")
     w.tick()
     assert repo.get(store, "segment", sample["seg"])["video_path"] == f"outputs/tasks/{video}/clip.mp4"

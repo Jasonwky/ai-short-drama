@@ -167,3 +167,22 @@ def test_substitutions_alone_do_not_pass_a_line():
     chars = [("拖", 0.0, 0.5), ("下", 0.5, 1.0), ("去", 1.0, 1.4), ("放", 1.4, 1.8), ("了", 1.8, 2.2)]
     _, problems = st.build(["拉出去，杖毙。"], chars, [0] + [5000] * 30, 3.0)
     assert problems and "只对上" in problems[0]
+
+
+# ── 旁白只出字幕(spec 2026-10-28-成片质量闸门-第一期-design.md 第 4 节)──────────
+
+def test_narration_goes_into_the_longest_gap_centered():
+    said = [Cue("台词一", 0.5, 2.0), Cue("台词二", 6.0, 7.0)]
+    out, problems = st.place_narration(said, ["我是退役特种兵王"], 8.0)        # 8 字 → 2 秒;最长空档 2.0–6.0
+    assert problems == [] and out[1] == Cue("我是退役特种兵王", 3.0, 5.0) and len(out) == 3
+
+
+def test_narration_without_room_is_reported_not_overlapped():
+    said = [Cue("一", 0.0, 3.0), Cue("二", 3.5, 7.0)]
+    out, problems = st.place_narration(said, ["先活下去,眼下只用锅碗瓢盆应对"], 8.0)
+    assert out == said and "放不下" in problems[0] and "最长空档 1.0 秒" in problems[0]
+
+
+def test_short_segment_caps_narration_at_its_length():
+    out, problems = st.place_narration([], ["她走了"], 1.0)
+    assert problems == [] and out == [Cue("她走了", 0.0, 1.0)]

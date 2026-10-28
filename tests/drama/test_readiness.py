@@ -87,6 +87,7 @@ def test_text_only_segment_needs_no_images(store, sample):
 
 
 def test_character_without_fourview_is_a_visible_warning(store, sample):
+    repo.update(store, "character", sample["lin"], fourview_path=None)
     c = _by_key(_check(store, sample["seg"]))["fourview"]
     assert c.ok and c.warn and c.msg == "角色「林小雨」没有四视图,视频里只靠首帧与文字认人"
     repo.update(store, "character", sample["lin"], fourview_path="fv/lin.png")

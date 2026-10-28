@@ -245,3 +245,24 @@ def episode_srt(parts: list[tuple[list[Cue], float]]) -> str:
         out.append(srt(cues, offset, n))
         n += len(cues)
     return "".join(out)
+
+
+NARRATION_PER_CHAR = 0.25   # 旁白字幕每字显示时长(秒)
+NARRATION_MIN = 1.5
+
+
+def place_narration(cues: list[Cue], texts: list[str], duration: float) -> tuple[list[Cue], list[str]]:
+    """把旁白字幕放进本段**没有台词字幕的最长空档**,居中(spec 2026-10-28-成片质量闸门-第一期-design.md 第 4 节)。
+    时长 = 字数 × NARRATION_PER_CHAR,夹在 [NARRATION_MIN, 段长];放不下就报出来,不压在台词上。返回 (合并后按时间排好的字幕, 问题)。"""
+    out, problems = sorted(cues, key=lambda c: c.start), []
+    for text in texts:
+        need = min(max(len(_clean(text)) * NARRATION_PER_CHAR, NARRATION_MIN), duration)
+        edges = [0.0] + [x for c in out for x in (c.start, c.end)] + [duration]
+        gaps = [(edges[i], edges[i + 1]) for i in range(0, len(edges), 2)]
+        lo, hi = max(gaps, key=lambda g: g[1] - g[0])
+        if hi - lo < need:
+            problems.append(f"旁白「{text}」放不下:最长空档 {hi - lo:.1f} 秒,要 {need:.1f} 秒")
+            continue
+        start = round(lo + (hi - lo - need) / 2, 2)
+        out = sorted(out + [Cue(text, start, round(start + need, 2))], key=lambda c: c.start)
+    return out, problems

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from tools.llm import cast, drama_review, expand, skeleton
+from tools.llm import asset_check, cast, drama_review, expand, skeleton
 from tools.llm.client import NoToolCall, ToolResult
 
 CANNED = {
@@ -40,6 +40,8 @@ CANNED = {
     # P20 全剧流程:假样例过不了判卷(读不到剧本),自测演示的是「被拦住」
     "submit_cast": lambda schema: cast.fake_sample(schema),
     "submit_drama_issues": lambda schema: drama_review.fake_sample(schema),
+    # 成片质量闸门第一期:资产图 AI 检查(看不见图,校验数字必错)
+    "submit_asset_check": lambda schema: asset_check.fake_sample(schema),
 }
 
 

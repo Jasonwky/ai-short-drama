@@ -109,3 +109,8 @@ def test_stale_video_fields_compare_the_snapshot_with_the_segment_now():
                                                   "movement": ""}})}
     assert rules.stale_video_fields(seg, new) == ["视频提示词", "时长", "运镜"]
     assert rules.stale_video_fields(seg, {"params_json": "{}"}) == []           # 没快照的老视频:不猜
+
+
+def test_narration_is_parsed_in_order():
+    d = "【镜头1】他醒来。旁白：我是特种兵。【镜头2】他握拳。旁白:先活下去。"
+    assert rules.narration(d) == ["我是特种兵。", "先活下去。"]

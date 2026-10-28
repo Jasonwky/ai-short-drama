@@ -29,7 +29,7 @@ def _done(store, root, ttype, tid, rel, data, refs=(), writes="first_frame_path"
 def project(store, sample, tmp_path):
     """sample 剧 + 真文件 + 两版首帧历史 + 一条已批准的 LLM 记录。"""
     root = tmp_path / "src"
-    for rel in ("assets/lin.png", "assets/shen.png", "assets/yard.png", "assets/jade.png", "videos/s1.mp4"):
+    for rel in ("assets/lin.png", "assets/lin_4v.png", "assets/shen.png", "assets/yard.png", "assets/jade.png", "videos/s1.mp4"):
         _file(root, rel, rel.encode())
     _done(store, root, "segment", sample["seg"], "outputs/tasks/1/a.png", b"v1", refs=["assets/lin.png"])
     _done(store, root, "segment", sample["seg"], "outputs/tasks/2/a.png", b"v2", refs=["assets/lin.png"])
@@ -311,3 +311,17 @@ def test_reviews_travel_and_still_match_the_video(store, project, tmp_path):
                             (new,)).fetchone()
     r = repo.review(dest, seg["id"], sha)
     assert r is not None and r["note"] == "看过" and r["video_path"] == seg["video_path"]
+
+
+def test_asset_approvals_and_art_travel(store, project, tmp_path):
+    """v23:美术设定随剧走;资产图定稿跟着资产走,导入后按新路径照样认(规划闸门不会把导入的剧全拦下)。"""
+    from tools.drama import approval
+    store.conn.execute("UPDATE drama SET art_json = ? WHERE id = ?", ('{"era": "古代", "costume": "", "banned": []}',
+                                                                      project["drama"]))
+    rel = bundle.export_bundle(store, project["root"], project["drama"])
+    dest = Store(":memory:")
+    new = bundle.import_bundle(dest, tmp_path / "dst", project["root"] / rel)
+    assert repo.get(dest, "drama", new)["art_json"] == '{"era": "古代", "costume": "", "banned": []}'
+    lin = dest.conn.execute("SELECT id FROM character WHERE drama_id = ? AND name = '林小雨'", (new,)).fetchone()[0]
+    a = approval.current(dest, "character", lin, "image")
+    assert a is not None and a["path"] == repo.get(dest, "character", lin)["turnaround_path"]

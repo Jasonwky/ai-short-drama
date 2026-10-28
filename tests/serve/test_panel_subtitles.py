@@ -38,10 +38,9 @@ def test_failed_alignment_shows_why(client, runtime, store, sample):
     assert "判卷不过" in client.get(f"/episode/{sample['episode']}/videos").text
 
 
-def test_align_refused_without_dialogue_is_a_400(client, store, sample):
+def test_align_without_dialogue_plans_a_speech_check(client, store, sample):
     repo.update(store, "segment", sample["seg"], description="【镜头1】林小雨低头看着玉佩。")
-    r = client.post(f"/segment/{sample['seg']}/align")
-    assert r.status_code == 400 and "没有台词" in r.text
+    assert client.post(f"/segment/{sample['seg']}/align", follow_redirects=False).status_code == 303
 
 
 def test_subtitle_fill_goes_back_to_the_videos_panel(client, store, sample):

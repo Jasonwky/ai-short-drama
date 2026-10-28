@@ -93,9 +93,11 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
 
     envelope = media.rms_envelope(video)
     duration = media.probe(video).duration
-    cues, problems = subtitles.build(p["lines"], chars, envelope, duration)
     out_dir = root / "outputs" / "tasks" / str(tid)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if not p["lines"]:
+        return _speech_check(store, host, tid, root, out_dir, chars, envelope, duration)
+    cues, problems = subtitles.build(p["lines"], chars, envelope, duration)
     (out_dir / "align.json").write_text(json.dumps(
         {"lines": p["lines"], "chars": chars, "envelope": envelope, "duration": duration,
          "cues": [c.__dict__ for c in cues], "problems": problems}, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -115,6 +117,22 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
     return Outcome("done", note or rel)
 
 
+def _speech_check(store: Store, host: Host, tid: int, root: Path, out_dir: Path, chars, envelope, duration) -> Outcome:
+    """没有台词的段落:识别出有能量支撑的人声就判失败(第 1 集第 2 段没台词却在说话);不出字幕、不动段落。"""
+    runs, _ = subtitles.extra_speech([], chars, envelope)
+    report = out_dir / "align.json"
+    report.write_text(json.dumps({"lines": [], "chars": chars, "envelope": envelope, "duration": duration,
+                                  "cues": [], "problems": [], "extra": runs}, ensure_ascii=False, indent=1), encoding="utf-8")
+    if runs:
+        said = ";".join(f"「{r['text']}」({r['start']:.1f}–{r['end']:.1f} 秒)" for r in runs)
+        msg = f"语音检查不过:这段没有台词,视频里却有人说话 {said} —— 重出视频(逐字时间见 outputs/tasks/{tid}/align.json)"
+        set_task_state(store, tid, "failed", error=msg)
+        return Outcome("failed", msg)
+    set_task_state(store, tid, "queued", external_id=f"align-{tid}", host_id=host.id)
+    set_task_state(store, tid, "done", result_path=report.relative_to(root).as_posix(), result_sha256=sha256_file(report))
+    return Outcome("done", "语音检查通过:没有人声")
+
+
 def extra_speech_for(store: Store, data_root: Path, segment_id: int) -> dict | None:
     """当前视频的最新一次对齐(成功、失败都算 —— 失败的也留着 align.json)里,台词之外有没有多说。
     只认 params.video 等于当前视频的:换过视频,旧对齐属于旧视频,不拿来判新视频。没有对齐记录返回 None。"""
@@ -131,3 +149,18 @@ def extra_speech_for(store: Store, data_root: Path, segment_id: int) -> dict | N
     d = json.loads(f.read_text(encoding="utf-8"))
     runs, problem = subtitles.extra_speech(d["lines"], [tuple(c) for c in d["chars"]], d["envelope"])
     return {"runs": runs, "problem": problem}
+
+
+def speech_problem(store: Store, data_root: Path, seg) -> str:
+    """导出前的语音检查(spec 2026-10-28 第 3 节):当前视频要有一次**通过**的对齐 / 语音检查,且台词之外没多说。空 = 没问题。"""
+    n = seg["number"]
+    ok = store.conn.execute(
+        "SELECT 1 FROM task WHERE kind = 'align' AND target_type = 'segment' AND target_id = ? AND state = 'done'"
+        " AND json_extract(params_json, '$.video') = ?", (seg["id"], seg["video_path"])).fetchone()
+    if ok is None:
+        return f"段落 {n} 的当前视频还没通过语音检查(在「视频」面板点「对齐字幕 / 语音检查」;没过的看失败原因,多半要重出视频)"
+    extra = extra_speech_for(store, data_root, seg["id"])
+    if extra and extra["runs"]:
+        said = ";".join(f"「{r['text']}」({r['start']:.1f}–{r['end']:.1f} 秒)" for r in extra["runs"])
+        return f"段落 {n} 台词之外多说了 {said} —— 重出视频"
+    return ""

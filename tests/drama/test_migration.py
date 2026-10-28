@@ -13,8 +13,16 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v23(s):
+    """退回 v22:删掉 v23 新增的 drama.art_json 与 asset_approval 表。"""
+    s.conn.execute("DROP TABLE IF EXISTS asset_approval")
+    if "art_json" in _cols(s, "drama"):
+        s.conn.execute("ALTER TABLE drama DROP COLUMN art_json")
+
+
 def _drop_v22(s):
-    """退回 v21:删掉 v22 新增的 host.queue_depth。"""
+    """退回 v21:删掉 v22 新增的 host.queue_depth;v23 的也一并退掉。"""
+    _drop_v23(s)
     if "queue_depth" in _cols(s, "host"):
         s.conn.execute("ALTER TABLE host DROP COLUMN queue_depth")
 
@@ -538,4 +546,21 @@ def test_v21_to_v22_hosts_gain_queue_depth_one(tmp_path):
     s.close()
     s = Store(path)
     assert get_host(s, h).queue_depth == 1
+    s.close()
+
+
+def test_v22_to_v23_art_and_asset_approval(tmp_path):
+    """v23:剧级美术设定(老剧为空)+ 资产图定稿表(写下不可改)。"""
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "剧", "9:16", "realistic")
+    _drop_v23(s)
+    s.conn.execute("UPDATE meta SET value = '22' WHERE key = 'schema_version'")
+    s.close()
+    s = Store(path)
+    assert repo.get(s, "drama", d)["art_json"] == ""
+    s.conn.execute("INSERT INTO asset_approval (table_name, row_id, slot, path, sha256, created_at)"
+                   " VALUES ('character', 1, 'image', 'a.png', 'x', 't')")
+    with pytest.raises(sqlite3.DatabaseError, match="不可改"):
+        s.conn.execute("UPDATE asset_approval SET reason = 'r'")
     s.close()

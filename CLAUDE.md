@@ -110,6 +110,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   批准时把采纳的排进修改回路(排不进去当场拒批准);`cast` 覆盖由代码判(每个说话人 / 地点恰好一个归属、前后接话的两人不许并),
   别名排「剧本修改」不在代码里替换。推进是 `llm/flow.py`(`status` 纯读、`advance` 只排不批),按剧开启(v21 `drama.flow_auto`,默认关);
   **防空转**:同一份输入跑过(任何状态)就不再自动排,失败不自动重试,资产图「从没出过」才自动排。
+  **成片质量闸门第一期**(spec 2026-10-28-成片质量闸门-第一期-design.md,根因 spike-results/2026-10-28-第1集成片问题根因.md):
+  剧级**美术设定** `drama.art_json`(v23,`drama/art.py`:时代 / 服饰总则 / 禁用词)由代码拼进资产图、四视图、首帧(`frame_suffix`,含画风)、
+  视频(`video_phrase`)的提示词;禁用词在 cast 判卷、资产、首帧、视频规划都拦;没填时代 ② 不排。
+  **资产图定稿** `asset_approval`(v23,`drama/approval.py`,按图路径认、记 sha256、不可改):没定稿的图不能出首帧 / 四视图 / 视频;
+  先代码查(`gen/assetscan.py`,浅色底 + 没被裁切 + 四视图四格,阈值标定 spike-results/2026-10-28-资产图白底检查标定.md)
+  再 AI 查(`llm/asset_check.py`:单张逐维度 + 全剧对照,只提示),人在「资产图审」面板定稿(有不通过项 / AI 没结果要写理由);
+  流程栏「⑤ 资产图审」(`llm/asset_review.py`)自动排检查。视频规划另拦**在途 / 缺失的四视图**(说话的角色),
+  没台词的段落不写声音、写「全程没有人说话」;**每段都要过语音检查**(无台词段也对齐,有人声即失败),导出拦;
+  旁白只出字幕(`subtitles.place_narration`,放进最长空档);「成片」面板有整集预览(不过导出闸门)。
   `cast` / `drama_review` 要 `batch` 时在函数里取(`batch` 模块级引用 `service`,`service` 登记它们 —— 循环导入)
   派 worktree agent 前先推送或让它先 `git merge --ff-only main`:worktree 从远程 `origin/HEAD` 建(findings/2026-10-24-多agent并行开发复盘.md)
   ⚠️ `Store` 的连接被网页线程和后台线程共用:`cached_statements=0` 不能去掉(同一条 SQL 并发会拿到同一个缓存语句、读空,P19-B 实测)

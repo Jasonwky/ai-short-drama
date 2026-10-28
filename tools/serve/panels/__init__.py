@@ -24,6 +24,7 @@ REGISTRY: tuple[Panel, ...] = (
     Panel("script", "剧本", "drama", "/drama/{drama_id}/script"),
     Panel("episodes", "逐集", "drama", "/drama/{drama_id}/episodes"),
     Panel("assets", "资产", "drama", "/drama/{drama_id}/assets"),
+    Panel("asset_review", "资产图审", "drama", "/drama/{drama_id}/asset-review"),
     Panel("storyboard", "分镜", "episode", "/episode/{episode_id}/storyboard"),
     Panel("frames", "参考帧", "episode", "/episode/{episode_id}/frames"),
     Panel("videos", "视频", "episode", "/episode/{episode_id}/videos"),

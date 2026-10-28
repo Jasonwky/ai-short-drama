@@ -183,3 +183,33 @@ def test_constraint_goes_into_the_prompt_only_when_given(drama):
     plain = cast.user_message(cast.context(s, d, []))
     assert "<constraint>" not in plain and plain == cast.user_message(cast.context(s, d, [], ""))
     assert "<constraint>\n场景合并到 10 个左右\n</constraint>" in cast.user_message(cast.context(s, d, [], "场景合并到 10 个左右"))
+
+
+ART = '{"era": "架空古代边军", "costume": "交领右衽", "banned": ["uniform", "口袋"]}'
+
+
+def test_art_goes_into_the_message_and_banned_words_are_rejected(drama):
+    """spec 2026-10-28 第 2 节:美术设定进提示词;禁用词判卷打回(孙老栓的 uniform 出成了近代制服)。"""
+    s, d, *_ = drama
+    assert "<art>" not in cast.user_message(cast.context(s, d, []))      # 没填:提示词逐字节不变
+    s.conn.execute("UPDATE drama SET art_json = ? WHERE id = ?", (ART, d))
+    msg = cast.user_message(cast.context(s, d, []))
+    assert "<art>\n时代:架空古代边军\n服饰总则:交领右衽\nbanned:uniform、口袋\n</art>" in msg
+    bad = copy.deepcopy(GOOD)
+    bad["characters"][0]["final_prompt"] = "An old soldier in a grey Uniform."
+    bad["characters"][1]["styling"] = "灰布衣,胸前两个口袋"
+    problems, _ = _judge(s, d, bad)
+    assert "角色「陈老三」的 final_prompt 含本剧禁用词「uniform」" in problems
+    assert "角色「兵卒甲」的 styling 含本剧禁用词「口袋」" in problems
+    assert _judge(s, d, GOOD)[0] == []
+
+
+def test_banned_words_in_already_imaged_assets_are_not_chased(drama):
+    """已出图的老资产文字不让改(改字不改图),禁用词交给资产图审,这里不打回。"""
+    s, d, *_ = drama
+    s.conn.execute("UPDATE drama SET art_json = ? WHERE id = ?", (ART, d))
+    repo.add_character(s, d, "陈老三", appearance="中年,黑瘦", styling="旧皮甲", final_prompt="A soldier in a uniform.",
+                       turnaround_path="assets/c.png")
+    out = copy.deepcopy(GOOD)
+    out["characters"][0]["final_prompt"] = "A soldier in a uniform."
+    assert not [p for p in _judge(s, d, out)[0] if "禁用词" in p]

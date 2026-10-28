@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import socket
 import subprocess
 import sys
@@ -40,7 +41,7 @@ from pathlib import Path
 
 import uvicorn
 
-from tools.drama import repo
+from tools.drama import approval, repo
 from tools.drama.db import Store
 from tools.gen.assets import _png
 from tools.serve.app import create_app
@@ -63,6 +64,7 @@ KEY_SELECTOR = {
     "script": "[data-episode]",
     "episodes": "[data-episode-row]",
     "assets": "[data-asset-col=character] [data-asset]",
+    "asset_review": "[data-asset-review] [data-approve-clean]",
     "storyboard": "[data-segment-list] [data-segment]",
     "frames": "[data-generate-frame]",
     "videos": "[data-readiness] .checklist",
@@ -73,19 +75,31 @@ KEY_SELECTOR = {
 }
 
 
+# 演示剧的素材(用户 2026-10-28 定:用最新生成的真图真视频,不用彩条 / 灰图 / 老图):
+# 《回到古代做将军》的资产图、第 1 集首帧与定稿视频,缩小后放在仓库里;自测不上云机,假 GPU 把它们当产物交出去
+DEMO_ASSETS = Path(__file__).resolve().parent / "demo_assets"
+
+
+def demo_products() -> dict:
+    """假 GPU 交出去的真产物:第 1 集刚出的首帧、定稿视频与一张四视图(缩小后在仓库里)。"""
+    return {"videos": [(DEMO_ASSETS / f"video{n}.mp4").read_bytes() for n in range(1, 6)],
+            "frames": [(DEMO_ASSETS / f"frame{n}.png").read_bytes() for n in range(1, 6)],
+            "fourview": (DEMO_ASSETS / "fourview.png").read_bytes()}
+
+
 def seed_demo(store: Store, data_root: Path) -> dict:
     """一部写实风格的演示剧:一集、两个素材齐全的段落(第 2 段的首帧留给尾帧衔接)、一台假云机;
     第 2 集一个「首尾帧」模式的段落,和一个三角色 + 场景同框、首帧已有的段落(两遍合成提示 + 局部替换)
     —— 都放第 2 集,不影响第 1 集的导出链路。"""
-    for rel in ("assets/lin.png", "assets/yard.png", "assets/jade.png", "assets/shen.png", "assets/zhou.png"):
-        (data_root / rel).parent.mkdir(parents=True, exist_ok=True)
-        (data_root / rel).write_bytes(_png(96, 160, 150))
+    for name in ("lin", "yard", "jade", "shen", "zhou"):      # 真资产图(缩小,在仓库里):资产图审 / 首帧页面看得出真东西
+        (data_root / "assets").mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(DEMO_ASSETS / f"{name}.jpg", data_root / f"assets/{name}.jpg")
     d = repo.create_drama(store, "玉佩(自测)", "9:16", "realistic")
     ep = repo.add_episode(store, d, 1, "script", script="林小雨在老宅庭院里回忆母亲。" * 20 + "\n林小雨说：「这块玉佩，是我母亲留给我的。」\n")
-    lin = repo.add_character(store, d, "林小雨", turnaround_path="assets/lin.png", voice_desc="年轻女声,清亮",
+    lin = repo.add_character(store, d, "林小雨", turnaround_path="assets/lin.jpg", voice_desc="年轻女声,清亮",
                              appearance="二十出头,长发,素色上衣", final_prompt="A young woman in a cream blouse.")
-    yard = repo.add_scene(store, d, "老宅庭院", image_path="assets/yard.png", final_prompt="An empty courtyard at dusk.")
-    jade = repo.add_prop(store, d, "玉佩", image_path="assets/jade.png", final_prompt="A green jade pendant.")
+    yard = repo.add_scene(store, d, "老宅庭院", image_path="assets/yard.jpg", final_prompt="An empty courtyard at dusk.")
+    jade = repo.add_prop(store, d, "玉佩", image_path="assets/jade.jpg", final_prompt="A green jade pendant.")
     photo = repo.add_prop(store, d, "旧照片")                  # 没有参考图:留给「上传」链路
     (data_root / "upload_demo.png").write_bytes(_png(96, 96, 200))
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "anoisesrc=color=pink:amplitude=0.3", "-t", "3",
@@ -113,9 +127,9 @@ def seed_demo(store: Store, data_root: Path) -> dict:
         video_prompt="@林小雨 在 @老宅庭院 捧着 @玉佩,然后转身走远")
     repo.bind_characters(store, seg3, [lin])
     repo.bind_props(store, seg3, [jade])
-    shen = repo.add_character(store, d, "沈墨", turnaround_path="assets/shen.png", voice_desc="青年男声,沉稳",
+    shen = repo.add_character(store, d, "沈墨", turnaround_path="assets/shen.jpg", voice_desc="青年男声,沉稳",
                               appearance="二十七八,短发,深色长衫")
-    zhou = repo.add_character(store, d, "周伯", turnaround_path="assets/zhou.png", voice_desc="老年男声,沙哑",
+    zhou = repo.add_character(store, d, "周伯", turnaround_path="assets/zhou.jpg", voice_desc="老年男声,沙哑",
                               appearance="六十来岁,花白头发,粗布褂子")
     (data_root / "frames").mkdir(parents=True, exist_ok=True)
     (data_root / "frames/demo_s4.png").write_bytes(_png(576, 1024, 120))   # 局部替换的框要 ≥ 128 像素,图不能太小
@@ -128,6 +142,9 @@ def seed_demo(store: Store, data_root: Path) -> dict:
     # 第 3 集:有大纲、没剧本(单集大纲变体只在没剧本的集上出),放最后,不影响前面各集的链路
     ep3 = repo.add_episode(store, d, 3, "novel", source_text="原文:林小雨回到老宅。",
                            outline="林小雨回到老宅,在庭院里发现母亲留下的玉佩,管家神色慌张。")
+    for table, row_id in (("character", lin), ("character", shen), ("character", zhou), ("scene", yard), ("prop", jade)):
+        approval.approve(store, data_root, table, row_id, "image", failed=["AI 检查没有结果"],
+                         reason="自测演示数据:真资产图取自题甲,自测里不跑真 AI 检查")
     add_host(store, label="假云机", ssh_host="fake.local", ssh_port=1, ssh_user="root", key_ref="C:/fake/key",
              local_port=8188, vram_gb=24.0, models_dir="/fake/models", gpu="RTX 4090")
     return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2, "photo": photo, "lin": lin,
@@ -298,6 +315,25 @@ def _music_cue(shot: Path):
     return act
 
 
+def _heard(backend, text: str):
+    """换假对齐脚本「听到的话」(两段各自重新对齐时用)。"""
+    def act(page) -> None:
+        backend.align_for(None).heard = text
+    return act
+
+
+def _until_gone(selector: str, timeout: float = 20):
+    """反复刷新,直到 selector 不在页面上(后台任务做完才会消失)。"""
+    def act(page) -> None:
+        deadline = time.monotonic() + timeout
+        while page.locator(selector).count():
+            if time.monotonic() > deadline:
+                raise RuntimeError(f"{timeout:g} 秒内 {selector} 一直还在")
+            page.wait_for_timeout(1000)
+            page.reload()
+    return act
+
+
 def _expect(selector: str, why: str):
     def act(page) -> None:
         if not page.locator(selector).count():
@@ -312,7 +348,7 @@ def run(out_dir: Path) -> dict:
     work = Path(tempfile.mkdtemp(prefix="drama-selftest-"))
     store = Store(work / "drama.db")
     ids = seed_demo(store, work)
-    backend, _ = fake_backend()
+    backend, _ = fake_backend(demo_products())
     backend.align_for(None).heard = "这块玉佩是我母亲留给我的我会一直带着它"     # 两段的台词
     runtime = Runtime(store, work, backend, poll_sec=1)
     runtime.start()
@@ -354,6 +390,12 @@ def run(out_dir: Path) -> dict:
             seg4, zhou = ids["segment4"], ids["zhou"]
             bundle_zip = lambda: next((work / "outputs" / "bundles").glob("*.zip"))   # noqa: E731 —— 上一条链路才产生
             for n, (key, label, fill, buttons, wait_sel, timeout) in enumerate((
+                    # 资产图定稿闸门(spec 2026-10-28 第 6 节):说话的角色要有定稿的四视图才能出视频
+                    ("assets", "生成四视图", {}, [f'[data-asset="character-{lin}"] [data-generate-fourview]'],
+                     f'[data-asset="character-{lin}"] [data-fourview] img', 40),
+                    ("asset_review", "资产图审:四视图没经 AI 检查 → 写理由定稿",
+                     {f"#character-{lin}-fourview [data-approve-reason]": "自测:四视图是假 GPU 交回的演示图,没跑 AI 检查"},
+                     [f"#character-{lin}-fourview [data-approve]"], f"#character-{lin}-fourview [data-approval]", 20),
                     ("frames", "生成首帧", {}, [f"#seg-{seg} [data-generate-frame]"], f"#seg-{seg} .current-media img", 40),
                     ("videos", "生成视频", {}, [f"#seg-{seg} [data-generate-video]"], f"#seg-{seg} .current-media video", 60),
                     ("videos", "生成记录里点「溯源」→ 倒查到首帧", {}, [f"#seg-{seg} [data-trace-link]"],
@@ -367,6 +409,13 @@ def run(out_dir: Path) -> dict:
                      f"#seg-{seg2} [data-cue]", 30),
                     # 两段共用一段假的「听到的话」(见上面 heard):段落 1 天然多出「我会一直带着它」—— 台词外多说提醒的正例
                     ("videos", "字幕区出现台词外多说提醒", {}, [], f"#seg-{seg} [data-extra-speech]", 20),
+                    # 成片质量闸门第一期(spec 2026-10-28 第 3 节):多说的拦导出;各段按自己的台词重新对齐后放行
+                    ("final", "台词外多说的段落列在导出检查的问题里", {}, [], 'li.bad:has-text("台词之外多说")', 20),
+                    ("videos", "段落 1、2 各自重新对齐(没多说)→ 多说提醒消失", {},
+                     [_heard(backend, "这块玉佩是我母亲留给我的"), f"#seg-{seg} [data-align]",
+                      _until_gone(f"#seg-{seg} [data-extra-speech]"),
+                      _heard(backend, "我会一直带着它"), f"#seg-{seg2} [data-align]",
+                      _until_gone(f"#seg-{seg2} [data-extra-speech]")], f"#seg-{seg} [data-cue]", 60),
                     ("videos", "看片区:切镜计数 + 上一段末帧 / 本段首帧并排", {}, [], f"#seg-{seg2} [data-seam] img", 30),
                     ("final", "没看片确认的段落列在导出检查的问题里", {}, [], 'li.bad:has-text("还没看片确认")', 20),
                     ("videos", "验收清单少勾一项 → 确认按钮不可点;勾全 → 可点", {},
@@ -398,8 +447,6 @@ def run(out_dir: Path) -> dict:
                      '[data-llm-state="failed"] [data-llm-error]', 40),
                     ("trace", "只看失败 → 失败归类里有刚才那次反推", {}, ["[data-failed-only]", "[data-trace-apply]"],
                      '[data-trace-timeline] [data-event="llm"][data-action="失败"]', 20),
-                    ("assets", "生成四视图", {}, [f'[data-asset="character-{lin}"] [data-generate-fourview]'],
-                     f'[data-asset="character-{lin}"] [data-fourview] img', 40),
                     ("frames:episode2", "生成尾帧(首尾帧模式)", {}, [f"#seg-{seg3} [data-generate-last-frame]"],
                      f"#seg-{seg3} [data-last-frame] img", 40),
                     ("hosts", "刷新节点清单", {}, ["[data-refresh-nodes]"], "[data-node-cache] code", 20),

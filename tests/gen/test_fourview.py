@@ -32,6 +32,7 @@ def test_fourview_is_the_fast_preset_from_the_front_image(store, sample):
 
 
 def test_fourview_needs_the_front_image_style_and_description(store, sample):
+    store.conn.execute("UPDATE drama SET style = '' WHERE id = ?", (sample["drama"],))
     repo.update(store, "character", sample["lin"], turnaround_path=None)
     with pytest.raises(ValueError) as e:
         plan_fourview(store, sample["lin"], seed=1)

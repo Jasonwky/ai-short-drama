@@ -24,6 +24,7 @@ from tools.cut import aigc, blankscan, media, music, provenance, review, subtitl
 from tools.drama import repo, rules
 from tools.drama.db import Store, now
 from tools.drama.tasks import producer
+from tools.serve import aligner
 from tools.serve.dispatch import sha256_file
 
 SETTING = "content_producer"
@@ -88,6 +89,16 @@ def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
                 if new or gone:
                     problems.append(f"段落 {s['number']} 的台词改过、当前视频还是旧台词(新:{' / '.join(new) or '无'}"
                                     f" / 删:{' / '.join(gone) or '无'})—— 重出后在历史里「调用」新视频,或把段落描述改回去")
+            narr = rules.narration(s["description"] or "")
+            if narr:                                                                            # 旁白要放进台词之间的空档
+                sub = s["subtitle_path"]
+                said = (subtitles.parse_srt((Path(data_root) / sub).read_text(encoding="utf-8"))
+                        if sub and (Path(data_root) / sub).is_file() else [])
+                _, gaps = subtitles.place_narration(said, narr, media.probe(Path(data_root) / s["video_path"]).duration)
+                problems += [f"段落 {s['number']} 的{g}(改短旁白,或在分镜里把它拆到别的段落)" for g in gaps]
+            speech = aligner.speech_problem(store, data_root, s)                                # 没台词的段也查有没有人说话
+            if speech:
+                problems.append(speech)
             r = review.review_for(store, data_root, s)
             if r is None or not review.complete(r):                                           # 人逐项看过才许导
                 problems.append(review.problem(s["number"], r))
@@ -121,7 +132,8 @@ def begin(store: Store, data_root: Path, episode_id: int, producer: str) -> int:
                "sha256": sha256_file(root / s["video_path"]), "subtitle_path": s["subtitle_path"],
                "subtitle_sha256": sha256_file(root / s["subtitle_path"]) if s["subtitle_path"] else None,
                "blank_override": blankscan.snapshot(blankscan.override_for(store, root, s)),
-               "review": review.snapshot(review.review_for(store, root, s))}
+               "review": review.snapshot(review.review_for(store, root, s)),
+               "narration": rules.narration(s["description"] or "")}
               for s in segs]
     cues = music.snapshot(store, episode_id)
     problems += provenance.problems(provenance.build(store, root, episode_id, produce_id="", producer=producer,
@@ -223,8 +235,9 @@ def _parts(root: Path, videos: list[dict]) -> list[tuple[list[subtitles.Cue], fl
         clip = root / v["video_path"]
         p = media.probe(clip)
         sub = v.get("subtitle_path")
-        cues = subtitles.fit_screen(subtitles.parse_srt((root / sub).read_text(encoding="utf-8")),
-                                    subtitles.max_chars(p.width, p.height)) if sub else []
+        said = subtitles.parse_srt((root / sub).read_text(encoding="utf-8")) if sub else []
+        said, _ = subtitles.place_narration(said, v.get("narration", []), p.duration)   # 旁白只出字幕(readiness 已拦放不下的)
+        cues = subtitles.fit_screen(said, subtitles.max_chars(p.width, p.height))
         parts.append((cues, offset, clip))
         offset += p.duration
     return parts
@@ -313,3 +326,32 @@ def check(store: Store, root: Path, row, labeled_rel: str, plain_rel: str, repor
     add("溯源报告与 task 表一致", same and not probs,
         ";".join(probs) or ("报告按库重算逐项相同,每个文件哈希与 task 记录一致" if same else "报告与按库重算的结果不同"))
     return out
+
+
+PREVIEW_DIR = "outputs/preview"
+
+
+def preview_path(episode_id: int) -> str:
+    return f"{PREVIEW_DIR}/episode-{episode_id}.mp4"
+
+
+def preview(store: Store, data_root: Path, episode_id: int) -> str:
+    """整集预览(spec 2026-10-28 第 5 节):当前各段视频拼起来、烧台词 + 旁白字幕。**不过任何导出闸门**,
+    不加显式标识与元数据,不进溯源;覆盖写。返回相对 data_root 的路径。"""
+    root = Path(data_root)
+    segs = _segments(store, episode_id)
+    missing = [s["number"] for s in segs if not s["video_path"] or not (root / s["video_path"]).is_file()]
+    if not segs or missing:
+        raise ValueError("这一集还没有段落" if not segs else f"段落 {'、'.join(map(str, missing))} 还没有视频,拼不了预览")
+    videos = [{"video_path": s["video_path"],
+               "subtitle_path": s["subtitle_path"] if s["subtitle_path"] and (root / s["subtitle_path"]).is_file() else None,
+               "narration": rules.narration(s["description"] or "")} for s in segs]
+    rel = preview_path(episode_id)
+    out = root / rel
+    srt = episode_subtitles(root, videos)
+    sub = out.with_suffix(".srt")
+    if srt:
+        sub.parent.mkdir(parents=True, exist_ok=True)
+        sub.write_text(srt, encoding="utf-8")
+    media.encode_episode([root / v["video_path"] for v in videos], out, None, subtitles=sub if srt else None)
+    return rel

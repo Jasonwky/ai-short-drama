@@ -8,8 +8,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from tools.drama import repo
-from tools.llm import batch, flow, llm_queue, script_writer
+from tools.drama import art, repo
+from tools.llm import asset_review, batch, flow, llm_queue, script_writer
 from tools.serve.panels.common import render, rt
 
 router = APIRouter()
@@ -29,6 +29,7 @@ def page(request: Request, drama_id: int):
     cells = [r[k] for r in rows for k in ("script", "storyboard")]
     stages = flow.status(store, drama_id)
     return render(request, "episodes.html", "episodes", drama_id=drama_id, rows=rows, stages=stages,
+                  setting=art.of(repo.get(store, "drama", drama_id)),
                   wall=flow.wall(store, drama_id), flow_auto=repo.get(store, "drama", drama_id)["flow_auto"],
                   review=sum(c["state"] == "proposed" for c in cells),
                   inflight=any(c["state"] in ("queued", "running") for c in cells),
@@ -85,6 +86,17 @@ def new_episodes(request: Request, drama_id: int, n: int = Form(...)):
 REVIEW_KEYS = {"r1": "script", "r3": "assets", "r4": "storyboard"}
 
 
+@router.post("/drama/{drama_id}/art")
+def save_art(request: Request, drama_id: int, era: str = Form(""), costume: str = Form(""), banned: str = Form("")):
+    """剧级美术设定(spec 2026-10-28 第 2 节):时代必填,保存即写 art_json;之后出的图 / 首帧 / 视频由代码拼进提示词。"""
+    store = rt(request).store
+    repo.get(store, "drama", drama_id)
+    if not era.strip():
+        raise ValueError("时代 / 世界观要填(例:架空古代,类北宋边军)—— 资产表、出图都按它来")
+    repo.update(store, "drama", drama_id, art_json=art.dumps(art.Art(era.strip(), costume.strip(), art.split_words(banned))))
+    return RedirectResponse(f"/drama/{drama_id}/episodes#art", status_code=303)
+
+
 @router.post("/drama/{drama_id}/flow/auto")
 def flow_auto(request: Request, drama_id: int, on: int = Form(...)):
     runtime = rt(request)
@@ -102,6 +114,12 @@ def flow_run(request: Request, drama_id: int, key: str, constraint: str = Form("
     runtime = rt(request)
     store = runtime.store
     repo.get(store, "drama", drama_id)
+    if key == "a5":                 # 资产图审:排还没查的 AI 检查,去审阅页
+        asset_review.plan_checks(store, drama_id)
+        runtime.pump_queue()
+        return RedirectResponse(f"/drama/{drama_id}/asset-review", status_code=303)
+    if key == "cast" and not art.of(repo.get(store, "drama", drama_id)).era:
+        raise ValueError("先在上面填美术设定(时代必填)—— 资产表要按它写造型和生成描述")
     if key in REVIEW_KEYS or key == "cast":
         if key in REVIEW_KEYS:
             task, params = "drama_review", {"stage": REVIEW_KEYS[key]}

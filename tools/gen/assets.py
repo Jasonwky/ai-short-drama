@@ -10,11 +10,12 @@ Qwen-Image-Edit 必须有输入图(路线图未决项 #5)。2026-09-23 实测:**
 """
 from __future__ import annotations
 
+import json
 import struct
 import zlib
 from pathlib import Path
 
-from tools.drama import repo
+from tools.drama import approval, art, repo
 from tools.drama.db import Store
 from tools.drama.styles import get_style
 from tools.drama.tasks import create_task
@@ -60,11 +61,17 @@ def ensure_canvas(data_root: Path) -> str:
     return CANVAS
 
 
-def asset_prompt(table: str, style_key: str, final_prompt: str) -> str:
+def asset_prompt(table: str, style_key: str, final_prompt: str, setting: art.Art = art.Art()) -> str:
+    """setting:剧的美术设定,时代 / 服饰总则由代码拼在 final_prompt 之后(spec 2026-10-28 第 2 节;没填 = 与以前逐字节相同)。"""
     style = get_style(style_key)
     who = f" {FICTIONAL}" if table == "character" and style_key == "realistic" else ""
-    return (f"Completely replace the entire image with a {style.prefix}.{who} {final_prompt.strip()} "
-            f"{SPEC[table][2]} Avoid: {style.avoid}.")
+    return (f"Completely replace the entire image with a {style.prefix}.{who} {final_prompt.strip()}"
+            f"{art.asset_suffix(setting, table)} {SPEC[table][2]} Avoid: {style.avoid}.")
+
+
+def _art_param(setting: art.Art) -> dict:
+    """任务参数里记生成时的美术设定(溯源 / 设定改过时比对);没填不记,老任务参数不变。"""
+    return {"art": json.loads(art.dumps(setting))} if setting != art.Art() else {}
 
 
 def asset_problems(store: Store, table: str, row_id: int) -> list[str]:
@@ -78,6 +85,8 @@ def asset_problems(store: Store, table: str, row_id: int) -> list[str]:
         problems.append("这部剧还没选风格预设(在「立项」里选)")
     if not row["final_prompt"].strip():
         problems.append(f"「{row['name']}」缺少生成描述(final_prompt)")
+    text = row["final_prompt"] + (" " + row["styling"] if table == "character" else "")
+    problems += art.problems(text, art.of(drama), f"「{row['name']}」的生成描述 / 造型")
     return problems
 
 
@@ -102,6 +111,8 @@ def unlock_seed(store: Store, character_id: int) -> None:
 def fourview_problems(store: Store, character_id: int) -> list[str]:
     row = repo.get(store, "character", character_id)
     problems = [] if row["turnaround_path"] else [f"「{row['name']}」还没有正面定妆图 —— 四视图以它为输入"]
+    problems += [p + " —— 四视图以它为输入,正面图不对四视图白出" for p in
+                 approval.unapproved(store, [("character", character_id, "image")])]
     return problems + asset_problems(store, "character", character_id)
 
 
@@ -113,10 +124,12 @@ def plan_fourview(store: Store, character_id: int, *, seed: int) -> int:
     row = repo.get(store, "character", character_id)
     drama = repo.get(store, "drama", row["drama_id"])
     who = f" {FICTIONAL}" if drama["style"] == "realistic" else ""
-    prompt = FOURVIEW.format(desc=row["final_prompt"].strip(), style=get_style(drama["style"]).prefix, who=who)
+    setting = art.of(drama)
+    prompt = FOURVIEW.format(desc=row["final_prompt"].strip() + art.asset_suffix(setting, "character"),
+                             style=get_style(drama["style"]).prefix, who=who)
     params = {"workflow": "qwen_image", "preset": "fast", "size": list(FOURVIEW_SIZE),
               "image_refs": [row["turnaround_path"]], "writes": "fourview_path", "expect_ext": ".png",
-              "style": drama["style"]}
+              "style": drama["style"], **_art_param(setting)}
     params = presets.stamp(store, "fourview", params)
     return create_task(store, kind="image", target_type="character", target_id=character_id, model=QWEN_MODEL,
                        params=params, seed=seed, prompt=prompt, refs=params["image_refs"])
@@ -132,11 +145,13 @@ def plan_asset_image(store: Store, table: str, row_id: int, *, seed: int) -> int
     row = repo.get(store, table, row_id)
     drama = repo.get(store, "drama", row["drama_id"])
     writes, size_of, _ = SPEC[table]
+    setting = art.of(drama)
     params = {
         "workflow": "qwen_image", "preset": "baseline", "size": list(size_of(drama["aspect_ratio"])),
         "image_refs": [CANVAS], "writes": writes, "expect_ext": ".png", "style": drama["style"],
+        **_art_param(setting),
     }
-    prompt = asset_prompt(table, drama["style"], row["final_prompt"])
+    prompt = asset_prompt(table, drama["style"], row["final_prompt"], setting)
     params = presets.stamp(store, "asset", params)
     return create_task(store, kind="image", target_type=table, target_id=row_id, model=QWEN_MODEL,
                        params=params, seed=seed, prompt=prompt, refs=params["image_refs"])

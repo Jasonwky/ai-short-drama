@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """逐集面板的「全剧流程」一栏与两个新审阅页(spec 2026-10-25-全剧审与资产表-design.md 第 5 节)。"""
+import json
+
 from tools.drama import repo
 from tools.llm import llm_queue, runs, service
 
@@ -90,7 +92,20 @@ def test_review_page_lets_the_reviewer_pick_the_episode_to_fix(client, store, sa
 def test_cast_can_be_rerun_with_a_constraint(client, runtime, store, sample):
     d = sample["drama"]
     repo.update(store, "episode", sample["episode"], script=EP1)
+    assert client.post(f"/drama/{d}/flow/run/cast").status_code == 400                   # 没填美术设定
+    client.post(f"/drama/{d}/art", data={"era": "现代都市", "costume": "", "banned": "uniform、口袋"})
     assert "data-cast-constraint" in client.get(f"/drama/{d}/episodes").text
     r = client.post(f"/drama/{d}/flow/run/cast", data={"constraint": "场景合并到 10 个左右"}, follow_redirects=False)
     rid = int(r.headers["location"].rsplit("/", 1)[1])
     assert runs.params(runs.get(store, rid)) == {"notes": [], "constraint": "场景合并到 10 个左右"}
+
+
+def test_art_setting_form_saves_and_requires_an_era(client, store, sample):
+    d = sample["drama"]
+    page = client.get(f"/drama/{d}/episodes").text
+    assert "data-art-form" in page and "data-art-missing" in page and 'data-flow-stage="a5"' in page
+    assert client.post(f"/drama/{d}/art", data={"era": " ", "costume": "", "banned": ""}).status_code == 400
+    client.post(f"/drama/{d}/art", data={"era": "架空古代", "costume": "交领右衽", "banned": "uniform, pocket、口袋"})
+    assert json.loads(repo.get(store, "drama", d)["art_json"]) == {"era": "架空古代", "costume": "交领右衽",
+                                                                    "banned": ["uniform", "pocket", "口袋"]}
+    assert "data-art-missing" not in client.get(f"/drama/{d}/episodes").text

@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -401,6 +401,30 @@ SCHEMA += "".join(f"{stmt};\n" for stmt in FLOW_DDL)
 QUEUE_DEPTH_DDL = ["ALTER TABLE host ADD COLUMN queue_depth INTEGER NOT NULL DEFAULT 1 CHECK (queue_depth BETWEEN 1 AND 100)"]
 SCHEMA += "".join(f"{stmt};\n" for stmt in QUEUE_DEPTH_DDL)
 
+# v23:成片质量闸门第一期(spec 2026-10-28-成片质量闸门-第一期-design.md)。
+# drama.art_json:剧级美术设定(时代 / 服饰总则 / 禁用词),空 = 没填;由代码拼进资产图、首帧、视频提示词。
+# asset_approval:资产图定稿 —— 只认那张图的 sha256,换了图自动失效;有 AI / 代码不通过项时理由★必填;一经写下不可改。
+# 资产被删时随之删除(table_name 是多态的,没法挂外键,由 repo.delete_asset 一并删)
+ART_DDL = [
+    "ALTER TABLE drama ADD COLUMN art_json TEXT NOT NULL DEFAULT ''",
+    """CREATE TABLE asset_approval (
+  id INTEGER PRIMARY KEY,
+  table_name TEXT NOT NULL CHECK (table_name IN ('character', 'scene', 'prop')),
+  row_id INTEGER NOT NULL,
+  slot TEXT NOT NULL CHECK (slot IN ('image', 'fourview')),
+  path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  check_run INTEGER,
+  checks_json TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+)""",
+    "CREATE INDEX asset_approval_target ON asset_approval (table_name, row_id, slot)",
+    """CREATE TRIGGER asset_approval_immutable BEFORE UPDATE ON asset_approval
+BEGIN SELECT RAISE(ABORT, '资产图定稿一经写下不可改 —— 它只对当时那张图有效'); END""",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in ART_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -460,6 +484,8 @@ MIGRATIONS: dict[int, list[str]] = {
     20: FLOW_DDL,
     # v22:云机队列深度
     21: QUEUE_DEPTH_DDL,
+    # v23:剧级美术设定 + 资产图定稿
+    22: ART_DDL,
 }
 
 

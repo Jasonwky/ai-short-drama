@@ -5,7 +5,7 @@ from tools.serve.hosts import add_host
 
 
 def _ready_for_frames(store, sample, root):
-    for rel in ("assets/lin.png", "assets/yard.png", "assets/jade.png"):
+    for rel in ("assets/lin.png", "assets/lin_4v.png", "assets/yard.png", "assets/jade.png"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_bytes(b"png")
     repo.update(store, "segment", sample["seg"], first_frame_path=None, video_path=None)

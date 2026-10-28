@@ -7,7 +7,7 @@ from tools.drama import repo
 
 
 def _files(root):
-    for rel in ("assets/lin.png", "assets/shen.png", "assets/yard.png", "assets/jade.png", "frames/s1.png",
+    for rel in ("assets/lin.png", "assets/lin_4v.png", "assets/shen.png", "assets/yard.png", "assets/jade.png", "frames/s1.png",
                 "videos/s1.mp4"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_bytes(rel.encode())

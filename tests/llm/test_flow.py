@@ -2,6 +2,7 @@
 """全剧流程推进(spec 2026-10-25-全剧审与资产表-design.md 第 3、4 节):各关状态、只排不批、幂等、防空转、定稿后出图 / 声音 / 拆分镜。"""
 import pytest
 
+from tests.drama.conftest import approve_all
 from tools.drama import repo
 from tools.drama.db import Store
 from tools.llm import flow, llm_queue, runs, service
@@ -15,6 +16,7 @@ FP = "A lean soldier in worn leather armor."
 def drama():
     s = Store(":memory:")
     d = repo.create_drama(s, "将军", "9:16", "realistic")
+    repo.update(s, "drama", d, art_json='{"era": "架空古代", "costume": "", "banned": []}')
     e1 = repo.add_episode(s, d, 1, "script", script=EP1)
     e2 = repo.add_episode(s, d, 2, "script", script=EP2)
     yield s, d, e1, e2
@@ -126,6 +128,9 @@ def test_fourview_follows_the_front_image(drama):
     lao = s.conn.execute("SELECT id FROM character WHERE name = '陈老三'").fetchone()[0]
     repo.update(s, "character", lao, turnaround_path="assets/lao.png")
     flow.advance(s, d)
+    assert not s.conn.execute("SELECT 1 FROM task WHERE json_extract(params_json, '$.writes') = 'fourview_path'").fetchone()
+    approve_all(s)                                                      # 正面图定稿了才出四视图(spec 2026-10-28 第 6.1 节)
+    flow.advance(s, d)
     fv = s.conn.execute("SELECT target_id FROM task WHERE json_extract(params_json, '$.writes') = 'fourview_path'").fetchall()
     assert [r[0] for r in fv] == [lao]
     wall = {w["name"]: w for w in flow.wall(s, d)}
@@ -145,3 +150,45 @@ def test_asset_review_waits_for_pending_script_fixes(drama):
     s.conn.execute("DELETE FROM llm_queue")
     flow.advance(s, d)
     assert [t for t, *_ in _queue(s)] == ["drama_review"]
+
+
+def test_finished_videos_get_one_speech_check_each(drama):
+    """spec 2026-10-28 第 3 节:视频出完自动排对齐 / 语音检查(导出要它);同一条视频只排一次,换了视频再排。"""
+    s, d, e1, _ = drama
+    repo.update(s, "drama", d, flow_auto=1)
+    seg = repo.add_segment(s, e1, 1, duration_sec=8.0, description="【镜头1】燕无咎低头看手。")
+    assert flow.plan_checks(s, d) == []                                   # 没视频不排
+    repo.update(s, "segment", seg, video_path="v/1.mp4")
+    assert flow.plan_checks(s, d) == [f"drama {d} 排了第 1 集段落 1 的语音检查"]
+    assert flow.plan_checks(s, d) == []
+    s.conn.execute("UPDATE task SET state = 'failed', error = '有人说话'")
+    assert flow.plan_checks(s, d) == []                                   # 失败不自动重排
+    repo.update(s, "segment", seg, video_path="v/2.mp4")
+    assert len(flow.plan_checks(s, d)) == 1
+
+
+def test_cast_waits_for_the_art_setting(drama):
+    """待定但不可跳过(spec 2026-10-28 第 2 节):没填时代,② 不排。"""
+    s, d, *_ = drama
+    repo.update(s, "drama", d, art_json="")
+    _pass_r1(s, d)
+    c2 = _st(s, d)["cast"]
+    assert c2.state == "blocked" and "美术设定" in c2.detail
+
+
+def test_asset_review_stage_checks_then_waits_for_people(drama, tmp_path):
+    """⑤ 资产图审:资产定稿后,有图的排 AI 检查(同一张图只排一次)→ 等人定稿 → 全部定稿 = 完成。"""
+    s, d, *_ = drama
+    repo.update(s, "drama", d, flow_auto=1)
+    _pass_r1(s, d)
+    _take(s, "cast", d, {"notes": []}, CAST, {"accept": [], "reject": []})
+    assert _st(s, d)["a5"].state == "blocked"
+    _take(s, "drama_review", d, {"stage": "assets"}, {"issues": [_issue("角色·陈老三", "瘦")]}, {"adopt": [], "reject": [0]})
+    lao = s.conn.execute("SELECT id FROM character WHERE name = '陈老三'").fetchone()[0]
+    repo.update(s, "character", lao, turnaround_path="assets/lao.png")
+    flow.advance(s, d)
+    q = [x for x in _queue(s) if x[0] == "asset_check_character"]
+    assert q == [("asset_check_character", "character", lao, {"slot": "image", "path": "assets/lao.png"})]
+    assert _st(s, d)["a5"].state == "working"
+    flow.advance(s, d)
+    assert len([x for x in _queue(s) if x[0] == "asset_check_character"]) == 1        # 只排一次

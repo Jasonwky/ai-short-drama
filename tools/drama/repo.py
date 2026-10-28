@@ -15,7 +15,7 @@ from tools.drama.db import Store, now
 
 # 各表允许调用方写入的字段。主键、外键归属、创建时间由本模块自己管。
 _COLUMNS: dict[str, set[str]] = {
-    "drama": {"premise_json", "skeleton_json", "flow_auto"},   # 立项发散(v16)、原创骨架(v20)、自动推进(v21);剧名、画幅不在这里 —— 画幅建后不可改
+    "drama": {"premise_json", "skeleton_json", "flow_auto", "art_json"},   # 立项发散(v16)、原创骨架(v20)、自动推进(v21)、美术设定(v23);剧名、画幅不在这里 —— 画幅建后不可改
     "episode": {"source_text", "outline", "script", "beats_json"},
     "character": {"appearance", "styling", "voice_desc", "final_prompt", "seed",
                   "turnaround_path", "fourview_path", "voice_ref_path"},
@@ -277,6 +277,7 @@ def delete_asset(store: Store, table: str, row_id: int) -> None:
     if why:
         raise ValueError(f"{table} {row_id} {why},不能删")
     with store.write() as c:
+        c.execute("DELETE FROM asset_approval WHERE table_name = ? AND row_id = ?", (table, row_id))
         c.execute(f"DELETE FROM {table} WHERE id = ?", (row_id,))
 
 

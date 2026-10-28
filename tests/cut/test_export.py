@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 from tools.cut import export, media, music
-from tests.cut.conftest import done_task
+from tests.cut.conftest import done_task, speech_checked
 from tools.drama import repo
 
 PRODUCER = "91310000MA1234567X"
@@ -397,6 +397,7 @@ def test_unreviewed_segment_blocks_export_and_review_is_tied_to_the_video(store,
     assert export.readiness(store, root, s["episode"]) == []
     done_task(store, root, s["seg2"], "video", "outputs/tasks/v3/clip.mp4", mp4_bytes + b"\0",
               refs=["outputs/tasks/f2/frame.png"])                       # 第 2 段换了一条视频
+    speech_checked(store, root, s["seg2"], "outputs/tasks/v3/clip.mp4")
     (msg,) = [p for p in export.readiness(store, root, s["episode"]) if "看片" in p]
     assert msg.startswith("段落 2")
     with pytest.raises(ValueError, match="看片"):
@@ -428,6 +429,7 @@ def test_review_must_tick_every_manual_item(store, two_segments, mp4_bytes):
     s, root = two_segments, two_segments["root"]
     done_task(store, root, s["seg2"], "video", "outputs/tasks/v3/clip.mp4", mp4_bytes + b"\0",
               refs=["outputs/tasks/f2/frame.png"])
+    speech_checked(store, root, s["seg2"], "outputs/tasks/v3/clip.mp4")
     with pytest.raises(ValueError, match="人在家具里"):
         review.confirm(store, root, s["seg2"], [k for k in checklist.MANUAL if k != "physics"])
     review.confirm(store, root, s["seg2"], list(checklist.MANUAL))
@@ -440,8 +442,22 @@ def test_reviews_from_the_old_checklist_block_export(store, two_segments, mp4_by
     s, root = two_segments, two_segments["root"]
     done_task(store, root, s["seg2"], "video", "outputs/tasks/v3/clip.mp4", mp4_bytes + b"\0",
               refs=["outputs/tasks/f2/frame.png"])
+    speech_checked(store, root, s["seg2"], "outputs/tasks/v3/clip.mp4")
     store.conn.execute("INSERT INTO segment_review (segment_id, video_path, sha256, note, created_at)"
                        " VALUES (?, ?, ?, '', '2026-10-22T00:00:00+00:00')",
                        (s["seg2"], "outputs/tasks/v3/clip.mp4", sha256_file(root / "outputs/tasks/v3/clip.mp4")))
     (msg,) = [p for p in export.readiness(store, root, s["episode"]) if "看片" in p or "旧清单" in p]
     assert msg.startswith("段落 2") and "按旧清单确认" in msg
+
+
+def test_narration_is_burned_as_subtitles_and_blocks_when_it_does_not_fit(store, two_segments):
+    """旁白不配音、只出字幕(spec 2026-10-28 第 4 节):进整集 SRT;放不下时导出前就拦。"""
+    s, root = two_segments, two_segments["root"]
+    repo.update(store, "segment", s["seg2"], description="【镜头1】林小雨把玉佩收进怀里。旁白：她走了。")
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    export.run(store, root, eid)
+    srt = (root / export.get(store, eid)["plain_path"]).with_name("subtitles.srt").read_text(encoding="utf-8")
+    assert "她走了。" in srt
+    repo.update(store, "segment", s["seg1"], description=repo.get(store, "segment", s["seg1"])["description"]
+                + "旁白：这是一句很长很长很长的旁白放不下。")
+    assert any("段落 1 的旁白" in p and "放不下" in p for p in export.readiness(store, root, s["episode"]))
