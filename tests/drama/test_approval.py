@@ -42,3 +42,9 @@ def test_missing_image_cannot_be_approved(store, tmp_path, lin):
     repo.update(store, "character", lin, turnaround_path="assets/gone.png")
     with pytest.raises(ValueError, match="不在本机"):
         approval.approve(store, tmp_path, "character", lin, "image", failed=[])
+
+
+def test_voice_slot_is_known():
+    from tools.drama import approval
+    assert approval.field("character", "voice") == "voice_ref_path"
+    assert approval.LABEL[("character", "voice")] == "试听音"

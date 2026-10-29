@@ -18,13 +18,13 @@ _COLUMNS: dict[str, set[str]] = {
     "drama": {"premise_json", "skeleton_json", "flow_auto", "art_json"},   # 立项发散(v16)、原创骨架(v20)、自动推进(v21)、美术设定(v23);剧名、画幅不在这里 —— 画幅建后不可改
     "episode": {"source_text", "outline", "script", "beats_json"},
     "character": {"appearance", "styling", "voice_desc", "final_prompt", "seed",
-                  "turnaround_path", "fourview_path", "voice_ref_path"},
+                  "turnaround_path", "fourview_path", "voice_ref_path", "voice_ref_text"},
     "scene": {"episode_id", "location", "time", "lighting", "final_prompt", "image_path", "purpose", "furnishings"},
     "prop": {"description", "final_prompt", "image_path"},
     # scene_id 不在这里:改场景要走 set_scene(),它会核对归属
     "segment": {"duration_sec", "shot_type", "angle", "movement", "description", "result",
                 "atmosphere", "layout", "image_prompt", "last_image_prompt", "video_prompt", "bgm_prompt", "sfx_prompt",
-                "reference_mode", "first_frame_path", "last_frame_path", "video_path", "subtitle_path", "blocking_json"},
+                "reference_mode", "first_frame_path", "last_frame_path", "video_path", "line_audio_path", "subtitle_path", "blocking_json"},
     # segment_id 不在这里:关键帧建在哪段就属于哪段,不挪
     "segment_keyframe": {"time_sec", "image_prompt", "frame_path"},
     # path / sha256 不在这里:文件按内容寻址,换文件就是新挂一条

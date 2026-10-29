@@ -116,6 +116,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   **资产图定稿** `asset_approval`(v23,`drama/approval.py`,按图路径认、记 sha256、不可改):没定稿的图不能出首帧 / 四视图 / 视频;
   先代码查(`gen/assetscan.py`,浅色底 + 没被裁切 + 四视图四格,阈值标定 spike-results/2026-10-28-资产图白底检查标定.md)
   再 AI 查(`llm/asset_check.py`:单张逐维度 + 全剧对照,只提示),人在「资产图审」面板定稿(有不通过项 / AI 没结果要写理由);
+  **角色声音**(spec 2026-10-30-台词配音与口型闸门-design.md,v24):`kind = 'voice'` 任务,`serve/voicer.py` 经 ssh 在云机
+  qwen-tts 独立 venv(`/root/autodl-tmp/qwen-tts/`,torch 经 .pth 借 ComfyUI 的,**不装 gradio** —— 装它 pip 无限回溯)合成试听音,
+  wav 走 stdout 回本机,再跑 `align_remote.py` 回听、`cut/speech.py` 按**拼音**判(Whisper 常出同音字 / 繁体,按字比会误杀);
+  「资产图审」页底部试听 / 挑版 / 定稿(`asset_approval` slot = voice,回听不过要写理由);新依赖 `pypinyin`;
   流程栏「⑤ 资产图审」(`llm/asset_review.py`)自动排检查。视频规划另拦**在途 / 缺失的四视图**(说话的角色),
   没台词的段落不写声音、写「全程没有人说话」;**每段都要过语音检查**(无台词段也对齐,有人声即失败),导出拦;
   旁白只出字幕(`subtitles.place_narration`,放进最长空档);「成片」面板有整集预览(不过导出闸门)。

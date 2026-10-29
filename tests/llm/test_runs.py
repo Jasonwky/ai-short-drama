@@ -53,6 +53,8 @@ def test_illegal_transitions_and_silent_failure(store):
 
 def test_v2_database_gets_the_llm_run_table(tmp_path):
     s = Store(tmp_path / "d.db")
+    s.conn.execute("ALTER TABLE character DROP COLUMN voice_ref_text")       # v24 新增
+    s.conn.execute("ALTER TABLE segment DROP COLUMN line_audio_path")
     s.conn.execute("DROP TABLE asset_approval")                              # v23 新增
     s.conn.execute("ALTER TABLE drama DROP COLUMN art_json")
     s.conn.execute("ALTER TABLE host DROP COLUMN queue_depth")                # v22 新增

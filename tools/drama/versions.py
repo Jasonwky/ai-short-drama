@@ -8,7 +8,9 @@ worker 写回只填空位(已有产物不覆盖),新版本留在 task 表里 —
 - 换角色四视图 → 绑定了它的段落只作废视频(四视图只进视频的参考图);
 - 换段落首帧/尾帧/某张关键帧 → 只有本段视频作废(别的参考帧不受影响,不清);关键帧写到那一张自己的行上(`targets.slot`),
   那张已删除就不让挑;
-- 换段落视频 → 本段字幕作废(时间轴是对着旧视频算的),要对新视频重新对齐。
+- 换段落视频 → 本段字幕作废(时间轴是对着旧视频算的),要对新视频重新对齐;
+- 换角色试听音 → 不作废首帧 / 视频(试听音还没进视频),克隆用的参考文本跟着换成那一版念的句子
+  (spec 2026-10-30-台词配音与口型闸门-design.md 第 3 节)。
 `plan_pick` 只算不改;人看了代价确认后 `confirm_pick` 才落盘。
 """
 from __future__ import annotations
@@ -52,7 +54,9 @@ def plan_pick(store: Store, task_id: int, *, video_cap: Capability, image_cap: C
         raise ValueError("这一版已经是当前版")
 
     note = ""
-    if ttype == "character" and field == "fourview_path":
+    if field == "voice_ref_path":
+        imp = Impact((), 0, 0, 0.0)
+    elif ttype == "character" and field == "fourview_path":
         imp = invalidation.impact(store, "fourview", tid, video_cap=video_cap, image_cap=image_cap)
     elif ttype in ("character", "scene", "prop"):
         imp = invalidation.impact(store, ttype, tid, video_cap=video_cap, image_cap=image_cap)
@@ -70,6 +74,10 @@ def plan_pick(store: Store, task_id: int, *, video_cap: Capability, image_cap: C
 
 
 def confirm_pick(store: Store, pick: Pick) -> None:
+    if pick.field == "voice_ref_path":
+        text = json.loads(repo.get(store, "task", pick.task_id)["params_json"])["text"]
+        repo.update(store, "character", pick.target_id, voice_ref_path=pick.new_path, voice_ref_text=text)
+        return
     if pick.target_type in ("character", "scene", "prop"):
         invalidation.apply(store, pick.impact)
         if pick.target_type == "character" and pick.field == "turnaround_path":

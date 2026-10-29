@@ -10,13 +10,14 @@
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -54,6 +55,7 @@ CREATE TABLE character (
   turnaround_path TEXT,
   fourview_path TEXT,
   voice_ref_path TEXT,
+  voice_ref_text TEXT,
   library_id INTEGER,
   UNIQUE (drama_id, name)
 );
@@ -108,6 +110,7 @@ CREATE TABLE segment (
   first_frame_path TEXT,
   last_frame_path TEXT,
   video_path TEXT,
+  line_audio_path TEXT,
   subtitle_path TEXT,
   blocking_json TEXT NOT NULL DEFAULT '',
   UNIQUE (episode_id, number)
@@ -143,7 +146,7 @@ CREATE TABLE host (
 
 CREATE TABLE task (
   id INTEGER PRIMARY KEY,
-  kind TEXT NOT NULL CHECK (kind IN ('image', 'video', 'align')),
+  kind TEXT NOT NULL CHECK (kind IN ('image', 'video', 'align', 'voice', 'tts')),
   target_type TEXT NOT NULL CHECK (target_type IN ('segment', 'character', 'scene', 'prop')),
   target_id INTEGER NOT NULL,
   model TEXT NOT NULL,
@@ -425,6 +428,28 @@ BEGIN SELECT RAISE(ABORT, '资产图定稿一经写下不可改 —— 它只对
 ]
 SCHEMA += "".join(f"{stmt};\n" for stmt in ART_DDL)
 
+# v24:台词配音第 1 期(spec 2026-10-30-台词配音与口型闸门-design.md 第 7 节)。
+# task.kind 加 voice(角色试听音)/ tts(段落台词音频);asset_approval.slot 加 voice;character.voice_ref_text(试听音念的那句,
+# 克隆时当参考文本);segment.line_audio_path(段落台词音频,第 2 期用)。SQLite 改 CHECK 只能重建表:
+# 旧表改名 → 建新表 → 原样拷数据 → 删旧表(旧触发器、索引随之删除)→ 建新触发器 / 索引(同 v5 重建 llm_run 的写法)。
+# 没有表用外键引用 task / asset_approval,改名安全。新库的 task 在上面 SCHEMA 里已直接写成新 CHECK。
+_TASK_KINDS_V1 = "('image', 'video', 'align')"
+_TASK_KINDS_V24 = "('image', 'video', 'align', 'voice', 'tts')"
+_SLOTS_V23 = "slot TEXT NOT NULL CHECK (slot IN ('image', 'fourview'))"
+_SLOTS_V24 = "slot TEXT NOT NULL CHECK (slot IN ('image', 'fourview', 'voice'))"
+SCHEMA = SCHEMA.replace(_SLOTS_V23, _SLOTS_V24)
+VOICE_DDL = [
+    "ALTER TABLE task RENAME TO task_v23",
+    re.search(r"CREATE TABLE task \(.*?\n\)", SCHEMA, re.S).group(0),
+    "INSERT INTO task SELECT * FROM task_v23", "DROP TABLE task_v23",
+    re.search(r"CREATE TRIGGER task_params_immutable.*?END", SCHEMA, re.S).group(0),
+    "ALTER TABLE asset_approval RENAME TO asset_approval_v23", ART_DDL[1].replace(_SLOTS_V23, _SLOTS_V24),
+    "INSERT INTO asset_approval SELECT * FROM asset_approval_v23", "DROP TABLE asset_approval_v23",
+    ART_DDL[2], ART_DDL[3],
+    "ALTER TABLE character ADD COLUMN voice_ref_text TEXT",
+    "ALTER TABLE segment ADD COLUMN line_audio_path TEXT",
+]
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -486,6 +511,8 @@ MIGRATIONS: dict[int, list[str]] = {
     21: QUEUE_DEPTH_DDL,
     # v23:剧级美术设定 + 资产图定稿
     22: ART_DDL,
+    # v24:台词配音(voice / tts 任务、声音定稿)
+    23: VOICE_DDL,
 }
 
 

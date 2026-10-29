@@ -44,6 +44,24 @@ def parse_output(out: str) -> list[tuple[str, float, float]]:
     return [tuple(c) for c in json.loads(rows[-1])["chars"]]
 
 
+def gpu_ready(client, need_gb: float, what: str) -> Outcome | None:
+    """同卡跑 ComfyUI 之外的模型前(对齐、配音):队列里有任何任务(共用机)→ pending 不打断;空闲而显存不够 →
+    让 ComfyUI 卸载模型、等显存腾出来;等不到 → failed。返回 None = 可以跑;failed 由调用方落库。连不上抛 ComfyUnreachable。"""
+    running, pending = client.queue_ids()
+    if running or pending:
+        return Outcome("pending", f"ComfyUI 队列里还有 {len(running) + len(pending)} 个任务(共用机),等队列空了再{what}")
+    vram = client.vram_free_gb()
+    if vram < need_gb:
+        client.free_models()
+        deadline = time.monotonic() + FREE_WAIT_SEC
+        while (vram := client.vram_free_gb()) < need_gb and time.monotonic() < deadline:
+            time.sleep(2)
+        if vram < need_gb:
+            return Outcome("failed", f"让 ComfyUI 卸载模型后,释放后显存仍只有 {vram:.1f} GiB({what}要 {need_gb:g} GiB)"
+                                     " —— 显存被 ComfyUI 之外的进程占着,请上云机查 nvidia-smi")
+    return None
+
+
 def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path, run: preflight.Runner) -> Outcome:
     tid = task["id"]
     root = Path(data_root)
@@ -67,20 +85,11 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
     except ComfyError as e:
         return fail(f"视频传不上云机:{e}")
     try:
-        running, pending = client.queue_ids()
-        if running or pending:
-            return Outcome("pending", f"ComfyUI 队列里还有 {len(running) + len(pending)} 个任务(共用机),等队列空了再对齐")
-        vram = client.vram_free_gb()
-        if vram < WHISPER_ALIGN.vram_gb:
-            client.free_models()
-            deadline = time.monotonic() + FREE_WAIT_SEC
-            while (vram := client.vram_free_gb()) < WHISPER_ALIGN.vram_gb and time.monotonic() < deadline:
-                time.sleep(2)
-            if vram < WHISPER_ALIGN.vram_gb:
-                return fail(f"让 ComfyUI 卸载模型后,释放后显存仍只有 {vram:.1f} GiB(对齐要 {WHISPER_ALIGN.vram_gb:g} GiB)"
-                            " —— 显存被 ComfyUI 之外的进程占着,请上云机查 nvidia-smi")
+        wait = gpu_ready(client, WHISPER_ALIGN.vram_gb, "对齐")
     except ComfyUnreachable as e:
         return Outcome("pending", f"连不上云机,下轮再试:{e}")
+    if wait is not None:
+        return fail(wait.message) if wait.state == "failed" else wait
     code, out = run([WHISPER_ALIGN.model_dir, f"{WHISPER_ALIGN.input_dir}/{name}"], SCRIPT.read_bytes())
     if code == SSH_UNREACHABLE:
         return Outcome("pending", f"ssh 连不上云机,下轮再试:{out.strip()[-300:]}")

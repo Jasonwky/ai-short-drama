@@ -97,3 +97,52 @@ def test_check_button_starts_the_vision_task(client, runtime, store, sample):
     assert runs.params(row) == {"slot": "image", "path": "assets/lin.png"} and row["llm_mode"] == "fake"
     assert row["state"] == "failed"                                     # 假 LLM 看不见图:校验数字必错,被判卷拦下
     assert service.spec("asset_check_character").model == service.VISION_MODEL
+
+
+def _voice(root, rel, ok=True, heard="这块玉佩是我母亲留给我的"):
+    """一条试听音 + 回听结果(与 voicer 落盘的格式一致)。"""
+    f = root / rel
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_bytes(b"RIFF")
+    f.with_name("voice.json").write_text(json.dumps({"text": "这块玉佩，是我母亲留给我的。", "heard": heard, "ok": ok,
+                                                     "hit": 1.0 if ok else 0.2, "sec": 2.0, "gen_sec": 4.0},
+                                                    ensure_ascii=False), encoding="utf-8")
+
+
+def test_voice_design_plans_three_takes(client, runtime, store, sample):
+    r = client.post(f"/character/{sample['lin']}/voice/design", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].endswith(f"#character-{sample['lin']}-voice")
+    assert store.conn.execute("SELECT COUNT(*) FROM task WHERE kind = 'voice' AND target_id = ?",
+                              (sample["lin"],)).fetchone()[0] == 3
+    page = client.get(f"/drama/{sample['drama']}/asset-review").text
+    assert f'data-voice-card="{sample["lin"]}"' in page and "正在生成 3 版" in page
+    # 沈墨没有声音描述:没有生成按钮
+    shen = page.split(f'data-voice-card="{sample["shen"]}"')[1]
+    assert "data-voice-design" not in shen.split("</section>")[0]
+
+
+def test_voice_that_was_heard_right_approves_without_a_reason(client, runtime, store, sample):
+    _voice(runtime.data_root, "outputs/tasks/7/voice.wav")
+    repo.update(store, "character", sample["lin"], voice_ref_path="outputs/tasks/7/voice.wav",
+                voice_ref_text="这块玉佩，是我母亲留给我的。")
+    page = client.get(f"/drama/{sample['drama']}/asset-review").text
+    assert 'data-voice-check="1"' in page and "/media/outputs/tasks/7/voice.wav" in page
+    url = f"/asset/character/{sample['lin']}/voice/approve"
+    assert client.post(url, data={}, follow_redirects=False).status_code == 303
+    a = approval.current(store, "character", sample["lin"], "voice")
+    assert a["path"] == "outputs/tasks/7/voice.wav" and json.loads(a["checks_json"])["listen"]["ok"] is True
+    assert "data-voice-approved" in client.get(f"/drama/{sample['drama']}/asset-review").text
+
+
+def test_misheard_or_unchecked_voice_needs_a_reason(client, runtime, store, sample):
+    _voice(runtime.data_root, "outputs/tasks/8/voice.wav", ok=False, heard="完全不对")
+    repo.update(store, "character", sample["lin"], voice_ref_path="outputs/tasks/8/voice.wav")
+    url = f"/asset/character/{sample['lin']}/voice/approve"
+    r = client.post(url, data={})
+    assert r.status_code == 400 and "要写理由" in r.text and "回听没念对" in r.text
+    assert client.post(url, data={"reason": "人耳听过,是 Whisper 听错"}, follow_redirects=False).status_code == 303
+    (runtime.data_root / "up").mkdir()
+    (runtime.data_root / "up/shen.wav").write_bytes(b"RIFF")
+    repo.update(store, "character", sample["shen"], voice_ref_path="up/shen.wav")     # 手工放的:没有回听结果
+    r = client.post(f"/asset/character/{sample['shen']}/voice/approve", data={})
+    assert r.status_code == 400 and "回听没有结果" in r.text

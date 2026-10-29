@@ -201,6 +201,26 @@ class FakeAligner:
         return 0, "Loading weights ...\n" + json.dumps({"chars": chars, "asr_sec": 0.1}, ensure_ascii=False)
 
 
+class FakeVoice:
+    """假的云机配音脚本(行为像 ssh runner):回一段 0.5 秒静音 wav,与真脚本(`voice_remote`)同格式的 JSON。"""
+    def __init__(self):
+        self.calls: list[list[str]] = []
+
+    def __call__(self, args, stdin):
+        import base64
+        import io
+        import wave
+        self.calls.append(list(args))
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(24000)
+            w.writeframes(b"\0\0" * 12000)
+        return 0, "Loading weights ...\n" + json.dumps(
+            {"wav_b64": base64.b64encode(buf.getvalue()).decode(), "sr": 24000, "sec": 0.5, "gen_sec": 0.1})
+
+
 def fake_backend(demo: dict | None = None):
     """(Backend, FakeComfy):界面上标明「假后端」;每轮 tick 前假 GPU 把队列跑完。LoRA 预检一律放行(假后端没有模型文件)。
     LLM 用假 LLM:产物标 fake,永远过不了审批。"""
@@ -210,7 +230,9 @@ def fake_backend(demo: dict | None = None):
     comfy = FakeComfy()
     gpu = FakeGpu(comfy, demo)
     aligner = FakeAligner()
+    voice = FakeVoice()
     backend = Backend("假后端(测试专用)", lambda host: comfy, FakeTunnel(), lambda host: (lambda args, stdin: (0, "")),
                       fake=True, before_tick=gpu.run_pending,
-                      llm=lambda: LLMBackend(FakeLLM(), DEFAULT_MODEL, "fake"), align_for=lambda host: aligner)
+                      llm=lambda: LLMBackend(FakeLLM(), DEFAULT_MODEL, "fake"), align_for=lambda host: aligner,
+                      tts_for=lambda host: voice)
     return backend, comfy

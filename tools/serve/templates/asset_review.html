@@ -89,4 +89,55 @@
   <section class="card empty">这部剧还没有资产</section>
 {% endfor %}
 </div>
+
+<h2 id="voices">角色声音</h2>
+<p class="hint">按资产里的「声音描述」让 Qwen3-TTS 念一句试听(念的是这个角色剧本里最长的一句台词),一次出 3 版;
+  每版都由 Whisper 回听、按拼音核对念没念对。挑一版「用这一版」后定稿 —— 定稿的音色以后用来念这个角色的全部台词。
+  音色像不像角色、几个角色分不分得清只能靠人耳:定稿前把同剧的几位并排听一遍。</p>
+<div class="review-grid" data-voices>
+{% for v in voices %}
+  <section class="card" id="{{ v.anchor }}" data-voice-card="{{ v.id }}" data-approved="{{ 1 if v.approval else 0 }}">
+    <h2>角色「{{ v.name }}」</h2>
+    <p class="hint">声音描述:{{ v.desc or "(还没填,先到资产面板填)" }}</p>
+    {% if v.path %}
+      <audio controls preload="none" src="/media/{{ v.path }}"></audio>
+      <ul class="checklist">
+        <li>念的是:{{ v.text or "(未知:不是由试听任务生成的)" }}</li>
+        {% if v.check %}<li class="{{ 'ok' if v.check.ok else 'bad' }}" data-voice-check="{{ 1 if v.check.ok else 0 }}">回听:{{ v.check.heard or "(什么也没听到)" }}(拼音命中 {{ "%.2f"|format(v.check.hit) }})</li>
+        {% else %}<li class="bad">回听:没有结果</li>{% endif %}
+      </ul>
+      {% if v.approval %}
+        <p data-voice-approved>已定稿({{ v.approval.created_at[:16] | replace("T", " ") }}){% if v.approval.reason %}· 理由:{{ v.approval.reason }}{% endif %}</p>
+      {% else %}
+        <form method="post" action="/asset/character/{{ v.id }}/voice/approve">
+          {% if v.failed %}<label>有不通过的项({{ v.failed | join("、") }}),写理由才能定稿</label>
+            <input type="text" name="reason" required style="width: 100%">{% endif %}
+          <button class="btn primary" type="submit" data-voice-approve>定稿</button>
+        </form>
+      {% endif %}
+    {% else %}
+      <p class="empty">{{ "正在生成" if v.flying else "还没有试听音" }}</p>
+    {% endif %}
+    {% if v.flying %}<p class="hint" data-voice-flying>正在生成 {{ v.flying }} 版(云机空闲时跑,一版约一分钟)</p>{% endif %}
+    {% if v.desc and not v.approval %}
+      <form method="post" action="/character/{{ v.id }}/voice/design">
+        <button class="btn small" type="submit" data-voice-design>生成 3 版试听</button></form>
+    {% endif %}
+    {% if v.versions %}
+      <p class="hint">生成过、还没用上的版本:</p>
+      {% for t in v.versions %}
+        <div class="row">
+          <audio controls preload="none" src="/media/{{ t.result_path }}"></audio>
+          {% if t.check %}<span class="{{ 'status-ok' if t.check.ok else 'status-bad' }}">命中 {{ "%.2f"|format(t.check.hit) }}</span>{% endif %}
+          <form method="post" action="/task/{{ t.id }}/pick">
+            <input type="hidden" name="next" value="/drama/{{ drama.id }}/asset-review#{{ v.anchor }}">
+            <button class="btn small" type="submit" data-pick-voice="{{ t.id }}">用这一版</button></form>
+        </div>
+      {% endfor %}
+    {% endif %}
+  </section>
+{% else %}
+  <section class="card empty">这部剧还没有角色</section>
+{% endfor %}
+</div>
 {% endblock %}

@@ -13,8 +13,16 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v24(s):
+    """退回 v23:删掉 v24 新增的两列(task / asset_approval 的 CHECK 放宽不用退:迁移照样重建,数据原样拷)。"""
+    for table, col in (("character", "voice_ref_text"), ("segment", "line_audio_path")):
+        if col in _cols(s, table):
+            s.conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
+
+
 def _drop_v23(s):
-    """退回 v22:删掉 v23 新增的 drama.art_json 与 asset_approval 表。"""
+    """退回 v22:删掉 v23 新增的 drama.art_json 与 asset_approval 表;v24 的也一并退掉。"""
+    _drop_v24(s)
     s.conn.execute("DROP TABLE IF EXISTS asset_approval")
     if "art_json" in _cols(s, "drama"):
         s.conn.execute("ALTER TABLE drama DROP COLUMN art_json")

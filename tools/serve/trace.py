@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from tools.drama.db import Store
 
 KINDS = {"task": "生成任务", "llm": "LLM", "export": "成片导出", "preset": "模板预设"}
-TASK_KIND = {"image": "图片", "video": "视频", "align": "字幕对齐"}
+TASK_KIND = {"image": "图片", "video": "视频", "align": "字幕对齐", "voice": "试听音", "tts": "台词音频"}
 PER_PAGE = 100
 
 

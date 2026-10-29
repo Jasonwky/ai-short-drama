@@ -112,3 +112,19 @@ def test_region_replace_version_is_picked_like_any_frame(store, sample):
     confirm_pick(store, pick)
     seg = repo.get(store, "segment", sample["seg"])
     assert seg["first_frame_path"] == "outputs/tasks/9/region.png" and seg["video_path"] is None
+
+
+def test_new_voice_voids_nothing_and_brings_its_text(store, sample):
+    """换角色试听音(第 1 期):首帧、视频都不作废;克隆用的参考文本跟着换成那一版念的句子。"""
+    from tools.gen.voice import plan_voice
+    repo.update(store, "character", sample["lin"], voice_ref_path="uploads/old.wav", voice_ref_text="旧句")
+    t = plan_voice(store, sample["lin"], seed=5)
+    set_task_state(store, t, "queued", external_id="x")
+    set_task_state(store, t, "done", result_path=f"outputs/tasks/{t}/voice.wav")
+    pick = plan_pick(store, t, **CAPS)
+    assert pick.impact.segment_ids == () and pick.impact.videos == 0
+    confirm_pick(store, pick)
+    ch = repo.get(store, "character", sample["lin"])
+    assert ch["voice_ref_path"] == f"outputs/tasks/{t}/voice.wav" and ch["voice_ref_text"] == "这块玉佩，是我母亲留给我的。"
+    seg = repo.get(store, "segment", sample["seg"])
+    assert seg["first_frame_path"] == "frames/s1.png" and seg["video_path"] == "videos/s1.mp4"

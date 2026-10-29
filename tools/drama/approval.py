@@ -16,9 +16,10 @@ from tools.drama import repo
 from tools.drama.db import Store, now
 
 SLOTS = {("character", "image"): "turnaround_path", ("character", "fourview"): "fourview_path",
-         ("scene", "image"): "image_path", ("prop", "image"): "image_path"}
+         ("scene", "image"): "image_path", ("prop", "image"): "image_path",
+         ("character", "voice"): "voice_ref_path"}      # 角色试听音(spec 2026-10-30-台词配音与口型闸门-design.md 第 3 节)
 LABEL = {("character", "image"): "正面图", ("character", "fourview"): "四视图",
-         ("scene", "image"): "空镜图", ("prop", "image"): "道具图"}
+         ("scene", "image"): "空镜图", ("prop", "image"): "道具图", ("character", "voice"): "试听音"}
 
 
 def field(table: str, slot: str) -> str:

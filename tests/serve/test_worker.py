@@ -102,3 +102,25 @@ def test_queue_depth_keeps_several_tasks_in_the_comfy_queue(store, sample, world
     assert [_state(store, t) for t in (a, b, c)] == ["done", "queued", "queued"]
     with pytest.raises(ValueError):
         set_queue_depth(store, host_id, 0)
+
+
+def test_voice_tasks_run_through_the_tts_and_align_runners(store, sample, host_id, tmp_path):
+    from tools.gen.voice import plan_voice
+    from tools.serve.fakes import FakeAligner, FakeVoice
+    tts, asr, comfy = FakeVoice(), FakeAligner("这块玉佩是我母亲留给我的"), FakeComfy()
+    w = Worker(store, host_id, data_root=tmp_path, client_for=lambda h: comfy, tunnel=FakeTunnel(), run_for=_no_ssh,
+               align_for=lambda h: asr, tts_for=lambda h: tts)
+    tid = plan_voice(store, sample["lin"], seed=1)
+    w.tick()
+    assert repo.get(store, "task", tid)["state"] == "done" and len(tts.calls) == 1 and len(asr.calls) == 1
+
+
+def test_voice_tasks_wait_while_our_own_tasks_are_in_flight(store, sample, host_id, tmp_path):
+    """试听音同步跑、占显存:机器上还有我们在途的任务时不挑它(与字幕对齐同规则)。"""
+    from tools.drama.tasks import set_task_state
+    from tools.gen.voice import plan_voice
+    from tools.serve.dispatch import pick_next
+    first = plan_voice(store, sample["lin"], seed=1)
+    set_task_state(store, first, "queued", external_id="x", host_id=host_id)
+    plan_voice(store, sample["lin"], seed=2)
+    assert pick_next(store, host_id, allow_align=False) is None

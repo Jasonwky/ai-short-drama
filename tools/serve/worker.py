@@ -9,6 +9,7 @@
   接管来的隧道(不是本进程起的)杀不掉,如实提示人去结束它,不假装已处理。
 - 没有单独的「恢复」流程:重启后库里的在途任务带着 external_id,照常推进就是接管。
 - 字幕对齐(kind = align)不进 ComfyUI 队列:空闲时轮到它,就在本轮里经 ssh 同步跑完(`aligner`,约 30 秒)。
+  试听音(kind = voice)同理(`voicer`:qwen-tts venv 合成 + whisper 回听,约一分钟)。
 
 用法:
     python -m tools.serve.worker --db data/drama.db --host-id 1 --data-root data --once
@@ -24,9 +25,9 @@ from pathlib import Path
 
 from tools.drama.db import Store
 from tools.gen import preflight
-from tools.gen.capability import WHISPER_ALIGN
+from tools.gen.capability import QWEN3_TTS, WHISPER_ALIGN
 from tools.gen.comfy_client import ComfyClient
-from tools.serve import aligner
+from tools.serve import aligner, voicer
 from tools.serve.collect import IN_FLIGHT, Collector
 from tools.serve import journal
 from tools.serve.dispatch import dispatch, pick_next
@@ -46,12 +47,19 @@ def _ssh_align(host: Host) -> preflight.Runner:
                                 python=WHISPER_ALIGN.python)
 
 
+def _ssh_tts(host: Host) -> preflight.Runner:
+    """配音脚本用 qwen-tts 独立 venv 跑(spike-results/2026-10-29 第 4.2 节);加载 + 合成实测约 20 秒,给足 5 分钟。"""
+    return preflight.ssh_runner(host.ssh_host, host.ssh_port, host.ssh_user, host.key_ref, timeout=300,
+                                python=QWEN3_TTS.python)
+
+
 class Worker:
     def __init__(self, store: Store, host_id: int, *, data_root: Path,
                  client_for: Callable[[Host], object] = lambda h: ComfyClient(h.local_endpoint),
                  tunnel: TunnelManager | None = None,
                  run_for: Callable[[Host], preflight.Runner] = _ssh_run,
                  align_for: Callable[[Host], preflight.Runner] = _ssh_align,
+                 tts_for: Callable[[Host], preflight.Runner] = _ssh_tts,
                  collector: Collector | None = None):
         self.store = store
         self.host_id = host_id
@@ -60,6 +68,7 @@ class Worker:
         self.tunnel = tunnel or TunnelManager()
         self.run_for = run_for
         self.align_for = align_for
+        self.tts_for = tts_for
         self.collector = collector or Collector(self.data_root)
         self._last_host: Host | None = None
 
@@ -96,11 +105,14 @@ class Worker:
             if task["kind"] == "align":
                 out = aligner.run(self.store, client, host, task, data_root=self.data_root,
                                   run=self.align_for(host))
+            elif task["kind"] == "voice":
+                out = voicer.run(self.store, client, host, task, data_root=self.data_root,
+                                 run_tts=self.tts_for(host), run_align=self.align_for(host))
             else:
                 out = dispatch(self.store, client, host, task, data_root=self.data_root, run=self.run_for(host))
             log.append(f"task {task['id']}: pending → {out.state} {out.message}".rstrip())
             log += [f"task {task['id']} 告警: {w}" for w in out.warnings]
-            if out.state not in IN_FLIGHT:       # 当场失败 / 同步跑完(对齐):不占位,但这一轮不再连着交,下一轮再看
+            if out.state not in IN_FLIGHT:       # 当场失败 / 同步跑完(对齐、试听音):不占位,但这一轮不再连着交,下一轮再看
                 break
             busy += 1
         return log

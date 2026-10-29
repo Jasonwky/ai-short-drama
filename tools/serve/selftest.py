@@ -322,6 +322,24 @@ def _heard(backend, text: str):
     return act
 
 
+def _voice_approve(char_id: int):
+    """角色声音:等假后端交回试听音(反复刷新),试听控件在,再定稿(假回听没听到话 → 要写理由)。"""
+    def act(page) -> None:
+        card = f"#character-{char_id}-voice"
+        deadline = time.monotonic() + 30
+        while not page.locator(f"{card} audio").count():
+            if time.monotonic() > deadline:
+                raise RuntimeError("30 秒内试听音没出来")
+            page.wait_for_timeout(1000)
+            page.reload()
+        reason = page.locator(f"{card} input[name=reason]")
+        if reason.count():
+            reason.fill("自测:假后端的静音试听音,回听自然听不到话")
+        page.locator(f"{card} [data-voice-approve]").click()
+        page.wait_for_load_state()
+    return act
+
+
 def _until_gone(selector: str, timeout: float = 20):
     """反复刷新,直到 selector 不在页面上(后台任务做完才会消失)。"""
     def act(page) -> None:
@@ -396,6 +414,10 @@ def run(out_dir: Path) -> dict:
                     ("asset_review", "资产图审:四视图没经 AI 检查 → 写理由定稿",
                      {f"#character-{lin}-fourview [data-approve-reason]": "自测:四视图是假 GPU 交回的演示图,没跑 AI 检查"},
                      [f"#character-{lin}-fourview [data-approve]"], f"#character-{lin}-fourview [data-approval]", 20),
+                    # 台词配音第 1 期(spec 2026-10-30):按声音描述出 3 版试听音 → 试听 → 定稿
+                    ("asset_review", "角色声音:生成 3 版试听 → 定稿", {},
+                     [f"#character-{lin}-voice [data-voice-design]", _voice_approve(lin)],
+                     f"#character-{lin}-voice [data-voice-approved]", 40),
                     ("frames", "生成首帧", {}, [f"#seg-{seg} [data-generate-frame]"], f"#seg-{seg} .current-media img", 40),
                     ("videos", "生成视频", {}, [f"#seg-{seg} [data-generate-video]"], f"#seg-{seg} .current-media video", 60),
                     ("videos", "生成记录里点「溯源」→ 倒查到首帧", {}, [f"#seg-{seg} [data-trace-link]"],

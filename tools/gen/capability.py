@@ -142,6 +142,32 @@ WHISPER_ALIGN = AlignBackend(
 
 
 # ──────────────────────────────────────────────────────────────
+# 配音后端(云机 GPU;spike-results/2026-10-29-台词与口型匹配方案调研.md 第 4.2 节)
+#   Qwen3-TTS 1.7B:VoiceDesign 按文字描述造音色,Base 克隆定稿音色念台词。独立 venv(torch 经 .pth 借 ComfyUI 的,不装 gradio),
+#   一句 4–8 秒、显存峰值 4.1 GB(RTX 4080 SUPER 实测)。权重 HF 仓库无 LICENSE 文件,商用前待查(用户 2026-10-29:先不管)。
+# ──────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class TtsBackend:
+    name: str
+    python: str          # 云机上 qwen-tts 独立 venv 的解释器
+    design_dir: str      # VoiceDesign 权重(按描述造音色)
+    base_dir: str        # Base 权重(克隆音色念台词)
+    language: str
+    vram_gb: float       # 跑一次要的显存:实测峰值 4.12 GiB,留余量
+
+
+QWEN3_TTS = TtsBackend(
+    name="Qwen3-TTS-12Hz-1.7B",
+    python="/root/autodl-tmp/qwen-tts/venv/bin/python",
+    design_dir="/root/autodl-tmp/qwen-tts/models/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+    base_dir="/root/autodl-tmp/qwen-tts/models/Qwen3-TTS-12Hz-1.7B-Base",
+    language="Chinese",
+    vram_gb=6.0,
+)
+
+
+# ──────────────────────────────────────────────────────────────
 # 实测耗时,按卡分开存(给「重跑要多久」报估算,不是承诺)
 #   最终用哪张卡没定(用户 2026-10-09):每台云机登记自己的卡,估时按已登记里最慢的一张(gen/estimate.py)。
 #   换卡 = 加一份,不改旧的;没实测过的卡登记不进来。数据与量法:spike-results/2026-10-09-RTX4080SUPER耗时实测.md
