@@ -24,3 +24,18 @@ def hit(want: str, heard: str) -> float:
     if not a:
         return 1.0
     return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
+
+
+def line_hits(lines: list[str], heard: str) -> list[float]:
+    """逐句命中:各句音节拼成一串与听到的对齐,每句里被对上的音节占比(0..1)。
+    按整段对齐、不按时间切 —— 漏句能看出来,夹在句间的多余话不影响(多说由语音检查管)。"""
+    seqs = [syllables(line) for line in lines]
+    joined = [s for seq in seqs for s in seq]
+    matched = [False] * len(joined)
+    for a, _, size in difflib.SequenceMatcher(None, joined, syllables(heard), autojunk=False).get_matching_blocks():
+        matched[a:a + size] = [True] * size
+    out, start = [], 0
+    for seq in seqs:
+        out.append(1.0 if not seq else round(sum(matched[start:start + len(seq)]) / len(seq), 3))
+        start += len(seq)
+    return out

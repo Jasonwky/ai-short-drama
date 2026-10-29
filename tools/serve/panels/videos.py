@@ -10,10 +10,14 @@
 人看过点「看过,没有穿帮」(只对这条视频有效),没确认的段落拦导出。
 
 字幕也在这里:对着当前视频对齐台词(云机 whisper),逐句显示当前字幕的起止时间;判卷不过的原因写在对齐记录上。
+
+台词音频(spec 2026-10-30-台词配音与口型闸门-design.md 第 4 节):按说话人的定稿音色合成本段台词,逐句回听命中、过期原因、
+没用上的版本可挑;第 3 期起视频按它出。
 """
 from __future__ import annotations
 
 import json
+import random
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
@@ -26,8 +30,9 @@ from tools.gen.capability import MINIMAX_H3
 from tools.gen import estimate, presets
 from tools.gen.align import align_problems, plan_align
 from tools.gen.planner import plan_video
+from tools.gen import tts
 from tools.gen.workflows import DRAFT_STEPS, H3_STEPS
-from tools.serve import aligner
+from tools.serve import aligner, ttser
 from tools.serve.dispatch import FEW_STEPS_NOTE, sha256_file, steps_of
 from tools.serve.panels.common import new_seed, readiness, render, rt
 
@@ -59,6 +64,23 @@ def _vision(store, seg, root) -> dict | None:
             return {"run": row, "mismatches": vision_check.mismatches(blocking.parse(seg["blocking_json"]), out)}
         return {"run": row, "mismatches": None}
     return None
+
+
+LINE_FLYING = ("pending", "queued", "running", "waiting_host")
+
+
+def _line_audio(store, root, seg, tasks) -> dict:
+    """本段台词音频:当前那条 + 回听结果 + 过期原因 + 规划问题 + 在途几条 + 没用上的版本。"""
+    path = seg["line_audio_path"]
+    mine = [t for t in tasks if t["kind"] == "tts"]
+    check = ttser.check_of(root, path)
+    return {"path": path, "check": check, "stale": tts.stale(store, seg),
+            "rows": [(who, line, h) for (who, line), h in zip(check["lines"], check["hits"])] if check else [],
+            "problems": tts.tts_problems(store, seg["id"]),
+            "flying": sum(1 for t in mine if t["state"] in LINE_FLYING),
+            "failed": mine[-1] if mine and mine[-1]["state"] == "failed" else None,    # 最近一次失败了才显示原因
+            "versions": [dict(t, check=ttser.check_of(root, t["result_path"])) for t in reversed(mine)
+                         if t["state"] == "done" and t["result_path"] != path][:4]}
 
 
 @router.get("/episode/{episode_id}/videos")
@@ -95,7 +117,7 @@ def page(request: Request, episode_id: int):
                      "few_now": few.get(cur["id"]) if cur else None,
                      "blank": blankscan.problem(s["number"], blank) if blank else None,
                      "blank_override": _override(store, runtime.data_root, s) if blank else None,
-                     "tasks": videos,
+                     "tasks": videos, "line_audio": _line_audio(store, runtime.data_root, s, tasks),
                      "stale_lines": rules.stale_lines(s["description"], rules.said_lines(cur)) if cur else [],
                      "dropped_lines": rules.dropped_lines(s["description"], rules.said_lines(cur)) if cur else [],
                      "stale_fields": rules.stale_video_fields(s, cur) if cur else [],
@@ -121,6 +143,15 @@ def page(request: Request, episode_id: int):
 def generate(request: Request, segment_id: int, seed: int = Form(...), steps: str = Form("")):
     store = rt(request).store
     plan_video(store, segment_id, seed=seed, steps=int(steps) if steps.strip() else None)
+    ep_id = repo.get(store, "segment", segment_id)["episode_id"]
+    return RedirectResponse(f"/episode/{ep_id}/videos#seg-{segment_id}", status_code=303)
+
+
+@router.post("/segment/{segment_id}/tts")
+def synthesize(request: Request, segment_id: int):
+    """按说话人的定稿音色合成本段台词音频(回听不过自动换种子,最多 3 次)。"""
+    store = rt(request).store
+    tts.plan_tts(store, segment_id, seed=random.randrange(1, 2**31))
     ep_id = repo.get(store, "segment", segment_id)["episode_id"]
     return RedirectResponse(f"/episode/{ep_id}/videos#seg-{segment_id}", status_code=303)
 

@@ -120,6 +120,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   qwen-tts 独立 venv(`/root/autodl-tmp/qwen-tts/`,torch 经 .pth 借 ComfyUI 的,**不装 gradio** —— 装它 pip 无限回溯)合成试听音,
   wav 走 stdout 回本机,再跑 `align_remote.py` 回听、`cut/speech.py` 按**拼音**判(Whisper 常出同音字 / 繁体,按字比会误杀);
   「资产图审」页底部试听 / 挑版 / 定稿(`asset_approval` slot = voice,回听不过要写理由);新依赖 `pypinyin`;
+  **台词音频**:`kind = 'tts'`(`gen/tts.py` 规划,快照说话人的定稿音色;`serve/ttser.py` 执行,云机 `tts_remote.py` 用 Base 逐句克隆拼接),
+  `speech.line_hits` 逐句按拼音判,不过换种子(+1000·k)重合成最多 3 次;视频面板每段「台词音频」;`tts.stale` 判台词 / 音色改过;
   流程栏「⑤ 资产图审」(`llm/asset_review.py`)自动排检查。视频规划另拦**在途 / 缺失的四视图**(说话的角色),
   没台词的段落不写声音、写「全程没有人说话」;**每段都要过语音检查**(无台词段也对齐,有人声即失败),导出拦;
   旁白只出字幕(`subtitles.place_narration`,放进最长空档);「成片」面板有整集预览(不过导出闸门)。

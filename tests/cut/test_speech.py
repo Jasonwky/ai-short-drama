@@ -17,3 +17,13 @@ def test_homophones_and_traditional_count_as_heard():
 def test_wrong_words_lower_the_hit():
     assert hit("老栓叔,我就是碰巧。", "我不知道") < 0.5
     assert hit("好,我去。", "") == 0.0
+
+
+def test_line_hits_judge_each_line():
+    from tools.cut.speech import line_hits
+    lines = ["三日后营中比武!伙夫,你来当靶子!", "好,我去。"]
+    assert line_hits(lines, "三日后营中比武霍夫你来当靶子好我去") == [1.0, 1.0]
+    skipped = line_hits(lines, "三日后营中比武霍夫你来当靶子")
+    assert skipped[0] == 1.0 and skipped[1] < 0.5
+    assert line_hits(lines, "三日后营中比武伙夫你来当靶子嗯嗯嗯好我去") == [1.0, 1.0]   # 多说的由语音检查管
+    assert line_hits([], "随便") == []

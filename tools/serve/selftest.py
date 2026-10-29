@@ -418,6 +418,9 @@ def run(out_dir: Path) -> dict:
                     ("asset_review", "角色声音:生成 3 版试听 → 定稿", {},
                      [f"#character-{lin}-voice [data-voice-design]", _voice_approve(lin)],
                      f"#character-{lin}-voice [data-voice-approved]", 40),
+                    # 台词配音第 2 期:林小雨音色定稿后,段落 1 按它合成台词音频,逐句回听命中(假回听多听到的半句不影响)
+                    ("videos", "台词音频:合成 → 试听 + 逐句命中", {}, [f"#seg-{seg} [data-synthesize]"],
+                     f"#seg-{seg} [data-line-audio] [data-line-hits]", 40),
                     ("frames", "生成首帧", {}, [f"#seg-{seg} [data-generate-frame]"], f"#seg-{seg} .current-media img", 40),
                     ("videos", "生成视频", {}, [f"#seg-{seg} [data-generate-video]"], f"#seg-{seg} .current-media video", 60),
                     ("videos", "生成记录里点「溯源」→ 倒查到首帧", {}, [f"#seg-{seg} [data-trace-link]"],

@@ -19,6 +19,37 @@
         {{ checklist(s.checks) }}
         {% if s.est_min is not none %}<p class="hint" data-estimate>预计生成约 {{ "%.0f" | format(s.est_min) }} 分钟({{ est_note }})</p>
         {% elif s.row.duration_sec %}<p class="hint" data-estimate>{{ est_note }}</p>{% endif %}
+        {% set la = s.line_audio %}
+        <div data-line-audio>
+          <p><b>台词音频</b> <span class="hint">(按说话人的定稿音色逐句合成,Whisper 按拼音逐句回听;不过自动换种子,最多 3 次)</span></p>
+          {% if la.path %}
+            <audio controls preload="none" src="/media/{{ la.path }}"></audio>
+            {% if la.check %}
+              <ul class="checklist" data-line-hits>
+                {% for who, line, h in la.rows %}
+                  <li class="{{ 'ok' if h >= 0.9 else 'bad' }}">{{ who }}:{{ line }}(命中 {{ "%.2f"|format(h) }})</li>
+                {% endfor %}
+              </ul>
+              <p class="hint">共 {{ "%.1f"|format(la.check["sec"]) }} 秒 · 第 {{ la.check["attempt"] }} 次合成通过 · 回听:{{ la.check["heard"] }}</p>
+            {% endif %}
+            {% for r in la.stale %}<p class="status-bad" data-line-stale>{{ r }}</p>{% endfor %}
+          {% endif %}
+          {% if la.flying %}<p class="hint" data-line-flying>正在合成(云机空闲时跑,约一两分钟)</p>{% endif %}
+          {% if la.failed %}<p class="status-bad" data-line-failed>上次合成失败:{{ (la.failed.error or "")[:300] }}</p>{% endif %}
+          {% for p in la.problems %}<p class="status-bad" data-line-problem>{{ p }}</p>{% endfor %}
+          <form method="post" action="/segment/{{ s.row.id }}/tts">
+            <button class="btn small" type="submit" data-synthesize {% if la.problems or la.flying %}disabled{% endif %}>
+              {{ "重新合成台词音频" if la.path else "合成台词音频" }}</button></form>
+          {% if la.versions %}
+            <p class="hint">合成过、还没用上的版本:</p>
+            {% for t in la.versions %}
+              <div class="row"><audio controls preload="none" src="/media/{{ t.result_path }}"></audio>
+                <form method="post" action="/task/{{ t.id }}/pick">
+                  <input type="hidden" name="next" value="/episode/{{ ep.id }}/videos#seg-{{ s.row.id }}">
+                  <button class="btn small" type="submit" data-pick-line-audio="{{ t.id }}">用这一版</button></form></div>
+            {% endfor %}
+          {% endif %}
+        </div>
         <form method="post" action="/segment/{{ s.row.id }}/video">
           <label>种子</label><input type="number" name="seed" value="{{ seed + loop.index }}">
           <label>档位</label>

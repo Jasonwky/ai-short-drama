@@ -221,6 +221,41 @@ class FakeVoice:
             {"wav_b64": base64.b64encode(buf.getvalue()).decode(), "sr": 24000, "sec": 0.5, "gen_sec": 0.1})
 
 
+class FakeTts:
+    """假的云机台词合成脚本(行为像 ssh runner):每句 1 秒静音,与真脚本(`tts_remote`)同格式的 JSON(含每句起止)。"""
+    def __init__(self):
+        self.calls: list[list[str]] = []
+
+    def __call__(self, args, stdin):
+        import base64
+        import io
+        import wave
+        self.calls.append(list(args))
+        job = json.loads(args[1])
+        n = len(job["lines"])
+        sec = job["lead"] + n + job["gap"] * max(n - 1, 0) + job["tail"]
+        spans = [[round(job["lead"] + k * (1 + job["gap"]), 3), round(job["lead"] + k * (1 + job["gap"]) + 1, 3)]
+                 for k in range(n)]
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(24000)
+            w.writeframes(b"\0\0" * int(24000 * sec))
+        return 0, json.dumps({"wav_b64": base64.b64encode(buf.getvalue()).decode(), "sr": 24000, "sec": round(sec, 3),
+                              "spans": spans, "gen_sec": 0.1})
+
+
+def fake_tts_runner():
+    """假后端的配音 ssh:按送过去的脚本分派 —— 台词合成脚本走 FakeTts,试听音脚本走 FakeVoice。"""
+    voice, lines = FakeVoice(), FakeTts()
+
+    def run(args, stdin):
+        return (lines if b"generate_voice_clone" in stdin else voice)(args, stdin)
+    run.voice, run.lines = voice, lines
+    return run
+
+
 def fake_backend(demo: dict | None = None):
     """(Backend, FakeComfy):界面上标明「假后端」;每轮 tick 前假 GPU 把队列跑完。LoRA 预检一律放行(假后端没有模型文件)。
     LLM 用假 LLM:产物标 fake,永远过不了审批。"""
@@ -230,9 +265,9 @@ def fake_backend(demo: dict | None = None):
     comfy = FakeComfy()
     gpu = FakeGpu(comfy, demo)
     aligner = FakeAligner()
-    voice = FakeVoice()
+    tts = fake_tts_runner()
     backend = Backend("假后端(测试专用)", lambda host: comfy, FakeTunnel(), lambda host: (lambda args, stdin: (0, "")),
                       fake=True, before_tick=gpu.run_pending,
                       llm=lambda: LLMBackend(FakeLLM(), DEFAULT_MODEL, "fake"), align_for=lambda host: aligner,
-                      tts_for=lambda host: voice)
+                      tts_for=lambda host: tts)
     return backend, comfy

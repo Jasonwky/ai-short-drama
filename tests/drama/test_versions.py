@@ -128,3 +128,13 @@ def test_new_voice_voids_nothing_and_brings_its_text(store, sample):
     assert ch["voice_ref_path"] == f"outputs/tasks/{t}/voice.wav" and ch["voice_ref_text"] == "这块玉佩，是我母亲留给我的。"
     seg = repo.get(store, "segment", sample["seg"])
     assert seg["first_frame_path"] == "frames/s1.png" and seg["video_path"] == "videos/s1.mp4"
+
+
+def test_new_line_audio_voids_nothing(store, sample):
+    """换台词音频(第 2 期):首帧、视频、字幕都不动;视频是不是对着旧音频出的,由第 3 期的音频快照判。"""
+    t = _done(store, "segment", sample["seg"], "line_audio_path", "outputs/tasks/9/lines.wav")
+    pick = plan_pick(store, t, **CAPS)
+    assert pick.impact.segment_ids == () and pick.impact.videos == 0
+    confirm_pick(store, pick)
+    seg = repo.get(store, "segment", sample["seg"])
+    assert seg["line_audio_path"] == "outputs/tasks/9/lines.wav" and seg["video_path"] == "videos/s1.mp4"

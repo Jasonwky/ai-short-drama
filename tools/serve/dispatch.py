@@ -44,7 +44,7 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-SYNC_KINDS = ("align", "voice")     # 同步跑完、不进 ComfyUI 队列、占显存(字幕对齐、试听音)
+SYNC_KINDS = ("align", "voice", "tts")   # 同步跑完、不进 ComfyUI 队列、占显存(字幕对齐、试听音、台词音频)
 
 
 def pick_next(store: Store, host_id: int, allow_align: bool = True) -> sqlite3.Row | None:

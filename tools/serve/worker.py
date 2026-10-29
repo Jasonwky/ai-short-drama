@@ -9,7 +9,7 @@
   接管来的隧道(不是本进程起的)杀不掉,如实提示人去结束它,不假装已处理。
 - 没有单独的「恢复」流程:重启后库里的在途任务带着 external_id,照常推进就是接管。
 - 字幕对齐(kind = align)不进 ComfyUI 队列:空闲时轮到它,就在本轮里经 ssh 同步跑完(`aligner`,约 30 秒)。
-  试听音(kind = voice)同理(`voicer`:qwen-tts venv 合成 + whisper 回听,约一分钟)。
+  试听音(kind = voice)、台词音频(kind = tts)同理(`voicer` / `ttser`:qwen-tts venv 合成 + whisper 回听,约一分钟)。
 
 用法:
     python -m tools.serve.worker --db data/drama.db --host-id 1 --data-root data --once
@@ -27,7 +27,7 @@ from tools.drama.db import Store
 from tools.gen import preflight
 from tools.gen.capability import QWEN3_TTS, WHISPER_ALIGN
 from tools.gen.comfy_client import ComfyClient
-from tools.serve import aligner, voicer
+from tools.serve import aligner, ttser, voicer
 from tools.serve.collect import IN_FLIGHT, Collector
 from tools.serve import journal
 from tools.serve.dispatch import dispatch, pick_next
@@ -108,11 +108,14 @@ class Worker:
             elif task["kind"] == "voice":
                 out = voicer.run(self.store, client, host, task, data_root=self.data_root,
                                  run_tts=self.tts_for(host), run_align=self.align_for(host))
+            elif task["kind"] == "tts":
+                out = ttser.run(self.store, client, host, task, data_root=self.data_root,
+                                run_tts=self.tts_for(host), run_align=self.align_for(host))
             else:
                 out = dispatch(self.store, client, host, task, data_root=self.data_root, run=self.run_for(host))
             log.append(f"task {task['id']}: pending → {out.state} {out.message}".rstrip())
             log += [f"task {task['id']} 告警: {w}" for w in out.warnings]
-            if out.state not in IN_FLIGHT:       # 当场失败 / 同步跑完(对齐、试听音):不占位,但这一轮不再连着交,下一轮再看
+            if out.state not in IN_FLIGHT:       # 当场失败 / 同步跑完(对齐、试听音、台词音频):不占位,但这一轮不再连着交,下一轮再看
                 break
             busy += 1
         return log

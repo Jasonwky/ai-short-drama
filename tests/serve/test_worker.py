@@ -124,3 +124,19 @@ def test_voice_tasks_wait_while_our_own_tasks_are_in_flight(store, sample, host_
     set_task_state(store, first, "queued", external_id="x", host_id=host_id)
     plan_voice(store, sample["lin"], seed=2)
     assert pick_next(store, host_id, allow_align=False) is None
+
+
+def test_tts_tasks_run_through_the_tts_and_align_runners(store, sample, host_id, tmp_path):
+    from tools.gen.tts import plan_tts
+    from tools.serve.fakes import FakeAligner, fake_tts_runner
+    (tmp_path / "v").mkdir()
+    (tmp_path / "v/lin.wav").write_bytes(b"RIFF")
+    repo.update(store, "character", sample["lin"], voice_ref_path="v/lin.wav", voice_ref_text="试听句")
+    store.conn.execute("INSERT INTO asset_approval (table_name, row_id, slot, path, sha256, created_at)"
+                       " VALUES ('character', ?, 'voice', 'v/lin.wav', 'x', 't')", (sample["lin"],))
+    tts, asr, comfy = fake_tts_runner(), FakeAligner("这块玉佩是我母亲留给我的"), FakeComfy()
+    w = Worker(store, host_id, data_root=tmp_path, client_for=lambda h: comfy, tunnel=FakeTunnel(), run_for=_no_ssh,
+               align_for=lambda h: asr, tts_for=lambda h: tts)
+    tid = plan_tts(store, sample["seg"], seed=1)
+    w.tick()
+    assert repo.get(store, "task", tid)["state"] == "done" and len(tts.lines.calls) == 1 and tts.voice.calls == []
