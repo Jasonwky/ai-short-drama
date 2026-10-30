@@ -319,8 +319,13 @@ def _fourview_problems(store: Store, segment_id: int) -> list[str]:
     return problems
 
 
-def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = None) -> int:
-    """steps:None = 定稿(内置 20 步,或当前视频预设改过的步数;参数里不写这个键,与以前的任务一致);DRAFT_STEPS = 草稿档。"""
+# 口型不过自动重出时加的一句(用户 2026-10-30 选:画外音不算合格;spike-results/2026-10-29 第 4.3 节:镜头推走、说话人成了画外音)
+ON_CAMERA = "说话的人说话时正脸入镜,嘴部清楚可见。"
+
+
+def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = None, lip_retry: bool = False) -> int:
+    """steps:None = 定稿(内置 20 步,或当前视频预设改过的步数;参数里不写这个键,与以前的任务一致);DRAFT_STEPS = 草稿档。
+    lip_retry:口型检查不过后的自动重出(`serve/lipgate`):提示词加 ON_CAMERA,参数记 lip_retry = 1(按它数重出次数)。"""
     if steps not in (None, DRAFT_STEPS):
         raise ValueError(f"步数档只有定稿和草稿({DRAFT_STEPS} 步),给的是 {steps}")
     problems = video_problems(store, segment_id)
@@ -349,7 +354,8 @@ def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = 
     look = art.video_phrase(get_style(drama["style"]), art.of(drama))
     who = "".join(f"<Picture {k}> 是{r.name}的四视图(正面、左侧、背面、右侧)。" for k, r in enumerate(views, 2))
     move = framing.move_phrase(seg["movement"])      # 运镜由代码写,没填不拼(老段落提示词不变)
-    prompt = f"<Picture 1> {intro}" + who + body + "".join(f" {part}" for part in (lines, move, look) if part)
+    prompt = f"<Picture 1> {intro}" + who + body + "".join(f" {part}" for part in (lines, ON_CAMERA if lip_retry else "",
+                                                                                   move, look) if part)
 
     image_refs = [seg[ref_field]] + [r.path for r in views]
     anchors = [[seg[f], idx] for f, idx in pins]
@@ -361,6 +367,7 @@ def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = 
         "size": list(VIDEO_SIZE[_aspect(store, segment_id)]),
         "image_refs": image_refs, "anchors": anchors, "audio_ref": None, "audio_guide": audio["path"],
         "writes": "video_path", "expect_ext": ".mp4", **({"steps": steps} if steps else {}),
+        **({"lip_retry": 1} if lip_retry else {}),
         # 台本快照(用户 2026-10-23):这条视频生成时的描述、逐句台词、声音、提示词、时长 —— 任务参数不可改,就是记录;
         # 挑历史版本时看得到每一版说的是什么,台词改过也比得出来(rules.stale_lines)
         "script": {"description": seg["description"],

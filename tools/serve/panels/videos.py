@@ -32,7 +32,7 @@ from tools.gen.align import align_problems, plan_align
 from tools.gen.planner import plan_video
 from tools.gen import tts
 from tools.gen.workflows import DRAFT_STEPS, H3_STEPS
-from tools.serve import aligner, ttser
+from tools.serve import aligner, lipgate, ttser
 from tools.serve.dispatch import FEW_STEPS_NOTE, sha256_file, steps_of
 from tools.serve.panels.common import new_seed, readiness, render, rt
 
@@ -86,10 +86,7 @@ def _line_audio(store, root, seg, tasks) -> dict:
 
 
 def _spans(root, cur) -> list | None:
-    """当前视频钉的台词音频里每句的起止(音频钉在第 0 帧,视频时间轴与它一致);没钉 / 没记录 → None。"""
-    used = json.loads(cur["params_json"]).get("script", {}).get("line_audio") if cur else None
-    check = ttser.check_of(root, used["path"]) if used else None
-    return check["spans"] if check else None
+    return lipgate.spans_of(root, cur) if cur else None
 
 
 def _lipsync(root, s, cur) -> dict | None:

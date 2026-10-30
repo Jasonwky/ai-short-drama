@@ -256,6 +256,17 @@ def fake_tts_runner():
     return run
 
 
+def lip_measure_following_audio(path):
+    """假后端的口型量法:画面里一张脸,嘴随音量开合。假 GPU 的视频不是照台词音频生成的(演示图 / 测试图样),
+    真量它的口型没有意义 —— 自测用它走通口型闸门放行的那条路;判不过、自动重出由单测覆盖(tests/serve/test_lipgate.py)。"""
+    import math
+    from tools.cut import media
+    fps = 24.0
+    n = int(media.probe(Path(path)).duration * fps)
+    env = [0.05 + 0.04 * math.sin(2 * math.pi * t / 7) for t in range(n)]   # 测试图样的音轨是恒定正弦,没有起伏可跟:自造一段
+    return fps, [[(0.5, 0.02 + 0.5 * e)] for e in env], env
+
+
 def fake_backend(demo: dict | None = None):
     """(Backend, FakeComfy):界面上标明「假后端」;每轮 tick 前假 GPU 把队列跑完。LoRA 预检一律放行(假后端没有模型文件)。
     LLM 用假 LLM:产物标 fake,永远过不了审批。"""

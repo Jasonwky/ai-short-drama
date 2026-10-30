@@ -10,6 +10,7 @@
 - 没有单独的「恢复」流程:重启后库里的在途任务带着 external_id,照常推进就是接管。
 - 字幕对齐(kind = align)不进 ComfyUI 队列:空闲时轮到它,就在本轮里经 ssh 同步跑完(`aligner`,约 30 秒)。
   试听音(kind = voice)、台词音频(kind = tts)同理(`voicer` / `ttser`:qwen-tts venv 合成 + whisper 回听,约一分钟)。
+- 视频完成后在本轮里量口型(`lipgate`,本机 CPU 约 20 秒),不过就自动换种子重出(每份台词音频最多 2 次)。
 
 用法:
     python -m tools.serve.worker --db data/drama.db --host-id 1 --data-root data --once
@@ -27,7 +28,7 @@ from tools.drama.db import Store
 from tools.gen import preflight
 from tools.gen.capability import QWEN3_TTS, WHISPER_ALIGN
 from tools.gen.comfy_client import ComfyClient
-from tools.serve import aligner, ttser, voicer
+from tools.serve import aligner, lipgate, ttser, voicer
 from tools.serve.collect import IN_FLIGHT, Collector
 from tools.serve import journal
 from tools.serve.dispatch import dispatch, pick_next
@@ -94,6 +95,9 @@ class Worker:
         for task in inflight:
             out = self.collector.advance(self.store, client, task)
             log.append(f"task {task['id']}: {task['state']} → {out.state} {out.message}".rstrip())
+            if out.state == "done" and task["kind"] == "video":     # 口型闸门:量这条视频,不过就自动重出(有上限)
+                log += lipgate.after_video(self.store, self.data_root, self.store.conn.execute(
+                    "SELECT * FROM task WHERE id = ?", (task["id"],)).fetchone())
 
         busy = self.store.conn.execute(
             f"SELECT COUNT(*) FROM task WHERE host_id = ? AND state IN ({','.join('?' * len(IN_FLIGHT))})",

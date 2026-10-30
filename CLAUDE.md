@@ -128,7 +128,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   **每段都有台词**(用户 2026-10-29):分镜判卷 `storyboard.view_problems` 打回没台词的段;字幕对齐 `subtitles.align` 逐字按拼音比;
   导出拦「当前视频没钉 / 钉的不是段落现在的台词音频」(`tts.video_audio_problem`);显式标识读回只比上半幅(下半幅是字幕带);
   **口型检查** `cut/lipsync.py`:本机 mediapipe(模型放 gitignored 的 `thirdparty/models/face_landmarker.task`)按句量嘴张开度与音量相关,
-  逐句时间取钉进去的台词音频的 `tts.json` spans,按视频 sha256 缓存;视频卡片「量口型」;合格线暂定 0.30,**还只显示、不拦导出**(待真机标定);
+  逐句时间取钉进去的台词音频的 `tts.json` spans,按视频 sha256 缓存;视频卡片「量口型」;合格线暂定 0.30(真机标定见 spike 4.3 节);
+  **口型闸门** `serve/lipgate.py`(用户 2026-10-30:画外音不算合格):worker 收到视频就量,有句「不过」→ 新种子 + 提示词加 `planner.ON_CAMERA`
+  自动重出(参数 `lip_retry`,每份台词音频最多 2 次,之后交给人);导出拦当前视频口型「不过」/ 没量过;「无法判定」不拦、靠看片;
   流程栏「⑤ 资产图审」(`llm/asset_review.py`)自动排检查。视频规划另拦**在途 / 缺失的四视图**(说话的角色),
   (第一期曾让没台词的段落写「全程没有人说话」—— 已废:H3 照念不误,现在每段都必须有台词);**每段都要过语音检查**,导出拦;
   旁白只出字幕(`subtitles.place_narration`,放进最长空档);「成片」面板有整集预览(不过导出闸门)。

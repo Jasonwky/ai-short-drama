@@ -71,12 +71,18 @@ def measure(path: Path) -> tuple[float, list[list[tuple[float, float]]], list[fl
             rows.append([(f[1].x, abs(f[14].y - f[13].y) / (abs(f[152].y - f[10].y) + 1e-6)) for f in res.face_landmarks])
             i += 1
     cap.release()
+    return fps, rows, envelope(path, fps, len(rows))
+
+
+def envelope(path: Path, fps: float, n: int) -> list[float]:
+    """音轨每帧(1/fps 秒)的 RMS,共 n 帧。"""
+    import numpy as np
     raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
                          capture_output=True, check=True).stdout
     a = np.frombuffer(raw, np.int16).astype(np.float32) / 32768
     hop = 16000 / fps
-    env = [float(np.sqrt(np.mean(a[int(k * hop):int((k + 1) * hop)] ** 2) + 1e-12)) for k in range(len(rows))]
-    return fps, rows, env
+    return [float(np.sqrt(np.mean(a[int(k * hop):int((k + 1) * hop)] ** 2) + 1e-12)) if int(k * hop) < len(a) else 0.0
+            for k in range(n)]
 
 
 def _corr(a: list[float], b: list[float]) -> float | None:

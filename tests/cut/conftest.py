@@ -3,7 +3,7 @@
 import pytest
 
 from tests.drama.conftest import give_line_audio, sample, store  # noqa: F401  —— 复用 P1 的夹具
-from tools.cut import checklist
+from tools.cut import checklist, lipsync
 from tools.drama import repo, rules
 from tools.drama.tasks import create_task, set_task_state
 from tools.gen import tts
@@ -38,6 +38,13 @@ def done_task(store, root, seg_id, kind, rel, data, refs=()):  # noqa: F811
     set_task_state(store, t, "queued", external_id=f"p{t}")
     set_task_state(store, t, "done", result_path=rel, result_sha256=sha256_file(root / rel))
     repo.update(store, "segment", seg_id, **{writes: rel})
+    if kind == "video" and params["script"]["line_audio"]:     # 与 worker 一样,视频出来就量口型(样片里没有脸 → 每句无法判定)
+        spans = root / params["script"]["line_audio"]["path"]
+        spans = spans.with_name("tts.json")
+        if not spans.is_file():
+            spans.parent.mkdir(parents=True, exist_ok=True)
+            spans.write_text('{"spans": [[0.2, 0.9]]}', encoding="utf-8")
+        lipsync.check(root, rel, [[0.2, 0.9]])
     return t
 
 

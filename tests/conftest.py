@@ -38,6 +38,13 @@ def _blank_text_reader(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _faceless_lipsync(monkeypatch):
+    """口型检查默认换成「画面里没有脸」(每句无法判定、不重出):单测不跑 mediapipe;要测判定 / 重出的测试自己再换。"""
+    from tools.cut import lipsync
+    monkeypatch.setattr(lipsync, "measure", lambda path: (24.0, [[] for _ in range(240)], [0.0] * 240))
+
+
+@pytest.fixture(autouse=True)
 def _no_blank_screen(monkeypatch):
     """白屏检测默认换成「没白屏」:别的测试不为它跑 ffmpeg;要测检测本身 / 命中的测试自己再换。"""
     from tools.cut import blankscan

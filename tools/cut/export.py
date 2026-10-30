@@ -25,7 +25,7 @@ from tools.drama import repo, rules
 from tools.drama.db import Store, now
 from tools.drama.tasks import producer
 from tools.gen import tts
-from tools.serve import aligner
+from tools.serve import aligner, lipgate
 from tools.serve.dispatch import sha256_file
 
 SETTING = "content_producer"
@@ -94,6 +94,9 @@ def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
             pinned = tts.video_audio_problem(store, s, cur) if cur is not None else "当前视频不是由生成任务产出的,没法核对台词音频"
             if pinned:
                 problems.append(f"段落 {s['number']} {pinned} —— 先合成台词音频,再重出视频并在历史里「调用」")
+            lip = lipgate.problem(store, data_root, s, cur)                                  # 画外音不算(用户 2026-10-30)
+            if lip:
+                problems.append(lip)
             narr = rules.narration(s["description"] or "")
             if narr:                                                                            # 旁白要放进台词之间的空档
                 sub = s["subtitle_path"]

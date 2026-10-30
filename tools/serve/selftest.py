@@ -45,7 +45,8 @@ from tools.drama import approval, repo
 from tools.drama.db import Store
 from tools.gen.assets import _png
 from tools.serve.app import create_app
-from tools.serve.fakes import fake_backend
+from tools.cut import lipsync
+from tools.serve.fakes import fake_backend, lip_measure_following_audio
 from tools.serve.hosts import add_host
 from tools.serve.panels import REGISTRY, url_for
 from tools.serve.runtime import Runtime
@@ -367,6 +368,7 @@ def run(out_dir: Path) -> dict:
     store = Store(work / "drama.db")
     ids = seed_demo(store, work)
     backend, _ = fake_backend(demo_products())
+    lipsync.measure = lip_measure_following_audio     # 假 GPU 的片不是照台词音频生成的,量它的口型没有意义(见 fakes 说明)
     backend.align_for(None).heard = "这块玉佩是我母亲留给我的我会一直带着它"     # 两段的台词
     runtime = Runtime(store, work, backend, poll_sec=1)
     runtime.start()
@@ -426,9 +428,8 @@ def run(out_dir: Path) -> dict:
                      f"#seg-{seg2} [data-line-audio] [data-line-hits]", 40),
                     ("frames", "生成首帧", {}, [f"#seg-{seg} [data-generate-frame]"], f"#seg-{seg} .current-media img", 40),
                     ("videos", "生成视频", {}, [f"#seg-{seg} [data-generate-video]"], f"#seg-{seg} .current-media video", 60),
-                    # 口型检查(spec 2026-10-30 第 6.3 节):真跑 mediapipe;假 GPU 的测试图样里没有脸 → 每句「无法判定」
-                    ("videos", "量口型 → 每句一条结论", {}, [f"#seg-{seg} [data-measure-lipsync]"],
-                     f"#seg-{seg} [data-lip-verdict]", 60),
+                    # 口型闸门(spec 2026-10-30 第 6.3 节):worker 收到视频就量(假后端用 fakes.lip_measure_following_audio,嘴随声动)
+                    ("videos", "出片后自动量口型 → 每句「过」", {}, [], f'#seg-{seg} [data-lip-verdict="过"]', 60),
                     ("videos", "生成记录里点「溯源」→ 倒查到首帧", {}, [f"#seg-{seg} [data-trace-link]"],
                      "[data-trace-tree] [data-node-inputs] img", 20),
                     ("frames", "生成记录里点任务号 → 任务详情", {}, [f"#seg-{seg} [data-task-link]"], "[data-task-params]", 20),
