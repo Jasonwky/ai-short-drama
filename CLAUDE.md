@@ -130,7 +130,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   **口型检查** `cut/lipsync.py`:本机 mediapipe(模型放 gitignored 的 `thirdparty/models/face_landmarker.task`)按句量嘴张开度与音量相关,
   逐句时间取钉进去的台词音频的 `tts.json` spans,按视频 sha256 缓存;视频卡片「量口型」;合格线暂定 0.30,**还只显示、不拦导出**(待真机标定);
   流程栏「⑤ 资产图审」(`llm/asset_review.py`)自动排检查。视频规划另拦**在途 / 缺失的四视图**(说话的角色),
-  没台词的段落不写声音、写「全程没有人说话」;**每段都要过语音检查**(无台词段也对齐,有人声即失败),导出拦;
+  (第一期曾让没台词的段落写「全程没有人说话」—— 已废:H3 照念不误,现在每段都必须有台词);**每段都要过语音检查**,导出拦;
   旁白只出字幕(`subtitles.place_narration`,放进最长空档);「成片」面板有整集预览(不过导出闸门)。
   `cast` / `drama_review` 要 `batch` 时在函数里取(`batch` 模块级引用 `service`,`service` 登记它们 —— 循环导入)
   派 worktree agent 前先推送或让它先 `git merge --ff-only main`:worktree 从远程 `origin/HEAD` 建(findings/2026-10-24-多agent并行开发复盘.md)
