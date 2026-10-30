@@ -66,3 +66,32 @@ def test_video_card_says_when_the_video_was_pinned_to_another_line_audio(client,
     give_line_audio(store, sample["seg"], sec=6.0)          # 重合成了一条台词音频
     card = _card(client.get(f"/episode/{sample['episode']}/videos").text, sample["seg"])
     assert "data-audio-mismatch" in card and "不是段落现在的台词音频" in card
+
+
+def test_lipsync_is_measured_on_demand_and_shown_per_line(client, runtime, store, sample, monkeypatch):
+    """口型(spec 2026-10-30 第 6.3 节):按钮量一次,结果按句列在视频卡片上;逐句时间取自钉进去的台词音频。"""
+    import math
+    from tests.drama.conftest import give_line_audio
+    from tools.cut import lipsync
+    from tools.gen.planner import plan_video
+    root = runtime.data_root
+    give_line_audio(store, sample["seg"])
+    lines = repo.get(store, "segment", sample["seg"])["line_audio_path"]
+    (root / lines).parent.mkdir(parents=True, exist_ok=True)
+    (root / lines).with_name("tts.json").write_text(json.dumps({"spans": [[0.3, 2.7]], "lines": [], "hits": [], "sec": 3.5, "attempt": 1,
+                                                                "heard": "", "ok": True, "attempts": []}),
+                                                    encoding="utf-8")
+    vid = plan_video(store, sample["seg"], seed=1)
+    set_task_state(store, vid, "queued", external_id="x")
+    set_task_state(store, vid, "done", result_path="outputs/tasks/v/h3.mp4")
+    (root / "outputs/tasks/v").mkdir(parents=True)
+    (root / "outputs/tasks/v/h3.mp4").write_bytes(b"mp4")
+    repo.update(store, "segment", sample["seg"], video_path="outputs/tasks/v/h3.mp4")
+    card = _card(client.get(f"/episode/{sample['episode']}/videos").text, sample["seg"])
+    assert "data-measure-lipsync" in card and "data-lip-verdict" not in card
+    env = [0.05 + 0.04 * math.sin(2 * math.pi * t / 6) for t in range(72)]
+    monkeypatch.setattr(lipsync, "measure", lambda path: (24.0, [[(0.4, 0.02 + 0.5 * e)] for e in env], env))
+    assert client.post(f"/segment/{sample['seg']}/lipsync", follow_redirects=False).status_code == 303
+    page = client.get(f"/episode/{sample['episode']}/videos").text      # 口型在卡片后半(卡片里还嵌着别的 section)
+    lip = page.split("data-lipsync")[1].split("</ul>")[0]
+    assert 'data-lip-verdict="过"' in lip and "第 1 句(0.3–2.7 秒)" in lip and "滞后 0 帧" in lip

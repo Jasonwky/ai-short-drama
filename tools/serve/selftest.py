@@ -426,6 +426,9 @@ def run(out_dir: Path) -> dict:
                      f"#seg-{seg2} [data-line-audio] [data-line-hits]", 40),
                     ("frames", "生成首帧", {}, [f"#seg-{seg} [data-generate-frame]"], f"#seg-{seg} .current-media img", 40),
                     ("videos", "生成视频", {}, [f"#seg-{seg} [data-generate-video]"], f"#seg-{seg} .current-media video", 60),
+                    # 口型检查(spec 2026-10-30 第 6.3 节):真跑 mediapipe;假 GPU 的测试图样里没有脸 → 每句「无法判定」
+                    ("videos", "量口型 → 每句一条结论", {}, [f"#seg-{seg} [data-measure-lipsync]"],
+                     f"#seg-{seg} [data-lip-verdict]", 60),
                     ("videos", "生成记录里点「溯源」→ 倒查到首帧", {}, [f"#seg-{seg} [data-trace-link]"],
                      "[data-trace-tree] [data-node-inputs] img", 20),
                     ("frames", "生成记录里点任务号 → 任务详情", {}, [f"#seg-{seg} [data-task-link]"], "[data-task-params]", 20),

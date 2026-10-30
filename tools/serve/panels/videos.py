@@ -22,7 +22,7 @@ import random
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from tools.cut import blankscan, checklist, cuts, keycheck, media, review, subtitles
+from tools.cut import blankscan, checklist, cuts, keycheck, lipsync, media, review, subtitles
 from tools.drama import blocking, repo, rules
 from tools.llm import runs, vision_check
 from tools.drama.tasks import producer, tasks_for
@@ -85,6 +85,21 @@ def _line_audio(store, root, seg, tasks) -> dict:
                          if t["state"] == "done" and t["result_path"] != path][:4]}
 
 
+def _spans(root, cur) -> list | None:
+    """当前视频钉的台词音频里每句的起止(音频钉在第 0 帧,视频时间轴与它一致);没钉 / 没记录 → None。"""
+    used = json.loads(cur["params_json"]).get("script", {}).get("line_audio") if cur else None
+    check = ttser.check_of(root, used["path"]) if used else None
+    return check["spans"] if check else None
+
+
+def _lipsync(root, s, cur) -> dict | None:
+    """口型检查(spec 2026-10-30 第 6.3 节):只读缓存,量要点按钮(本机 CPU 约 20 秒一条)。"""
+    spans = _spans(root, cur)
+    if spans is None or not s["video_path"] or not (root / s["video_path"]).is_file():
+        return None
+    return {"lines": lipsync.cached(root, s["video_path"], spans), "r_min": lipsync.R_MIN, "lag_max": lipsync.LAG_MAX}
+
+
 @router.get("/episode/{episode_id}/videos")
 def page(request: Request, episode_id: int):
     runtime = rt(request)
@@ -134,6 +149,7 @@ def page(request: Request, episode_id: int):
                      "vision": _vision(store, s, runtime.data_root) if has_video else None,
                      "review": _review(store, runtime.data_root, s) if has_video else None,
                      "extra": aligner.extra_speech_for(store, runtime.data_root, s["id"]),
+                     "lipsync": _lipsync(runtime.data_root, s, cur),
                      "cues": subtitles.parse_srt(sub.read_text(encoding="utf-8")) if sub and sub.is_file() else []})
         prev = cut
     return render(request, "videos.html", "videos", episode_id=episode_id, ep=ep, segs=segs, seed=new_seed(),
@@ -177,6 +193,18 @@ async def confirm_review(request: Request, segment_id: int):
                    str(form.get("note", "")))
     ep_id = repo.get(runtime.store, "segment", segment_id)["episode_id"]
     return RedirectResponse(f"/episode/{ep_id}/videos#seg-{segment_id}", status_code=303)
+
+
+@router.post("/segment/{segment_id}/lipsync")
+def measure_lipsync(request: Request, segment_id: int):
+    """量当前视频的口型(本机 CPU,一条 10 秒片约 20 秒;结果按视频 sha256 缓存)。"""
+    runtime = rt(request)
+    seg = repo.get(runtime.store, "segment", segment_id)
+    spans = _spans(runtime.data_root, producer(runtime.store, "video", seg["video_path"]) if seg["video_path"] else None)
+    if spans is None:
+        raise ValueError("当前视频没有钉台词音频,没有逐句时间可量 —— 先合成台词音频、重出视频")
+    lipsync.check(runtime.data_root, seg["video_path"], spans)
+    return RedirectResponse(f"/episode/{seg['episode_id']}/videos#seg-{segment_id}", status_code=303)
 
 
 @router.post("/segment/{segment_id}/align")

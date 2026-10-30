@@ -148,6 +148,25 @@
       {% endif %}
     </div>
     {% endif %}
+    {% if s.lipsync %}
+      <h3>口型</h3>
+      <div data-lipsync>
+        <p class="hint">每句台词的时间里,有没有一张脸的嘴随声音开合(mediapipe 量嘴张开度与音量的相关;合格线暂定 r ≥ {{ s.lipsync.r_min }}、
+          滞后 ±{{ s.lipsync.lag_max }} 帧内,前几集出片后重标)。只判「嘴随声动」,不判是不是对的那个人在说 —— 那个靠看片确认。</p>
+        {% if s.lipsync.lines is none %}
+          <form method="post" action="/segment/{{ s.row.id }}/lipsync">
+            <button class="btn small" type="submit" data-measure-lipsync>量口型(本机约 20 秒)</button></form>
+        {% else %}
+          <ul class="checklist">
+            {% for x in s.lipsync.lines %}
+              <li class="{{ 'ok' if x.verdict == '过' else ('bad' if x.verdict == '不过' else 'warn') }}" data-lip-verdict="{{ x.verdict }}">
+                第 {{ x.n }} 句({{ "%.1f"|format(x.start) }}–{{ "%.1f"|format(x.end) }} 秒):<b>{{ x.verdict }}</b>
+                {% if x.r is not none %}· 相关 {{ "%.2f"|format(x.r) }} · 滞后 {{ x.lag }} 帧{% endif %}{% if x.why %} —— {{ x.why }}{% endif %}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    {% endif %}
     <h3>字幕</h3>
     {% if s.extra and s.extra.problem %}<p class="hint" data-extra-speech-unknown>{{ s.extra.problem }}</p>{% endif %}
     {% for r in (s.extra.runs if s.extra else []) %}
