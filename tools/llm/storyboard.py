@@ -31,6 +31,7 @@ SYSTEM = """你是短剧分镜师。把用户给的一集剧本拆成视频段�
 
 要求:
 1. 每个段落是一个 8–12 秒左右、**不跨场景**的连续片段,含 2–4 个子镜头(subshots)。
+   **每个段落至少有一句画面里的角色说的台词**(旁白不算):没有台词的过场并进相邻有台词的段落。
 2. 子镜头的 visual 写画面(人物动作、表情、机位),**不要写台词、不要用【】「」符号**。
 3. 台词放在 speaker / line 里:line 必须**逐字照抄**剧本里的原句(不改字、不加舞台提示、不合并);
    没有台词的子镜头 speaker 与 line 都填 null。剧本里的每一句台词都要出现且只出现一次,顺序不变。
@@ -156,6 +157,11 @@ def view_problems(where: str, v: dict, ctx: dict, prev: dict | None, cap=MINIMAX
     """一段的判卷(段落视图:scene / characters / props / description / duration / image_prompt / video_prompt /
     blocking / shot_type)。首次拆分镜与分镜修改共用;prev:同一集上一段的视图(同场景时对表)。"""
     problems = [f"{where}:{p}" for p in rules.check_segment(v["description"], v["duration"], cap)]
+    if not rules.dialogue_lines(v["description"], v["characters"]):
+        # 用户 2026-10-29:每段都必须有台词 —— 没台词的段落 H3 会自己编着说(第 1 集第 2 段念出了「全程没有人说话」),
+        # 视频要钉台词音频,没台词就出不了(spec 2026-10-30-台词配音与口型闸门-design.md 第 6.1 节)
+        problems.append(f"{where}:没有台词 —— 每段至少要有一句画面里的角色说的话(旁白不算);"
+                        "把这段并进相邻有台词的段落,或把剧本里相邻的一句台词分到这段")
     bound = v["characters"] + [v["scene"]] + v["props"]
     for field_name in ("image_prompt", "video_prompt"):
         _, unknown = refs.find_mentions(v[field_name], bound)

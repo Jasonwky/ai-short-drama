@@ -277,3 +277,12 @@ def test_first_split_rejects_narration_as_a_line():
                         {"visual": "燕无咎沉默", "speaker": "燕无咎", "line": "三天前,我还只是个人人可欺的伙夫。"}]}
     problems = storyboard.judge_factory(ctx)({"segments": [seg]})
     assert any("在剧本里是旁白" in p for p in problems)
+
+
+def test_a_segment_without_dialogue_is_sent_back():
+    """用户 2026-10-29:每段都必须有台词(spec 2026-10-30 第 6.1 节)。旁白也不算台词。"""
+    a = good_args()
+    a["segments"].append(_seg("老宅书房", ["沈墨"], [_sub("沈墨推开窗"), _sub("窗外下起雨。旁白：那一夜,谁都没睡。")]))
+    probs = sb.judge_factory(CTX)(a)
+    assert any(p.startswith("段落5:没有台词") for p in probs)
+    assert not any(p.startswith(("段落1:没有台词", "段落4:没有台词")) for p in probs)

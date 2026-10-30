@@ -113,7 +113,7 @@ def test_task_view_has_everything_for_one_task(store, two_segments):
                                                                 encoding="utf-8")
     journal.append(root, [f"task {tid}: queued → done", f"task {tid}0: 别的任务"], prefix="host=1 ")
     v = trace_views.task_view(store, root, tid)
-    assert v["row"]["id"] == tid and v["params"] == {"writes": "video_path"}
+    assert v["row"]["id"] == tid and v["params"]["writes"] == "video_path" and "line_audio" in v["params"]["script"]
     assert v["refs"] == [{"path": "outputs/tasks/f1/frame.png", "exists": True}]
     assert v["submitted"].startswith("{") and len(v["journal"].lines) == 1
     with pytest.raises(KeyError):

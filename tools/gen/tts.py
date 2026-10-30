@@ -117,3 +117,15 @@ def audio_problems(store: Store, segment: sqlite3.Row) -> list[str]:
     if audio["sec"] > hi:
         return [f"台词音频 {audio['sec']:.1f} 秒,超过视频上限 {hi:.1f} 秒 —— 拆段或删句(不压缩语速)"]
     return []
+
+
+def video_audio_problem(store: Store, segment: sqlite3.Row, video_task: sqlite3.Row) -> str:
+    """这条视频钉的台词音频(台本快照)是不是段落现在的那条;是 → 空,否则说明。
+    第 3 期之前出的视频没钉台词音频(台词是 H3 自己编着念的,口型与内容都不受控)也算不是。"""
+    used = json.loads(video_task["params_json"]).get("script", {}).get("line_audio")
+    if used is None:
+        return "当前视频没有钉台词音频(台词是模型自己念的,口型与内容都不受控)"
+    now = current_audio(store, segment)
+    if now is None or now["sha256"] != used["sha256"]:
+        return "当前视频钉的不是段落现在的台词音频"
+    return ""

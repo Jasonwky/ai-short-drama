@@ -2,7 +2,8 @@
 """成片面板。导出是真 ffmpeg(两段 1 秒样片)。"""
 import subprocess
 
-from tests.cut.conftest import SRT, done_task, speech_checked
+from tests.cut.conftest import SRT, SRT2, done_task
+from tests.drama.conftest import give_line_audio
 from tools.cut import checklist, export, review
 from tools.drama import repo
 from tools.serve.fakes import sample_mp4
@@ -12,14 +13,17 @@ PRODUCER = "91310000MA1234567X"
 
 def two_videos(store, sample, root):
     seg2 = repo.add_segment(store, sample["episode"], 2, scene_id=sample["yard"], duration_sec=8.0,
-                            description="【镜头1】林小雨把玉佩收进怀里。")
+                            description="【镜头1】林小雨把玉佩收进怀里。【镜头2】林小雨说：「我会一直带着它。」")
+    repo.bind_characters(store, seg2, [sample["lin"]])
     repo.update(store, "segment", sample["seg"], first_frame_path=None, video_path=None)
     mp4 = sample_mp4()
     for n, seg in ((1, sample["seg"]), (2, seg2)):
+        give_line_audio(store, seg)                      # 每段都有台词、视频钉着台词音频(spec 2026-10-30)
         done_task(store, root, seg, "video", f"outputs/tasks/v{n}/clip.mp4", mp4)
     done_task(store, root, sample["seg"], "align", "outputs/tasks/a1/subtitles.srt", SRT.encode("utf-8"),
               refs=["outputs/tasks/v1/clip.mp4"])
-    speech_checked(store, root, seg2, "outputs/tasks/v2/clip.mp4")
+    done_task(store, root, seg2, "align", "outputs/tasks/a2/subtitles.srt", SRT2.encode("utf-8"),
+              refs=["outputs/tasks/v2/clip.mp4"])
     for seg in (sample["seg"], seg2):                    # 看片确认(v13):人看过才许导
         review.confirm(store, root, seg, list(checklist.MANUAL))
     return seg2

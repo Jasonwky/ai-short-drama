@@ -24,6 +24,7 @@ from tools.cut import aigc, blankscan, media, music, provenance, review, subtitl
 from tools.drama import repo, rules
 from tools.drama.db import Store, now
 from tools.drama.tasks import producer
+from tools.gen import tts
 from tools.serve import aligner
 from tools.serve.dispatch import sha256_file
 
@@ -89,6 +90,10 @@ def readiness(store: Store, data_root: Path, episode_id: int) -> list[str]:
                 if new or gone:
                     problems.append(f"段落 {s['number']} 的台词改过、当前视频还是旧台词(新:{' / '.join(new) or '无'}"
                                     f" / 删:{' / '.join(gone) or '无'})—— 重出后在历史里「调用」新视频,或把段落描述改回去")
+            # 台词与口型(spec 2026-10-30 第 6.5 节):成片音轨必须是钉进去的台词音频,而且是段落现在那条
+            pinned = tts.video_audio_problem(store, s, cur) if cur is not None else "当前视频不是由生成任务产出的,没法核对台词音频"
+            if pinned:
+                problems.append(f"段落 {s['number']} {pinned} —— 先合成台词音频,再重出视频并在历史里「调用」")
             narr = rules.narration(s["description"] or "")
             if narr:                                                                            # 旁白要放进台词之间的空档
                 sub = s["subtitle_path"]
@@ -274,8 +279,11 @@ def _label_check(labeled: Path, plain: Path, label: media.Label) -> tuple[bool, 
     w, h, short = p.width, p.height, min(p.width, p.height)
     times = sorted({0.0, min(1.0, p.duration / 2), p.duration / 2, max(0.0, p.duration - 0.1)})
     notes = []
+    # 只比上半幅:标识按规定在左上角;下半幅是字幕带,两版各自烧字幕、编码噪点会把差异框撑到底部
+    # (每段都有台词后实测:1.9s 处字幕边缘撑出差异框 (16, 14, 102, 589))。标识跑到下半幅 → 看不到 → 照样失败
+    top = h // 2 * w
     for t in times:
-        box = media.diff_bbox(media.gray_frame(labeled, t, w, h), media.gray_frame(plain, t, w, h), w)
+        box = media.diff_bbox(media.gray_frame(labeled, t, w, h)[:top], media.gray_frame(plain, t, w, h)[:top], w)
         if box is None:
             return False, f"{t:.1f}s 处看不到标识"
         x0, y0, x1, y1 = box

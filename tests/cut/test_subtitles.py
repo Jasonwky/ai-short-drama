@@ -44,7 +44,8 @@ def test_two_lines_in_one_clip():
 
 def test_align_counts_hits_and_does_not_reuse_chars():
     a = st.align(TWO_LINES, TWO_CHARS)
-    assert [(x["hit"], x["total"]) for x in a] == [(12, 12), (15, 16)]
+    # 第 2 句唯一没对上的那个字是同音字:按拼音比之后算对上(spec 2026-10-30 第 6.2 节;以前是 15 / 16)
+    assert [(x["hit"], x["total"]) for x in a] == [(12, 12), (16, 16)]
     assert a[1]["first"] == 12                  # 第 2 句从第 1 句用剩的字里找,不会回头匹配第 1 句的「我」「是」
 
 
@@ -159,7 +160,8 @@ def test_same_length_misheard_chars_count_for_a_short_line():
     assert problems == []
     assert [c.text for c in cues] == HOMO_LINES and cues[1].end >= 6.32      # 句尾落在「蔽」的结束时刻上
     a = st.align(HOMO_LINES, HOMO_CHARS)
-    assert (a[1]["hit"], a[1]["subst"], a[1]["total"]) == (3, 2, 5)
+    # 「杖毙」听成同音的两个字:按拼音比之后直接算对上,不再靠等长替换兜(以前是 严格 3 + 替换 2)
+    assert (a[1]["hit"], a[1]["subst"], a[1]["total"]) == (5, 0, 5)
 
 
 def test_substitutions_alone_do_not_pass_a_line():
@@ -186,3 +188,11 @@ def test_narration_without_room_is_reported_not_overlapped():
 def test_short_segment_caps_narration_at_its_length():
     out, problems = st.place_narration([], ["她走了"], 1.0)
     assert problems == [] and out == [Cue("她走了", 0.0, 1.0)]
+
+
+def test_homophones_and_traditional_count_as_hits():
+    """Whisper 常出同音字 / 繁体(spike-results/2026-10-29 第 4.2 节:「伙夫」→「霍夫」、「靴印」→「薛印」、繁体「來」):
+    按拼音比,不算没对上(spec 2026-10-30 第 6.2 节)。"""
+    chars = [(c, 0.1 * i, 0.1 * (i + 1)) for i, c in enumerate("三日后营中比武霍夫你来当靶子新來的")]
+    a = st.align(["三日后营中比武!伙夫,你来当靶子!", "新来的"], chars)
+    assert [(x["hit"], x["total"]) for x in a] == [(14, 14), (3, 3)]

@@ -6,9 +6,12 @@ import subprocess
 
 import pytest
 
-from tools.cut import export, media, music
-from tests.cut.conftest import done_task, speech_checked
+from tools.cut import checklist, export, media, music
+from tests.cut.conftest import SRT2, done_task, speech_checked
+from tests.drama.conftest import give_line_audio
 from tools.drama import repo
+from tools.serve.dispatch import sha256_file
+from tools.serve.fakes import sample_mp4
 
 PRODUCER = "91310000MA1234567X"
 
@@ -112,7 +115,7 @@ def test_stale_running_export_is_failed_on_restart(store, two_segments):
 
 
 def test_subtitles_are_burned_into_both_versions(store, two_segments, tmp_path):
-    """段落 1 的字幕 0.2–0.9 s:两版成片在 0.5 s 处底部都有字,1.5 s(段落 2,没台词)处没有;整集 SRT 随成片交付。"""
+    """段落 1 的字幕 0.2–0.9 s:两版成片在 0.5 s 处底部都有字,1.5 s(段落 2 台词之前)处没有;整集 SRT 随成片交付。"""
     s, root = two_segments, two_segments["root"]
     eid = export.begin(store, root, s["episode"], PRODUCER)
     export.run(store, root, eid)
@@ -287,7 +290,7 @@ def test_music_is_mixed_into_both_versions_and_read_back(store, two_segments):
     assert len(checks) == 9 and checks["配乐"]["ok"] and f"#{cid}" in checks["配乐"]["detail"]
     ref = media.rms_envelope(root / "outputs/tasks/v2/clip.mp4")[5]               # 段落 2 中间:原片只有 440 Hz 对白
     for key in ("labeled_path", "plain_path"):                                      # 两版都混了
-        env = media.rms_envelope(root / row[key])[12:18]           # cue 满音量的 1.2–1.8 秒;单个 0.1 秒窗的噪声起伏太大
+        env = media.rms_envelope(root / row[key])[12:15]           # cue 满音量、段落 2 台词之前的 1.2–1.5 秒;单个 0.1 秒窗的噪声起伏太大
         assert sum(v * v for v in env) / len(env) > ref * ref * 1.05   # 按能量比:台词处压低后的音乐也要明显加上去
     [m] = json.loads((root / row["report_path"]).read_text(encoding="utf-8"))["music"]
     assert m["license"] == "自购曲库 #42,商用授权" and m["source"] == "人工提供,非 AI 生成"
@@ -453,7 +456,15 @@ def test_reviews_from_the_old_checklist_block_export(store, two_segments, mp4_by
 def test_narration_is_burned_as_subtitles_and_blocks_when_it_does_not_fit(store, two_segments):
     """旁白不配音、只出字幕(spec 2026-10-28 第 4 节):进整集 SRT;放不下时导出前就拦。"""
     s, root = two_segments, two_segments["root"]
-    repo.update(store, "segment", s["seg2"], description="【镜头1】林小雨把玉佩收进怀里。旁白：她走了。")
+    # 每段都有台词(用户 2026-10-29),1 秒样片里放不下旁白:段落 2 换成 3 秒的片,台词照旧在 0.6–0.95 s,后面 2 秒是空档
+    repo.update(store, "segment", s["seg2"],
+                description=repo.get(store, "segment", s["seg2"])["description"] + "旁白：她走了。")
+    give_line_audio(store, s["seg2"])
+    done_task(store, root, s["seg2"], "video", "outputs/tasks/v2b/clip.mp4", sample_mp4(3))
+    done_task(store, root, s["seg2"], "align", "outputs/tasks/a2b/subtitles.srt", SRT2.encode("utf-8"),
+              refs=["outputs/tasks/v2b/clip.mp4"])
+    repo.add_review(store, s["seg2"], video_path="outputs/tasks/v2b/clip.mp4",
+                    sha256=sha256_file(root / "outputs/tasks/v2b/clip.mp4"), checks=list(checklist.MANUAL))
     eid = export.begin(store, root, s["episode"], PRODUCER)
     export.run(store, root, eid)
     srt = (root / export.get(store, eid)["plain_path"]).with_name("subtitles.srt").read_text(encoding="utf-8")

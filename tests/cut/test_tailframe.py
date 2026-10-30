@@ -40,7 +40,7 @@ def test_replacing_a_first_frame_under_an_existing_video_reports_the_cost(store,
     tailframe.confirm_tail(store, root, plan)
     seg2 = repo.get(store, "segment", s["seg2"])
     assert seg2["video_path"] is None and seg2["first_frame_path"].startswith("outputs/tailframes/")
-    assert [t["kind"] for t in tasks_for(store, "segment", s["seg2"])] == ["image", "video", "align", "image"]  # 旧版都还在
+    assert [t["kind"] for t in tasks_for(store, "segment", s["seg2"])] == ["tts", "image", "video", "align", "image"]  # 旧版都还在
 
 
 def test_refusals_say_what_to_do(store, two_segments):

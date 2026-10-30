@@ -14,6 +14,9 @@ from __future__ import annotations
 import difflib
 import re
 from dataclasses import dataclass
+from functools import lru_cache
+
+from pypinyin import lazy_pinyin
 
 PUNCT = set("，。！？、,.!?\"'“”「」：:；; …—")
 MIN_HIT = 0.7            # 一句台词至少对上 70% 的字才算对齐可信
@@ -38,6 +41,12 @@ def _clean(s: str) -> str:
     return "".join(c for c in s if c not in PUNCT and not c.isspace())
 
 
+@lru_cache(maxsize=None)
+def _sound(c: str) -> str:
+    """一个字的无声调拼音(非汉字原样)。Whisper 常出同音字 / 繁体,按音比才不误判(spec 2026-10-30 第 6.2 节)。"""
+    return lazy_pinyin(c)[0].lower()
+
+
 def align(lines: list[str], chars: list[tuple[str, float, float]]) -> list[dict]:
     """每句台词按顺序在识别文字里找命中字(用过的字不再给后面的句子)。
     返回 [{line, hit, subst, total, first, second, last, lead}]:hit 是严格对上的字数,subst 是算作识别错字的等长替换字数;
@@ -48,7 +57,8 @@ def align(lines: list[str], chars: list[tuple[str, float, float]]) -> list[dict]
     out = []
     for line in lines:
         want, rest = _clean(line), heard[used:]
-        ops = difflib.SequenceMatcher(None, want, rest, autojunk=False).get_opcodes()
+        ops = difflib.SequenceMatcher(None, [_sound(c) for c in want], [_sound(c) for c in rest],
+                                      autojunk=False).get_opcodes()      # 逐字换成音再比,下标与字一一对应
         pairs, exact, subst = [], 0, 0
         for k, (tag, i1, i2, j1, j2) in enumerate(ops):
             if tag == "equal":
