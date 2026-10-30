@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""资产面板:音色锁定(改声音描述先报代价)与种子锁定。"""
+"""资产面板:改声音描述不作废视频(台词配音之后)与种子锁定。"""
 from tools.drama import repo
 from tools.drama.tasks import create_task, set_task_state, tasks_for
 
@@ -9,15 +9,12 @@ def _edit(client, sample, **over):
     return client.post(f"/asset/character/{sample['lin']}", data=data, follow_redirects=False)
 
 
-def test_changing_the_voice_asks_first_and_only_drops_videos(client, store, sample):
-    r = _edit(client, sample, voice_desc="低沉女声")
-    assert r.status_code == 200 and "改声音描述:这会重跑 1 条视频、0 张参考帧" in r.text
-    assert repo.get(store, "character", sample["lin"])["voice_desc"] == "清亮女声"          # 还没改
-    r = _edit(client, sample, voice_desc="低沉女声", confirm="1")
-    assert r.status_code == 303
+def test_changing_the_voice_description_keeps_videos(client, store, sample):
+    """spec 2026-10-30 第 3 节:声音描述只影响以后的试听音;视频按定稿音色合成的台词音频出,描述改了不作废它。"""
+    assert _edit(client, sample, voice_desc="低沉女声").status_code == 303
     seg = repo.get(store, "segment", sample["seg"])
     assert repo.get(store, "character", sample["lin"])["voice_desc"] == "低沉女声"
-    assert seg["video_path"] is None and seg["first_frame_path"] == "frames/s1.png"        # 参考帧不动
+    assert seg["video_path"] == "videos/s1.mp4" and seg["first_frame_path"] == "frames/s1.png"
 
 
 def test_editing_other_fields_does_not_ask(client, store, sample):

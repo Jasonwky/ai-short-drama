@@ -27,7 +27,7 @@ router = APIRouter()
 
 # 面板上可编辑的文字字段(都在 repo 的写入白名单里)
 FIELDS = {
-    "character": [("appearance", "外貌"), ("styling", "服装造型"), ("voice_desc", "声音描述(视频里的音色靠它)"),
+    "character": [("appearance", "外貌"), ("styling", "服装造型"), ("voice_desc", "声音描述(按它生成试听音;定稿的那一版用来念这个角色的全部台词)"),
                   ("final_prompt", "生成描述(英文效果更稳)")],
     "scene": [("location", "地点"), ("time", "时间"), ("lighting", "光线"), ("final_prompt", "生成描述"),
               ("purpose", "用途"), ("furnishings", "固定陈设(顿号分隔,如「雕花床榻、屏风」;填了就按它查首帧提示词里的陈设)")],
@@ -78,12 +78,8 @@ async def edit(request: Request, table: str, row_id: int):
         raise ValueError(f"场景用途只能是 {'、'.join(furnish.PURPOSES)}")
     row = repo.get(store, table, row_id)
     back = f"/drama/{row['drama_id']}/assets"
-    if table == "character" and fields["voice_desc"] != row["voice_desc"]:
-        imp = invalidation.impact(store, "voice", row_id, video_cap=MINIMAX_H3, image_cap=QWEN_IMAGE_EDIT_2511)
-        if needs_confirm(imp, form):
-            return confirm_page(request, summary="改声音描述:" + imp.summary(), action=f"/asset/{table}/{row_id}",
-                                fields=fields, back=back, panel_key="assets", drama_id=row["drama_id"])
-        invalidation.apply(store, imp)
+    # 改声音描述不作废视频(spec 2026-10-30 第 3 节):声音不再写进视频提示词,成片音轨是按**定稿音色**合成的台词音频;
+    # 描述只影响以后生成的试听音。换了定稿音色,台词音频与视频的过期由 tts.stale / tts.video_audio_problem 判
     repo.update(store, table, row_id, **fields)
     return RedirectResponse(back, status_code=303)
 
