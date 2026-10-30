@@ -122,6 +122,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   「资产图审」页底部试听 / 挑版 / 定稿(`asset_approval` slot = voice,回听不过要写理由);新依赖 `pypinyin`;
   **台词音频**:`kind = 'tts'`(`gen/tts.py` 规划,快照说话人的定稿音色;`serve/ttser.py` 执行,云机 `tts_remote.py` 用 Base 逐句克隆拼接),
   `speech.line_hits` 逐句按拼音判,不过换种子(+1000·k)重合成最多 3 次;视频面板每段「台词音频」;`tts.stale` 判台词 / 音色改过;
+  **视频钉台词音频**(v25 `task.result_sec`):`plan_video` 要求有台词、有没过期的台词音频(`tts.audio_problems`),
+  `build_h3(guide_audio=)` 串 `MiniMaxH3AddGuide(audio, audio_vae=7, frame_idx=0)`,帧数按音频时长(短的补到训练下限,超上限拒绝);
+  提示词里不再写「XX 的声音」/「全程没有人说话」(H3 会把提示词里的中文念出来);`graphs.load_images` 认 LoadAudio,改参重跑照样上传音频;
   流程栏「⑤ 资产图审」(`llm/asset_review.py`)自动排检查。视频规划另拦**在途 / 缺失的四视图**(说话的角色),
   没台词的段落不写声音、写「全程没有人说话」;**每段都要过语音检查**(无台词段也对齐,有人声即失败),导出拦;
   旁白只出字幕(`subtitles.place_narration`,放进最长空档);「成片」面板有整集预览(不过导出闸门)。

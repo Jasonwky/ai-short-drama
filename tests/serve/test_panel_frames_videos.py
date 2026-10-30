@@ -2,10 +2,20 @@
 from tools.drama import repo
 from tools.drama.tasks import tasks_for
 from tools.serve.hosts import add_host
+import pytest
+
+from tests.drama.conftest import give_line_audio
+
+
+@pytest.fixture(autouse=True)
+def _line_audio(request):
+    """视频规划要台词音频(spec 2026-10-30 第 5 节):用到样例的测试,给段落补一条已合成的。"""
+    if "sample" in request.fixturenames:
+        give_line_audio(request.getfixturevalue("store"), request.getfixturevalue("sample")["seg"])
 
 
 def _ready_for_frames(store, sample, root):
-    for rel in ("assets/lin.png", "assets/lin_4v.png", "assets/yard.png", "assets/jade.png"):
+    for rel in ("audio/lines_1.wav", "assets/lin.png", "assets/lin_4v.png", "assets/yard.png", "assets/jade.png"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_bytes(b"png")
     repo.update(store, "segment", sample["seg"], first_frame_path=None, video_path=None)
@@ -35,7 +45,7 @@ def test_video_refused_without_first_frame_shows_reason(client, store, sample):
     repo.update(store, "segment", sample["seg"], first_frame_path=None)
     r = client.post(f"/segment/{sample['seg']}/video", data={"seed": "1"})
     assert r.status_code == 400 and "首帧" in r.text
-    assert tasks_for(store, "segment", sample["seg"]) == []
+    assert [t for t in tasks_for(store, "segment", sample["seg"]) if t["kind"] != "tts"] == []   # 只有夹具给的台词音频
 
 
 def test_videos_panel_shows_estimate_and_host_state(client, store, sample):

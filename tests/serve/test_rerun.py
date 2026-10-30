@@ -15,6 +15,14 @@ from tools.serve import rerun
 from tools.serve.dispatch import SUBMITTED, dispatch
 from tools.serve.fakes import OBJECT_INFO_MIN
 from tools.serve.hosts import get_host
+from tests.drama.conftest import give_line_audio
+
+
+@pytest.fixture(autouse=True)
+def _line_audio(request):
+    """视频规划要台词音频(spec 2026-10-30 第 5 节):用到样例的测试,给段落补一条已合成的。"""
+    if "sample" in request.fixturenames:
+        give_line_audio(request.getfixturevalue("store"), request.getfixturevalue("sample")["seg"])
 
 OBJECT_INFO = json.loads(OBJECT_INFO_MIN.read_text(encoding="utf-8"))
 NO_SSH = lambda a, s: (0, "")  # noqa: E731
@@ -22,7 +30,7 @@ NO_SSH = lambda a, s: (0, "")  # noqa: E731
 
 @pytest.fixture
 def world(store, sample, host_id, tmp_path):
-    for rel in ("assets/lin.png", "assets/lin_4v.png", "assets/yard.png", "assets/jade.png", "frames/s1.png", "videos/s1.mp4"):
+    for rel in ("audio/lines_1.wav", "assets/lin.png", "assets/lin_4v.png", "assets/yard.png", "assets/jade.png", "frames/s1.png", "videos/s1.mp4"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_bytes(b"x")
     comfy = FakeComfy()
@@ -56,7 +64,7 @@ def test_rerun_with_a_new_seed_and_sampler_becomes_a_new_version(store, sample, 
     sent = world["comfy"].submitted[out.message]
     assert sent["27"]["inputs"]["seed"] == 12345 and sent["27"]["inputs"]["sampler_name"] == "euler_ancestral"
     assert sent["18"]["inputs"]["image"].startswith("ai-short-drama/")             # 提交时参考图换成了上传名
-    assert len(tasks_for(store, "segment", sample["seg"])) == 2                     # 旧版还在,新版并列
+    assert len([t for t in tasks_for(store, "segment", sample["seg"]) if t["kind"] == "image"]) == 2   # 旧版还在,新版并列
 
 
 def test_video_rerun_keeps_the_script_snapshot(store, sample, world):
@@ -67,6 +75,11 @@ def test_video_rerun_keeps_the_script_snapshot(store, sample, world):
     assert problems == []
     new = json.loads(repo.get(store, "task", tid)["params_json"])
     assert new["script"] == json.loads(repo.get(store, "task", src)["params_json"])["script"]
+    # 台词音频跟着重跑:进溯源、提交时和参考图一样上传并换成上传名(否则 LoadAudio 拿着本机路径,云机上找不到)
+    assert "audio/lines_1.wav" in new["image_refs"]
+    out = dispatch(store, world["comfy"], world["host"], repo.get(store, "task", tid), data_root=world["root"], run=NO_SSH)
+    sent = world["comfy"].submitted[out.message]
+    assert sent["90"]["inputs"]["audio"].startswith("ai-short-drama/") and sent["90"]["inputs"]["audio"].endswith("lines_1.wav")
 
 
 def test_keyframe_rerun_writes_back_to_the_same_keyframe(store, sample, world):

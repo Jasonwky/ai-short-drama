@@ -6,6 +6,14 @@ from tools.gen.planner import plan_first_frame, plan_video
 from tools.serve.fakes import FakeComfy, FakeTunnel
 from tools.serve.hosts import set_ssh_port
 from tools.serve.worker import Worker, main
+from tests.drama.conftest import give_line_audio
+
+
+@pytest.fixture(autouse=True)
+def _line_audio(request):
+    """视频规划要台词音频(spec 2026-10-30 第 5 节):用到样例的测试,给段落补一条已合成的。"""
+    if "sample" in request.fixturenames:
+        give_line_audio(request.getfixturevalue("store"), request.getfixturevalue("sample")["seg"])
 
 
 def _no_ssh(host):
@@ -16,7 +24,7 @@ def _no_ssh(host):
 
 @pytest.fixture
 def world(store, sample, host_id, tmp_path):
-    for rel in ("assets/lin.png", "assets/lin_4v.png", "assets/yard.png", "assets/jade.png"):
+    for rel in ("audio/lines_1.wav", "assets/lin.png", "assets/lin_4v.png", "assets/yard.png", "assets/jade.png"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_bytes(b"png")
     repo.update(store, "segment", sample["seg"], first_frame_path=None, video_path=None)
@@ -41,7 +49,7 @@ def test_segment_goes_from_nothing_to_frame_and_video(store, sample, world):
 
     video = plan_video(store, sample["seg"], seed=12)
     w.tick()
-    assert comfy.uploaded[-2].endswith(f"outputs/tasks/{frame}/frame.png")   # 视频吃的是刚出的首帧(之后是四视图)
+    assert comfy.uploaded[-3].endswith(f"outputs/tasks/{frame}/frame.png")   # 视频吃的是刚出的首帧(之后是四视图、台词音频)
     comfy.finish("p2", "clip.mp4")
     w.tick()
     assert repo.get(store, "segment", sample["seg"])["video_path"] == f"outputs/tasks/{video}/clip.mp4"

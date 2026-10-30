@@ -110,7 +110,7 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
         note = "line_audio_path 已有台词音频,新版本留在任务记录里待人挑选"
     else:
         repo.update(store, "segment", task["target_id"], line_audio_path=rel)
-    set_task_state(store, tid, "done", result_path=rel, result_sha256=sha256_file(wav))
+    set_task_state(store, tid, "done", result_path=rel, result_sha256=sha256_file(wav), result_sec=last["sec"])
     return Outcome("done", note or rel)
 
 

@@ -62,7 +62,8 @@ def record_local(store: Store, *, kind: str, target_type: str, target_id: int, m
 
 def set_task_state(store: Store, task_id: int, state: str, *, external_id: str | None = None,
                    host_id: int | None = None, result_path: str | None = None,
-                   result_sha256: str | None = None, error: str | None = None) -> None:
+                   result_sha256: str | None = None, error: str | None = None,
+                   result_sec: float | None = None) -> None:
     with store.write() as c:
         row = c.execute("SELECT state, started_at FROM task WHERE id = ?", (task_id,)).fetchone()
         if row is None:
@@ -78,7 +79,7 @@ def set_task_state(store: Store, task_id: int, state: str, *, external_id: str |
         sets: dict = {"state": state, "state_since": now()}
         for key, val in (("external_id", external_id), ("host_id", host_id),
                          ("result_path", result_path), ("result_sha256", result_sha256),
-                         ("error", error)):
+                         ("error", error), ("result_sec", result_sec)):
             if val is not None:
                 sets[key] = val
         if state == "running" and row["started_at"] is None:

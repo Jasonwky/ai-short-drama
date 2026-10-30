@@ -6,8 +6,17 @@ import pytest
 from tools.drama import art, repo
 from tests.drama.conftest import approve_all
 from tools.drama.styles import get_style
+from tools.gen.capability import MINIMAX_H3
 from tools.gen.planner import plan_first_frame, plan_last_frame, plan_video
 from tools.gen.workflows import H3_MODEL, QWEN_MODEL
+from tests.drama.conftest import give_line_audio
+
+
+@pytest.fixture(autouse=True)
+def _line_audio(request):
+    """视频规划要台词音频(spec 2026-10-30 第 5 节):用到样例的测试,给段落补一条已合成的。"""
+    if "sample" in request.fixturenames:
+        give_line_audio(request.getfixturevalue("store"), request.getfixturevalue("sample")["seg"])
 
 # 首帧类提示词末尾由代码拼的画风(spec 2026-10-28 第 2 节;样例剧是写实、没填美术设定)
 TAIL = art.frame_suffix(get_style("realistic"), art.Art())
@@ -55,14 +64,15 @@ def test_first_frame_only_for_modes_that_use_it(store, sample):
 
 # ── 视频 ──────────────────────────────────────────────
 
-def test_video_task_carries_voice_description_not_reference_audio(store, sample):
+def test_video_task_pins_the_line_audio_and_writes_no_voice_description(store, sample):
     row, p = _task(store, plan_video(store, sample["seg"], seed=7))
     assert (row["kind"], row["model"]) == ("video", H3_MODEL)
-    # 台词必须逐字进提示词:P2 真链路里漏了它,H3 说出的是无意义音节(ASR 相似度 0.05)
+    # 台词必须逐字进提示词:P2 真链路里漏了它,H3 说出的是无意义音节(ASR 相似度 0.05)。
+    # 声音不再写成文字(spec 2026-10-30 第 5 节):台词音频钉第 0 帧就是成片音轨;提示词里的中文都可能被念出来
     assert row["prompt"] == ("<Picture 1> 是本段的首帧。<Picture 2> 是林小雨的四视图(正面、左侧、背面、右侧)。"
                              "林小雨 在 老宅庭院 低头看 玉佩,然后抬眼说话 "
-                             "林小雨用普通话说:「这块玉佩，是我母亲留给我的。」 林小雨的声音:清亮女声。 " + LOOK)
-    assert (p["frames"], p["size"], p["audio_ref"]) == (192, [768, 1344], None)
+                             "林小雨用普通话说:「这块玉佩，是我母亲留给我的。」 " + LOOK)
+    assert (p["frames"], p["size"], p["audio_ref"], p["audio_guide"]) == (192, [768, 1344], None, "audio/lines_1.wav")
     assert p["image_refs"] == ["frames/s1.png", "assets/lin_4v.png"] and p["writes"] == "video_path"
     assert p["anchors"] == [["frames/s1.png", 0]]           # 首帧既是参考图,又钉在第 0 帧
 
@@ -73,7 +83,8 @@ def test_video_task_records_the_script_snapshot(store, sample):
     snap = params["script"]
     assert snap["description"] == repo.get(store, "segment", sample["seg"])["description"]
     assert snap["lines"] == [["林小雨", "这块玉佩，是我母亲留给我的。"]]
-    assert snap["voices"] == {"林小雨": "清亮女声"} and snap["duration_sec"] == 8.0
+    assert snap["line_audio"] == {"path": "audio/lines_1.wav", "sha256": "sha-lines-1", "sec": 8.0}
+    assert snap["duration_sec"] == 8.0 and "voices" not in snap
     assert snap["video_prompt"] == repo.get(store, "segment", sample["seg"])["video_prompt"]
 
 
@@ -109,7 +120,8 @@ def test_first_last_mode_pins_both_ends(store, sample):
     row, p = _task(store, plan_video(store, sample["seg"], seed=1))
     assert p["image_refs"] == ["frames/s1.png", "assets/lin_4v.png"]
     assert p["anchors"] == [["frames/s1.png", 0], ["frames/s1_end.png", -1]]
-    assert json.loads(row["refs_json"]) == ["frames/s1.png", "assets/lin_4v.png", "frames/s1_end.png"]     # 溯源里两张都在
+    assert json.loads(row["refs_json"]) == ["frames/s1.png", "assets/lin_4v.png", "frames/s1_end.png",
+                                            "audio/lines_1.wav"]     # 溯源里两张都在,台词音频也在
     assert row["prompt"].startswith("<Picture 1> 是本段的首帧。")
 
 
@@ -130,6 +142,7 @@ def test_fourviews_join_as_references_most_lines_first(store, sample):
                 video_prompt="@林小雨 把 @玉佩 递给 @沈墨,@老宅庭院 黄昏",
                 description="【镜头1】沈墨说：「好。」【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」")
     approve_all(store)                      # 测试里新建 / 换的资产图要定稿(spec 2026-10-28 第 6.1 节)
+    give_line_audio(store, sample["seg"])   # 台词改了,台词音频要按新台词重合成
     row, p = _task(store, plan_video(store, sample["seg"], seed=1))
     assert p["image_refs"] == ["frames/s1.png", "fv/lin.png", "fv/shen.png"]
     assert row["prompt"].startswith("<Picture 1> 是本段的首帧。<Picture 2> 是林小雨的四视图(正面、左侧、背面、右侧)。"
@@ -358,18 +371,31 @@ def test_speaker_without_fourview_blocks_but_silent_extra_does_not(store, sample
         plan_video(store, sample["seg"], seed=1)
 
 
-def test_voices_only_for_speakers_and_silence_is_spelled_out(store, sample):
-    repo.update(store, "character", sample["shen"], voice_desc="低沉男声", fourview_path="assets/shen_4v.png")
-    repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])
-    repo.update(store, "segment", sample["seg"], video_prompt="@林小雨 在 @老宅庭院 低头看 @玉佩,@沈墨 在一旁")
-    approve_all(store)                      # 测试里新建 / 换的资产图要定稿(spec 2026-10-28 第 6.1 节)
-    row, p = _task(store, plan_video(store, sample["seg"], seed=1))
-    assert "林小雨的声音" in row["prompt"] and "沈墨的声音" not in row["prompt"]
-    assert p["script"]["voices"] == {"林小雨": "清亮女声"}
+def test_video_needs_lines_and_a_fresh_line_audio(store, sample):
+    """spec 2026-10-30 第 5、6.1 节:没台词的段落不出视频(以前写「全程没有人说话」,H3 照念不误);
+    台词改过、台词音频没重合成,也不出(视频会对着旧台词的口型)。"""
     repo.update(store, "segment", sample["seg"], description="【镜头1】林小雨低头看着玉佩。【镜头2】她握紧玉佩。")
-    row, p = _task(store, plan_video(store, sample["seg"], seed=1))
-    assert "的声音" not in row["prompt"] and "全程没有人说话,只有环境声。" in row["prompt"]
-    assert p["script"]["voices"] == {}
+    with pytest.raises(ValueError, match="这段没有台词"):
+        plan_video(store, sample["seg"], seed=1)
+    repo.update(store, "segment", sample["seg"], description="【镜头1】林小雨低头。【镜头2】林小雨说：「我不要它了。」")
+    with pytest.raises(ValueError, match="台词音频过期"):
+        plan_video(store, sample["seg"], seed=1)
+    store.conn.execute("UPDATE segment SET line_audio_path = NULL WHERE id = ?", (sample["seg"],))
+    with pytest.raises(ValueError, match="还没有台词音频"):
+        plan_video(store, sample["seg"], seed=1)
+
+
+def test_frames_follow_the_line_audio(store, sample):
+    """帧数由台词音频定:短于训练下限的补到下限(124 帧),超过上限的拒绝(拆段或删句,不压缩语速)。"""
+    give_line_audio(store, sample["seg"], sec=4.0)
+    _, p = _task(store, plan_video(store, sample["seg"], seed=1))
+    assert p["frames"] == 124 and p["script"]["line_audio"]["sec"] == 4.0
+    give_line_audio(store, sample["seg"], sec=11.0)
+    _, p = _task(store, plan_video(store, sample["seg"], seed=1))
+    assert p["frames"] == MINIMAX_H3.frames_for(11.0)
+    give_line_audio(store, sample["seg"], sec=16.0)
+    with pytest.raises(ValueError, match="拆段或删句"):
+        plan_video(store, sample["seg"], seed=1)
 
 
 def test_art_setting_reaches_frame_and_video_and_banned_words_block(store, sample):

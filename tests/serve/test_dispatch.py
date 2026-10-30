@@ -8,6 +8,14 @@ from tools.drama.tasks import create_task
 from tools.gen.planner import plan_first_frame, plan_video
 from tools.serve.dispatch import dispatch, pick_next
 from tools.serve.hosts import get_host
+from tests.drama.conftest import give_line_audio
+
+
+@pytest.fixture(autouse=True)
+def _line_audio(request):
+    """视频规划要台词音频(spec 2026-10-30 第 5 节):用到样例的测试,给段落补一条已合成的。"""
+    if "sample" in request.fixturenames:
+        give_line_audio(request.getfixturevalue("store"), request.getfixturevalue("sample")["seg"])
 
 
 def _no_ssh(args, stdin):
@@ -16,7 +24,7 @@ def _no_ssh(args, stdin):
 
 @pytest.fixture
 def data_root(tmp_path, sample):
-    for rel in ("assets/lin.png", "assets/lin_4v.png", "assets/shen.png", "assets/yard.png", "assets/jade.png", "frames/s1.png"):
+    for rel in ("audio/lines_1.wav", "assets/lin.png", "assets/lin_4v.png", "assets/shen.png", "assets/yard.png", "assets/jade.png", "frames/s1.png"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_bytes(b"png")
     return tmp_path
@@ -40,13 +48,16 @@ def test_first_frame_is_uploaded_built_and_queued(store, sample, host_id, data_r
     assert len(out.warnings) == 2          # GGUF 上的 LoRA 无法核验 —— 如实带出来,不吞
 
 
-def test_video_task_submits_h3_without_audio(store, sample, host_id, data_root):
+def test_video_task_pins_the_line_audio_and_still_feeds_no_reference_audio(store, sample, host_id, data_root):
+    """台词音频钉第 0 帧(spec 2026-10-30 第 5 节);ref2va 的参考音频(节点 11)照旧不喂(闸门 0-4:会复读内容)。"""
     tid = plan_video(store, sample["seg"], seed=3)
     comfy = FakeComfy()
     out = dispatch(store, comfy, get_host(store, host_id), _task(store, tid), data_root=data_root, run=_no_ssh)
     wf = comfy.submitted[out.message]
     assert "11" not in wf and wf["19"]["inputs"]["noise_seed"] == 3
-    assert comfy.uploaded == [(data_root / p).as_posix() for p in ("frames/s1.png", "assets/lin_4v.png")]
+    assert comfy.uploaded == [(data_root / p).as_posix() for p in ("frames/s1.png", "assets/lin_4v.png", "audio/lines_1.wav")]
+    assert wf["90"]["class_type"] == "LoadAudio" and wf["90"]["inputs"]["audio"].endswith("/lines_1.wav")
+    assert wf["13"]["inputs"]["conditioning"] == ["91", 0]
 
 
 def test_missing_reference_fails_loudly(store, sample, host_id, data_root):

@@ -6,6 +6,14 @@ import pytest
 from tools.drama import repo
 from tools.drama.tasks import create_task, set_task_state, tasks_for
 from tools.gen.fill import confirm_fill, plan_fill
+from tests.drama.conftest import give_line_audio
+
+
+@pytest.fixture(autouse=True)
+def _line_audio(request):
+    """视频规划要台词音频(spec 2026-10-30 第 5 节):用到样例的测试,给段落补一条已合成的。"""
+    if "sample" in request.fixturenames:
+        give_line_audio(request.getfixturevalue("store"), request.getfixturevalue("sample")["seg"])
 
 
 def _host(store):

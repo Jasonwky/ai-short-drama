@@ -74,3 +74,31 @@ def test_audio_not_made_by_a_tts_task_is_stale(store, two):
     assert tts.stale(store, repo.get(store, "segment", two["seg"])) == ["当前台词音频不是由台词音频任务生成的,重新合成"]
     repo.update(store, "segment", two["seg"], line_audio_path=None)
     assert tts.stale(store, repo.get(store, "segment", two["seg"])) == []
+
+
+def _done_sec(store, tid, path, sec):
+    set_task_state(store, tid, "queued", external_id="x")
+    set_task_state(store, tid, "done", result_path=path, result_sha256="sha-lines", result_sec=sec)
+    repo.update(store, "segment", repo.get(store, "task", tid)["target_id"], line_audio_path=path)
+
+
+def test_current_audio_and_its_problems(store, two):
+    seg = lambda: repo.get(store, "segment", two["seg"])   # noqa: E731
+    assert "还没有台词音频" in tts.audio_problems(store, seg())[0]
+    _done_sec(store, tts.plan_tts(store, two["seg"], seed=1), "outputs/tasks/60/lines.wav", 6.2)
+    assert tts.current_audio(store, seg()) == {"path": "outputs/tasks/60/lines.wav", "sha256": "sha-lines", "sec": 6.2}
+    assert tts.audio_problems(store, seg()) == []
+    repo.update(store, "segment", two["seg"], description=TWO.replace("我知道。", "我早就知道。"))
+    assert tts.current_audio(store, seg()) is None and "过期" in tts.audio_problems(store, seg())[0]
+    repo.update(store, "segment", two["seg"], description="林小雨低头不语。")
+    assert "没有台词" in tts.audio_problems(store, seg())[0]
+
+
+def test_audio_longer_than_the_video_limit_is_refused(store, two):
+    _done_sec(store, tts.plan_tts(store, two["seg"], seed=1), "outputs/tasks/61/lines.wav", 16.0)
+    assert "拆段或删句" in tts.audio_problems(store, repo.get(store, "segment", two["seg"]))[0]
+
+
+def test_audio_without_a_recorded_length_must_be_redone(store, two):
+    _done(store, tts.plan_tts(store, two["seg"], seed=1), "outputs/tasks/62/lines.wav")
+    assert "没记时长" in tts.audio_problems(store, repo.get(store, "segment", two["seg"]))[0]

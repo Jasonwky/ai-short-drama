@@ -23,6 +23,25 @@ def approve_all(store):
                                    " VALUES (?, ?, ?, ?, 'test', 't')", (table, r[0], slot, r[1]))
 
 
+def give_line_audio(store, seg, sec=8.0):
+    """段落里说话的角色都有定稿音色,段落有一条已合成、记了时长的台词音频(spec 2026-10-30 第 4 节;视频规划要它)。
+    时长默认等于样例段落的 8 秒,原有的帧数断言不变。测试改了台词要重新给。"""
+    from tools.drama.tasks import set_task_state
+    from tools.gen import tts
+    for c in repo.segment_assets(store, seg)["characters"]:
+        path = f"audio/voice_{c['id']}.wav"
+        if c["voice_ref_path"] != path:
+            repo.update(store, "character", c["id"], voice_ref_path=path, voice_ref_text="试听句")
+            store.conn.execute("INSERT INTO asset_approval (table_name, row_id, slot, path, sha256, created_at)"
+                               " VALUES ('character', ?, 'voice', ?, 'test', 't')", (c["id"], path))
+    if not tts._lines(store, seg):
+        return
+    tid = tts.plan_tts(store, seg, seed=1)
+    set_task_state(store, tid, "queued", external_id="x")
+    set_task_state(store, tid, "done", result_path=f"audio/lines_{seg}.wav", result_sha256=f"sha-lines-{tid}", result_sec=sec)
+    repo.update(store, "segment", seg, line_audio_path=f"audio/lines_{seg}.wav")
+
+
 @pytest.fixture
 def sample(store):
     """一部剧、一集、两个角色、一个场景、一个道具、一个已出过片的段落。

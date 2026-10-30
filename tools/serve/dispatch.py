@@ -68,8 +68,9 @@ def pick_next(store: Store, host_id: int, allow_align: bool = True) -> sqlite3.R
 
 
 def _uploads(p: dict) -> list[str]:
-    """要传到云机的图:参考图 + 锚点图,去重、保持顺序(首帧常常既是参考图又是锚点)。"""
+    """要传到云机的文件:参考图 + 锚点图 + 台词音频,去重、保持顺序(首帧常常既是参考图又是锚点)。"""
     return list(dict.fromkeys([*p["image_refs"], *(path for path, _ in p.get("anchors", [])),
+                               *([p["audio_guide"]] if p.get("audio_guide") else []),
                                *p.get("second_pass", {}).get("image_refs", []),
                                *(p[k] for k in ("source", "ref") if k in p)]))      # source / ref:局部替换
 
@@ -95,7 +96,8 @@ def build_workflow(task: sqlite3.Row, names: dict[str, str]) -> dict:
         if p["audio_ref"] is not None:
             raise ValueError("参考音频尚未接入(闸门 0-4:喂参考音频会复读内容)")
         wf = build_h3(task["prompt"], image_names, None, p["frames"], task["seed"], size=tuple(p["size"]),
-                      anchors=[(names[path], idx) for path, idx in p.get("anchors", [])])
+                      anchors=[(names[path], idx) for path, idx in p.get("anchors", [])],
+                      guide_audio=names[p["audio_guide"]] if p.get("audio_guide") else None)
     else:
         raise ValueError(f"未知工作流 {p['workflow']!r}")
     return presets.apply_params(wf, p)      # 规划时绑定的模板预设(没有就原样)

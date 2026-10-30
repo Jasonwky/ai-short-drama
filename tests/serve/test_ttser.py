@@ -51,6 +51,7 @@ def test_lines_are_cloned_listened_to_and_written_back(store, sample, world):
     assert repo.get(store, "segment", sample["seg"])["line_audio_path"] == rel
     check = ttser.check_of(world["root"], rel)
     assert check["ok"] and check["attempt"] == 1 and check["hits"] == [1.0, 1.0] and len(check["spans"]) == 2
+    assert repo.get(store, "task", tid)["result_sec"] == check["sec"] > 0
     job = json.loads(world["tts"].calls[0][1])
     assert job["seed"] == 5 and job["voices"]["沈墨"]["text"] == "shen的试听句"
     assert job["voices"]["林小雨"]["audio"].startswith("/root/autodl-tmp/ComfyUI/input/ai-short-drama/")

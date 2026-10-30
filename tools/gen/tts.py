@@ -13,7 +13,7 @@ import sqlite3
 from tools.drama import approval, repo, rules
 from tools.drama.db import Store
 from tools.drama.tasks import create_task
-from tools.gen.capability import QWEN3_TTS
+from tools.gen.capability import MINIMAX_H3, QWEN3_TTS
 
 GAP_SEC = 0.4       # 句间停顿
 LEAD_SEC = 0.3      # 开头留白
@@ -91,3 +91,29 @@ def stale(store: Store, segment: sqlite3.Row) -> list[str]:
         if who in now and (now[who]["path"], now[who]["sha256"]) != (v["path"], v["sha256"]):
             out.append(f"角色「{who}」换了定稿音色")
     return out
+
+
+def current_audio(store: Store, segment: sqlite3.Row) -> dict | None:
+    """视频能钉的台词音频:由 tts 任务产出、没过期、记了时长的当前那条 → {path, sha256, sec};否则 None(原因看 `audio_problems`)。"""
+    task = producer(store, segment) if segment["line_audio_path"] else None
+    if task is None or task["result_sec"] is None or stale(store, segment):
+        return None
+    return {"path": task["result_path"], "sha256": task["result_sha256"], "sec": task["result_sec"]}
+
+
+def audio_problems(store: Store, segment: sqlite3.Row) -> list[str]:
+    """出视频前台词音频这一关:没台词、没音频、过期、太长。空 = 可以出视频。"""
+    if not _lines(store, segment["id"]):
+        return ["这段没有台词 —— 每段都要有画面里的人说的话(spec 2026-10-30 第 6.1 节),到分镜里补一句"]
+    if not segment["line_audio_path"]:
+        return ["还没有台词音频 —— 先在本段「台词音频」点合成(视频按它对口型)"]
+    reasons = stale(store, segment)
+    if reasons:
+        return [f"台词音频过期:{r},重新合成" for r in reasons]
+    audio = current_audio(store, segment)
+    if audio is None:
+        return ["当前台词音频没记时长(第 3 期之前合成的),重新合成"]
+    lo, hi = MINIMAX_H3.duration_range_sec()
+    if audio["sec"] > hi:
+        return [f"台词音频 {audio['sec']:.1f} 秒,超过视频上限 {hi:.1f} 秒 —— 拆段或删句(不压缩语速)"]
+    return []

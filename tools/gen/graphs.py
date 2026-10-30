@@ -188,16 +188,22 @@ def seeds(wf: dict) -> list[tuple[str, str, int]]:
             if k in SEED_INPUTS and isinstance(v, int) and not isinstance(v, bool)]
 
 
+# 读本机文件、提交前要上传的加载节点 → 它放文件名的输入。台词音频(LoadAudio)与参考图同样处理:
+# 改参重跑时进溯源、提交时上传换名(spec 2026-10-30-台词配音与口型闸门-design.md 第 5 节)
+FILE_INPUTS = {"LoadImage": "image", "LoadAudio": "audio"}
+
+
 def load_images(wf: dict) -> dict[str, str]:
-    return {nid: n["inputs"]["image"] for nid, n in wf.items()
-            if n["class_type"] == "LoadImage" and isinstance(n["inputs"].get("image"), str)}
+    """{节点号: 文件}:加载图像与加载音频节点里的文件。"""
+    return {nid: n["inputs"][FILE_INPUTS[n["class_type"]]] for nid, n in wf.items()
+            if n["class_type"] in FILE_INPUTS and isinstance(n["inputs"].get(FILE_INPUTS[n["class_type"]]), str)}
 
 
 def with_images(wf: dict, names: dict[str, str]) -> dict:
-    """把「加载图像」节点里的路径按 names 换掉(相对路径 ↔ 上传名)。"""
+    """把加载节点(图像 / 音频)里的路径按 names 换掉(相对路径 ↔ 上传名)。"""
     wf = copy.deepcopy(wf)
-    for nid in load_images(wf):
-        wf[nid]["inputs"]["image"] = names.get(wf[nid]["inputs"]["image"], wf[nid]["inputs"]["image"])
+    for nid, old in load_images(wf).items():
+        wf[nid]["inputs"][FILE_INPUTS[wf[nid]["class_type"]]] = names.get(old, old)
     return wf
 
 

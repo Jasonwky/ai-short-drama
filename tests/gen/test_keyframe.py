@@ -8,6 +8,14 @@ from tools.drama import art, repo
 from tools.drama.styles import get_style
 from tools.gen.planner import key_frame_problems, plan_first_frame, plan_key_frame, plan_video
 from tools.gen.workflows import QWEN_MODEL
+from tests.drama.conftest import give_line_audio
+
+
+@pytest.fixture(autouse=True)
+def _line_audio(request):
+    """视频规划要台词音频(spec 2026-10-30 第 5 节):用到样例的测试,给段落补一条已合成的。"""
+    if "sample" in request.fixturenames:
+        give_line_audio(request.getfixturevalue("store"), request.getfixturevalue("sample")["seg"])
 
 TURN = "@林小雨 在 @老宅庭院 转身,背对镜头,握着 @玉佩"
 
@@ -56,7 +64,7 @@ def test_video_pins_the_keyframe_after_the_mode_anchors(store, sample):
     row, p = _task(store, plan_video(store, sample["seg"], seed=1))
     assert p["anchors"] == [["frames/s1.png", 0], ["frames/k.png", 96]]
     assert p["image_refs"] == ["frames/s1.png", "assets/lin_4v.png"]             # 只当锚点,不占参考图槽
-    assert json.loads(row["refs_json"]) == ["frames/s1.png", "assets/lin_4v.png", "frames/k.png"]     # 溯源链里有它
+    assert json.loads(row["refs_json"]) == ["frames/s1.png", "assets/lin_4v.png", "frames/k.png", "audio/lines_1.wav"]     # 溯源链里有它(台词音频也在)
 
 
 def test_several_keyframes_are_pinned_in_time_order(store, sample):

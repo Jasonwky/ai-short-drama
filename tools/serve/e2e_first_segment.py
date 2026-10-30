@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-"""真链路验收:一个段落从无到有 —— 首帧(用一个**非内置的模板预设**)→ 两张中间关键帧图 → 角色四视图 → 视频(首帧钉在第 0 帧、
-关键帧钉在第 72 / 144 帧、四视图作参考)→ 对齐字幕 → 同种子再出一条**草稿档**(10 步),溯源字段逐项核对。
+"""真链路验收:一个段落从无到有 —— 首帧(用一个**非内置的模板预设**)→ 两张中间关键帧图 → 角色四视图 → 角色试听音(自动定稿)
+→ 段落台词音频 → 视频(首帧钉在第 0 帧、关键帧钉在第 72 / 144 帧、台词音频钉在第 0 帧、四视图作参考)→ 对齐字幕
+→ 同种子再出一条**草稿档**(10 步),溯源字段逐项核对。
 预设那一步验证:叠上改动的工作流云机真能跑,且实际提交的就是叠过的那份。
 两张关键帧用多关键帧调研的设定(spike-results/2026-10-14-开卡调研批次-运镜关键帧步数.md:第 3 秒转身背对镜头、第 6 秒回到首帧构图),
 出片后**用数据判每张都钉住**:那一帧与关键帧图的差 < KEY_THRESHOLD(调研 9.6,对照 50 以上)。
@@ -40,6 +41,8 @@ from tools.gen import graphs, presets
 from tools.gen.assets import plan_fourview
 from tools.cut import keycheck
 from tools.gen.planner import plan_first_frame, plan_key_frame, plan_video
+from tools.gen.tts import plan_tts
+from tools.gen.voice import plan_voice
 from tools.gen.workflows import DRAFT_STEPS
 from tools.serve.dispatch import SUBMITTED
 from tools.serve.hosts import add_host, get_host
@@ -165,6 +168,7 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
 
         for plan in (lambda: plan_first_frame(store, seg, seed=seed), lambda: plan_key_frame(store, keys[0], seed=seed),
                      lambda: plan_key_frame(store, keys[1], seed=seed + 3), lambda: plan_fourview(store, lin, seed=seed + 2),
+                     lambda: plan_voice(store, lin, seed=seed + 4), lambda: plan_tts(store, seg, seed=seed + 5),
                      lambda: plan_video(store, seg, seed=seed + 1), lambda: plan_align(store, seg),
                      # 草稿档:与定稿同种子、只差步数;当前视频已有,新版本只留在任务记录里
                      lambda: plan_video(store, seg, seed=seed + 1, steps=DRAFT_STEPS)):
@@ -172,8 +176,10 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
             state = run_until_final(worker, store, tid, timeout_sec=timeout_sec, sleep=sleep)
             if state == "failed":
                 raise RuntimeError(f"task {tid} 失败:{repo.get(store, 'task', tid)['error']}")
-            if json.loads(repo.get(store, "task", tid)["params_json"]).get("writes") == "fourview_path":
-                approval.approve(store, data_root, "character", lin, "fourview", failed=[], reason=AUTO_APPROVE)
+            writes = json.loads(repo.get(store, "task", tid)["params_json"]).get("writes")
+            if writes in ("fourview_path", "voice_ref_path"):     # 验收里没有人:四视图、试听音出来就定稿(写明是自动的)
+                approval.approve(store, data_root, "character", lin, "fourview" if writes == "fourview_path" else "voice",
+                                 failed=[], reason=AUTO_APPROVE)
             report["tasks"].append(provenance(store, tid))
         s = repo.get(store, "segment", seg)
         report["first_frame_path"], report["video_path"] = s["first_frame_path"], s["video_path"]
@@ -192,7 +198,7 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
             raise RuntimeError(f"关键帧没钉住:{';'.join(missed)}(判据 < {KEY_THRESHOLD})")
         if len(kcs) != len(keys):
             raise RuntimeError(f"视频钉了 {len(kcs)} 张关键帧,段落设了 {len(keys)} 张")
-        report["draft"] = _draft_check(data_root, report["tasks"][4], report["tasks"][6])
+        report["draft"] = _draft_check(data_root, report["tasks"][6], report["tasks"][8])
         (data_root / "provenance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     finally:
         # 隧道是脱离进程起的,不收就一直留着(两次验收后残留);只停本进程起的,接管来的 stop 碰不到

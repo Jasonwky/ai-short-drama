@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 24
+SCHEMA_VERSION = 25
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -450,6 +450,10 @@ VOICE_DDL = [
     "ALTER TABLE segment ADD COLUMN line_audio_path TEXT",
 ]
 
+# v25:台词配音第 3 期。task.result_sec:产物时长(秒),台词音频任务完成时写 —— 视频规划按它定帧数,只读库、不读文件。
+RESULT_SEC_DDL = ["ALTER TABLE task ADD COLUMN result_sec REAL"]
+SCHEMA += "".join(f"{stmt};\n" for stmt in RESULT_SEC_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -513,6 +517,8 @@ MIGRATIONS: dict[int, list[str]] = {
     22: ART_DDL,
     # v24:台词配音(voice / tts 任务、声音定稿)
     23: VOICE_DDL,
+    # v25:产物时长
+    24: RESULT_SEC_DDL,
 }
 
 

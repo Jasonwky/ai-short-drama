@@ -69,6 +69,20 @@ def _vision(store, seg, root) -> dict | None:
 LINE_FLYING = ("pending", "queued", "running", "waiting_host")
 
 
+def _audio_mismatch(store, seg, cur) -> str:
+    """当前视频钉的台词音频(台本快照)与段落现在的台词音频不是同一条 → 说明;对得上 / 无从比较 → 空。
+    第 3 期之前出的视频没钉台词音频,也提示(它的台词是 H3 自己编着念的)。"""
+    if cur is None:
+        return ""
+    used = json.loads(cur["params_json"]).get("script", {}).get("line_audio")
+    now = tts.current_audio(store, seg)
+    if used is None:
+        return "当前视频没有钉台词音频(台词是模型自己念的,口型与内容都不受控)" if now else ""
+    if now is None or now["sha256"] != used["sha256"]:
+        return "当前视频钉的不是段落现在的台词音频"
+    return ""
+
+
 def _line_audio(store, root, seg, tasks) -> dict:
     """本段台词音频:当前那条 + 回听结果 + 过期原因 + 规划问题 + 在途几条 + 没用上的版本。"""
     path = seg["line_audio_path"]
@@ -121,6 +135,7 @@ def page(request: Request, episode_id: int):
                      "stale_lines": rules.stale_lines(s["description"], rules.said_lines(cur)) if cur else [],
                      "dropped_lines": rules.dropped_lines(s["description"], rules.said_lines(cur)) if cur else [],
                      "stale_fields": rules.stale_video_fields(s, cur) if cur else [],
+                     "audio_mismatch": _audio_mismatch(store, s, cur),
                      "said": {t["id"]: rules.said_lines(t) for t in videos if t["state"] == "done"},
                      "align_tasks": [t for t in tasks if t["kind"] == "align"],
                      "align_problems": align_problems(store, s["id"]),

@@ -12,6 +12,14 @@ from tools.gen import presets
 from tools.gen.planner import plan_first_frame, plan_video
 from tools.serve.dispatch import SUBMITTED, dispatch
 from tools.serve.hosts import add_host, get_host
+from tests.drama.conftest import give_line_audio
+
+
+@pytest.fixture(autouse=True)
+def _line_audio(request):
+    """视频规划要台词音频(spec 2026-10-30 第 5 节):用到样例的测试,给段落补一条已合成的。"""
+    if "sample" in request.fixturenames:
+        give_line_audio(request.getfixturevalue("store"), request.getfixturevalue("sample")["seg"])
 
 OBJECT_INFO = json.loads((Path(__file__).parents[2] / "tools/serve/fixtures/object_info_min.json").read_text(encoding="utf-8"))
 

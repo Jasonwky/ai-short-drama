@@ -14,6 +14,14 @@ from tools.serve import rerun
 from tools.serve.dispatch import dispatch, steps_of
 from tools.serve.fakes import OBJECT_INFO_MIN
 from tools.serve.hosts import add_host, get_host
+from tests.drama.conftest import give_line_audio
+
+
+@pytest.fixture(autouse=True)
+def _line_audio(request):
+    """视频规划要台词音频(spec 2026-10-30 第 5 节):用到样例的测试,给段落补一条已合成的。"""
+    if "sample" in request.fixturenames:
+        give_line_audio(request.getfixturevalue("store"), request.getfixturevalue("sample")["seg"])
 
 OBJECT_INFO = json.loads(OBJECT_INFO_MIN.read_text(encoding="utf-8"))
 NO_SSH = lambda a, s: (0, "")  # noqa: E731
@@ -54,7 +62,7 @@ def test_draft_beats_the_preset_steps(store, sample):
 
 
 def test_submitted_workflow_has_the_draft_steps(store, sample, tmp_path):
-    for rel in ("frames/s1.png", "assets/lin.png", "assets/lin_4v.png"):
+    for rel in ("frames/s1.png", "assets/lin.png", "assets/lin_4v.png", "audio/lines_1.wav"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_bytes(b"x")
     comfy, host = FakeComfy(), get_host(store, add_host(store, label="a", ssh_host="h", ssh_port=1, ssh_user="root",

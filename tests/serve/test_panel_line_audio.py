@@ -52,3 +52,17 @@ def test_current_audio_shows_per_line_hits_and_goes_stale_when_lines_change(clie
     repo.update(store, "segment", sample["seg"], description="林小雨说：「我不要它了。」")
     card = _card(client.get(f"/episode/{sample['episode']}/videos").text, sample["seg"])
     assert "data-line-stale" in card and "台词改过了" in card
+
+
+def test_video_card_says_when_the_video_was_pinned_to_another_line_audio(client, store, sample):
+    from tests.drama.conftest import give_line_audio
+    from tools.gen.planner import plan_video
+    give_line_audio(store, sample["seg"])
+    vid = plan_video(store, sample["seg"], seed=1)
+    set_task_state(store, vid, "queued", external_id="x")
+    set_task_state(store, vid, "done", result_path="outputs/tasks/v/h3.mp4")
+    repo.update(store, "segment", sample["seg"], video_path="outputs/tasks/v/h3.mp4")
+    assert "data-audio-mismatch" not in _card(client.get(f"/episode/{sample['episode']}/videos").text, sample["seg"])
+    give_line_audio(store, sample["seg"], sec=6.0)          # 重合成了一条台词音频
+    card = _card(client.get(f"/episode/{sample['episode']}/videos").text, sample["seg"])
+    assert "data-audio-mismatch" in card and "不是段落现在的台词音频" in card

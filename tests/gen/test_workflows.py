@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import json
+
 import pytest
 
 from tools.gen.workflows import H3_MODEL, QWEN_MODEL, build_h3, build_qwen, build_qwen_region
@@ -153,3 +155,23 @@ def test_h3_anchors_chain_add_guides_into_the_conditioning():
 def test_h3_without_anchors_is_unchanged():
     wf = build_h3("<Picture 1> x", ["f.png"], None, 192, 9, size=(768, 1344))
     assert "MiniMaxH3AddGuide" not in _classes(wf) and wf["13"]["inputs"]["conditioning"] == ["12", 0]
+
+
+def test_h3_guide_audio_is_pinned_at_frame_0_after_the_image_anchors():
+    """台词音频钉第 0 帧(spike-results/2026-10-29-台词与口型匹配方案调研.md 第 4 节:音轨与给定音频相关 0.945–0.994,
+    口型-音量相关 0.39 → 0.66):LoadAudio + MiniMaxH3AddGuide(audio, audio_vae),串在图片锚点之后。"""
+    wf = build_h3("<Picture 1> 是首帧。林小雨说:「好。」", ["f.png"], None, 192, 9, size=(768, 1344),
+                  anchors=[("f.png", 0)], guide_audio="ai-short-drama/ab/lines.wav")
+    assert _dangling(wf) == []
+    guide = wf[wf["13"]["inputs"]["conditioning"][0]]
+    assert guide["class_type"] == "MiniMaxH3AddGuide" and guide["inputs"]["frame_idx"] == 0
+    assert guide["inputs"]["positive"] == ["41", 0] and guide["inputs"]["audio_vae"] == ["7", 0]
+    assert guide["inputs"]["latent"] == ["12", 1] and "image" not in guide["inputs"]
+    assert wf[guide["inputs"]["audio"][0]] == {"class_type": "LoadAudio", "inputs": {"audio": "ai-short-drama/ab/lines.wav"},
+                                               "_meta": {"title": "台词音频"}}
+
+
+def test_h3_without_guide_audio_is_byte_identical():
+    a = build_h3("<Picture 1> x", ["f.png"], None, 192, 9, size=(768, 1344), anchors=[("f.png", 0)])
+    b = build_h3("<Picture 1> x", ["f.png"], None, 192, 9, size=(768, 1344), anchors=[("f.png", 0)], guide_audio=None)
+    assert json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)

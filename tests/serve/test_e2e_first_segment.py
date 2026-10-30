@@ -6,9 +6,17 @@ import pytest
 
 from tools.cut.keycheck import KeyCheck
 from tools.gen import graphs
-from tools.serve.fakes import FakeAligner, FakeComfy, FakeTunnel, sample_mp4
+from tools.serve.fakes import FakeAligner, FakeComfy, FakeTunnel, fake_tts_runner, sample_mp4
 from tools.serve.e2e_first_segment import run
 from tools.serve.worker import Worker
+from tests.drama.conftest import give_line_audio
+
+
+@pytest.fixture(autouse=True)
+def _line_audio(request):
+    """视频规划要台词音频(spec 2026-10-30 第 5 节):用到样例的测试,给段落补一条已合成的。"""
+    if "sample" in request.fixturenames:
+        give_line_audio(request.getfixturevalue("store"), request.getfixturevalue("sample")["seg"])
 
 HOST = {"label": "fake", "ssh_host": "h", "ssh_port": 1, "ssh_user": "root", "key_ref": "k",
         "local_port": 8188, "vram_gb": 24.0, "models_dir": "/m"}
@@ -25,10 +33,10 @@ def images(tmp_path):
 
 
 def _worker_on(comfy):
-    aligner = FakeAligner("这块玉佩是我母亲留给我的")
+    aligner, tts = FakeAligner("这块玉佩是我母亲留给我的"), fake_tts_runner()
     return lambda store, host_id, root: Worker(store, host_id, data_root=root, client_for=lambda h: comfy,
                                                tunnel=FakeTunnel(), run_for=lambda h: None,
-                                               align_for=lambda h: aligner)
+                                               align_for=lambda h: aligner, tts_for=lambda h: tts)
 
 
 def _gpu(comfy):
@@ -52,7 +60,11 @@ def test_full_chain_on_fake_gpu_writes_provenance(tmp_path, images):
     root = tmp_path / "e2e"
     report = run(root, images, HOST, seed=5, timeout_sec=60, make_worker=_worker_on(comfy), sleep=_gpu(comfy),
                  check_key=_hit)
-    frame, key1, key2, fourview, video, align, draft = report["tasks"]
+    frame, key1, key2, fourview, voice, lines, video, align, draft = report["tasks"]
+    # 台词配音(spec 2026-10-30):试听音 → 自动定稿 → 台词音频,视频钉的就是它
+    assert (voice["result_path"], lines["result_path"]) == (f"outputs/tasks/{voice['id']}/voice.wav",
+                                                            f"outputs/tasks/{lines['id']}/lines.wav")
+    assert json.loads(video["params_json"])["audio_guide"] == lines["result_path"]
     assert (frame["seed"], key1["seed"], key2["seed"], fourview["seed"], video["seed"]) == (5, 5, 8, 7, 6)
     # 两张中间关键帧(多关键帧调研的设定:第 3 秒转身、第 6 秒回到首帧构图),视频按时刻先后钉,报告里逐张有对比结果
     assert [json.loads(k["params_json"])["writes"] for k in (key1, key2)] == ["key_frame_path"] * 2
@@ -66,7 +78,7 @@ def test_full_chain_on_fake_gpu_writes_provenance(tmp_path, images):
     assert json.loads(fourview["refs_json"]) == ["assets/character.png"]  # 四视图以正面图为输入
     # 视频吃的就是这次出的首帧(参考图 + 钉在第 0 帧)与四视图
     assert json.loads(video["refs_json"]) == [frame["result_path"], fourview["result_path"], key1["result_path"],
-                                              key2["result_path"]]
+                                              key2["result_path"], lines["result_path"]]
     assert json.loads(video["params_json"])["anchors"] == [[frame["result_path"], 0], [key1["result_path"], 72],
                                                            [key2["result_path"], 144]]
     assert json.loads(align["refs_json"]) == [video["result_path"]]     # 字幕对的就是这条视频
@@ -114,9 +126,10 @@ class _SlowTunnel(FakeTunnel):
 
 
 def _worker_with_tunnel(comfy, tunnel):
-    aligner = FakeAligner("这块玉佩是我母亲留给我的")
+    aligner, tts = FakeAligner("这块玉佩是我母亲留给我的"), fake_tts_runner()
     return lambda store, host_id, root: Worker(store, host_id, data_root=root, client_for=lambda h: comfy,
-                                               tunnel=tunnel, run_for=lambda h: None, align_for=lambda h: aligner)
+                                               tunnel=tunnel, run_for=lambda h: None, align_for=lambda h: aligner,
+                                               tts_for=lambda h: tts)
 
 
 def test_preset_step_waits_for_a_fresh_tunnel(tmp_path, images):

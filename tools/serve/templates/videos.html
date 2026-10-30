@@ -2,7 +2,7 @@
 {% from "_macros.html" import history, checklist, fill_form %}
 {% block content %}
 <h1>视频 · 第 {{ ep.number }} 集</h1>
-<p class="hint">MiniMax H3 ref2va,定稿 {{ full_steps }} 步、草稿 {{ draft_steps }} 步两档(各段预计耗时按「主机」面板登记的卡估算)。台词取自段落描述,逐字进提示词;不喂参考音频(闸门 0-4)。</p>
+<p class="hint">MiniMax H3 ref2va,定稿 {{ full_steps }} 步、草稿 {{ draft_steps }} 步两档(各段预计耗时按「主机」面板登记的卡估算)。台词取自段落描述,逐字进提示词;成片音轨是本段的「台词音频」(按定稿音色合成),钉在第 0 帧、口型跟着它走,帧数按它的时长定。</p>
 <p class="hint" data-draft-note>草稿档 {{ draft_steps }} 步约省一半时间,用来快速看构图 / 动作:{{ few_note }}(2026-10-14 实测,1 个种子)。</p>
 <p class="hint" data-cut-note>{{ cut_note }}</p>
 {{ fill_form("videos", ep.id, seed, "补全本集缺的视频") }}
@@ -94,6 +94,8 @@
     {% endfor %}
     {% endif %}
     {% if s.stale_lines or s.dropped_lines %}<p class="status-bad" data-stale-lines>台词改过,当前视频还是旧台词:{% if s.stale_lines %}新台词:{{ s.stale_lines | join(" / ") }}{% endif %}{% if s.stale_lines and s.dropped_lines %} / {% endif %}{% if s.dropped_lines %}已删的台词:{{ s.dropped_lines | join(" / ") }}{% endif %}
+      ——重出后新视频进历史,要不要换成当前视频由你在历史里「调用」</p>{% endif %}
+    {% if s.audio_mismatch %}<p class="status-bad" data-audio-mismatch>{{ s.audio_mismatch }}
       ——重出后新视频进历史,要不要换成当前视频由你在历史里「调用」</p>{% endif %}
     {% if s.stale_fields %}<p class="status-bad" data-stale-fields>当前视频是按旧分镜出的(改过:{{ s.stale_fields | join("、") }})
       ——重出后新视频进历史,要不要换成当前视频由你在历史里「调用」</p>{% endif %}

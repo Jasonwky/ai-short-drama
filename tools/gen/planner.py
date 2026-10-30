@@ -25,7 +25,7 @@ from tools.drama.styles import get_style
 from tools.drama.readiness import key_frame_index, segment_readiness
 from tools.drama.targets import KEY_WRITES
 from tools.drama.tasks import create_task
-from tools.gen import compose, presets
+from tools.gen import compose, presets, tts
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.gen.workflows import DRAFT_STEPS, FRAME_SIZE, H3_IMAGE_SLOTS, H3_MODEL, QWEN_MODEL, VIDEO_SIZE, build_h3
 
@@ -89,9 +89,6 @@ VIDEO_MODES = {
     "first_last": ("first_frame_path", "是本段的首帧。", (("first_frame_path", 0), ("last_frame_path", -1))),
 }
 
-
-# 没有台词的段落:不写任何人的声音,明说没人说话(spec 2026-10-28-成片质量闸门-第一期-design.md 第 3 节)
-SILENT = "全程没有人说话,只有环境声。"
 
 # 纯文字(只给四视图、不给首帧):不做(用户 2026-10-15 定),原因写给人看
 TEXT_ONLY_REFUSED = ("纯文字模式不支持出视频:实测场景和道具守不住(黄昏院子 → 白天砖墙,大块雕花绿玉 → 小块浅色坠子;"
@@ -296,7 +293,7 @@ def video_problems(store: Store, segment_id: int) -> list[str]:
     by_name = {c["name"]: c["id"] for c in repo.segment_assets(store, segment_id)["characters"]}
     return _fourview_problems(store, segment_id) + approval.unapproved(
         store, [("character", by_name[v.name], "fourview") for v in views]) + art.problems(
-        seg["video_prompt"], art.of(_drama(store, segment_id)), "视频提示词")
+        seg["video_prompt"], art.of(_drama(store, segment_id)), "视频提示词") + tts.audio_problems(store, seg)
 
 
 FOURVIEW_IN_FLIGHT = ("pending", "queued", "running", "waiting_host")
@@ -344,40 +341,42 @@ def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = 
     names = [c["name"] for c in assets["characters"]]
     said = rules.dialogue_lines(seg["description"], names)
     lines = "".join(f"{who}用普通话说:「{line}」" for who, line in said)
-    # 声音只写本段说话的人;没人说话就明说(spec 2026-10-28 第 3 节:第 2 段没台词却写了声音,模型自己编着说)
-    speakers = [c for c in assets["characters"] if c["voice_desc"] and any(who.startswith(c["name"]) for who, _ in said)]
-    voices = "".join(f"{c['name']}的声音:{c['voice_desc']}。" for c in speakers) if said else SILENT
+    # 声音不再用文字描述:台词音频(按定稿音色合成)钉在第 0 帧,成片音轨就是它(spec 2026-10-30-台词配音与口型闸门-design.md 第 5 节)。
+    # 以前写「XX 的声音:…」/「全程没有人说话」—— 提示词里的中文都可能被 H3 念出来(第 2 段两版都念了「全程没有人说话」)
+    audio = tts.current_audio(store, seg)                # video_problems 已保证有、没过期、不超长
+    lo, _ = MINIMAX_H3.duration_range_sec()
     drama = _drama(store, segment_id)
     look = art.video_phrase(get_style(drama["style"]), art.of(drama))
     who = "".join(f"<Picture {k}> 是{r.name}的四视图(正面、左侧、背面、右侧)。" for k, r in enumerate(views, 2))
     move = framing.move_phrase(seg["movement"])      # 运镜由代码写,没填不拼(老段落提示词不变)
-    prompt = f"<Picture 1> {intro}" + who + body + "".join(f" {part}" for part in (lines, voices, move, look) if part)
+    prompt = f"<Picture 1> {intro}" + who + body + "".join(f" {part}" for part in (lines, move, look) if part)
 
     image_refs = [seg[ref_field]] + [r.path for r in views]
     anchors = [[seg[f], idx] for f, idx in pins]
     for k in repo.keyframes(store, segment_id):   # 关键帧:模式的锚点之后按时刻先后逐张钉(readiness 已核过范围、间距与图)
         anchors.append([k["frame_path"], key_frame_index(k["time_sec"], MINIMAX_H3)])
     params = {
-        "workflow": "minimax_h3", "frames": MINIMAX_H3.frames_for(seg["duration_sec"]),
+        # 帧数由台词音频定(短于训练下限的补到下限,音频后面是静音);段落的 duration_sec 只是分镜时的估计
+        "workflow": "minimax_h3", "frames": MINIMAX_H3.frames_for(max(audio["sec"], lo)),
         "size": list(VIDEO_SIZE[_aspect(store, segment_id)]),
-        "image_refs": image_refs, "anchors": anchors, "audio_ref": None,
+        "image_refs": image_refs, "anchors": anchors, "audio_ref": None, "audio_guide": audio["path"],
         "writes": "video_path", "expect_ext": ".mp4", **({"steps": steps} if steps else {}),
         # 台本快照(用户 2026-10-23):这条视频生成时的描述、逐句台词、声音、提示词、时长 —— 任务参数不可改,就是记录;
         # 挑历史版本时看得到每一版说的是什么,台词改过也比得出来(rules.stale_lines)
         "script": {"description": seg["description"],
                    "lines": [[w, line] for w, line in rules.dialogue_lines(seg["description"], names)],
-                   "voices": {c["name"]: c["voice_desc"] for c in speakers} if said else {},
+                   "line_audio": audio,
                    "video_prompt": seg["video_prompt"], "duration_sec": seg["duration_sec"],
                    "movement": seg["movement"]},
     }
     params = presets.stamp(store, "video", params)
     try:            # 规划时就试拼一次(内置拼法叠上当前预设):拼不出就拒绝规划,不等到交给云机时才失败
         presets.apply_params(build_h3(prompt, image_refs, None, params["frames"], seed, size=tuple(params["size"]),
-                                      anchors=[tuple(a) for a in anchors]), params)
+                                      anchors=[tuple(a) for a in anchors], guide_audio=audio["path"]), params)
     except ValueError as e:
         which = f"当前视频模板预设 v{params['preset_version']} " if "preset_diff" in params else "内置视频模板"
         raise ValueError(f"{which}拼不出这一段的工作流({len(anchors)} 个锚点):{e}"
                          + (" —— 到「工作流」面板换一版或回到内置" if "preset_diff" in params else "")) from e
     return create_task(store, kind="video", target_type="segment", target_id=segment_id, model=H3_MODEL,
                        params=params, seed=seed, prompt=prompt,
-                       refs=list(dict.fromkeys([*image_refs, *(p for p, _ in anchors)])))
+                       refs=list(dict.fromkeys([*image_refs, *(p for p, _ in anchors), audio["path"]])))

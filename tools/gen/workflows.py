@@ -144,13 +144,17 @@ def build_qwen_region(prompt: str, source_name: str, ref_name: str, box: tuple[i
 
 
 def build_h3(prompt: str, image_names: list[str], audio_name: str | None, frames: int, seed: int,
-             *, size: tuple[int, int], anchors: list[tuple[str, int]] = ()) -> dict:
+             *, size: tuple[int, int], anchors: list[tuple[str, int]] = (), guide_audio: str | None = None) -> dict:
     """MiniMax H3 ref2va,20 步。frames 须已由 Capability 换算并校验过。
 
     anchors:[(图名, 帧号)],把图**钉**在那一帧(-1 = 最后一帧)。参考图只是「软」参考 ——
     2026-09-26 云机实测:参考图 ≥ 2 张时,只当参考图喂的首帧第一帧差 74.2(比两张不同图的 35.9 还大),
     串一个 `MiniMaxH3AddGuide` 钉住后第一帧差 11.9、尾帧差 6.5。锚定走条件里的 `minimax_keyframes`,
-    ref2va 权重就能用,不需要 I2V 权重(`spike-results/2026-09-26-参考锚定与四视图云机实测.md`)。"""
+    ref2va 权重就能用,不需要 I2V 权重(`spike-results/2026-09-26-参考锚定与四视图云机实测.md`)。
+
+    guide_audio:台词音频(上传名),**钉**在第 0 帧(同一个 AddGuide 节点的 audio 输入,串在图片锚点之后)。
+    与 audio_name(ref2va 的参考音频,只当音色参考,闸门 0-4 实测会复读内容)不是一回事:
+    钉住的音频被 1:1 带进成片,口型跟着它走(spike-results/2026-10-29-台词与口型匹配方案调研.md 第 4 节)。"""
     if not 1 <= len(image_names) <= H3_IMAGE_SLOTS:
         raise ValueError(f"工作流预留 1–{H3_IMAGE_SLOTS} 个图槽,给了 {len(image_names)} 张")
     _raise_if(check_tags(prompt, len(image_names), 1 if audio_name else 0, dialect="h3"))
@@ -190,5 +194,12 @@ def build_h3(prompt: str, image_names: list[str], audio_name: str | None, frames
                                 "frame_idx": frame_idx},
                      "_meta": {"title": f"锚定到第 {frame_idx} 帧(-1 = 最后一帧)"}}
         positive = [guide, 0]
+    if guide_audio:
+        wf["90"] = {"class_type": "LoadAudio", "inputs": {"audio": guide_audio}, "_meta": {"title": "台词音频"}}
+        wf["91"] = {"class_type": "MiniMaxH3AddGuide",
+                    "inputs": {"positive": positive, "audio_vae": ["7", 0], "latent": ["12", 1], "audio": ["90", 0],
+                               "frame_idx": 0},
+                    "_meta": {"title": "台词音频钉到第 0 帧"}}
+        positive = ["91", 0]
     wf["13"]["inputs"]["conditioning"] = positive
     return wf
