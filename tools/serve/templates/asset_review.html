@@ -90,6 +90,22 @@
 {% endfor %}
 </div>
 
+<h2 id="voice-templates">念法模板</h2>
+<p class="hint">念法模板只管「怎么念」(IndexTTS2 的情绪参考):港片配音那种一口气连着说、抑扬顿挫大的念法;音色仍是各角色定稿的试听音。
+  入库前代码量两项:出声占比 ≥ 85%、音高起伏 ≥ 15 半音(暂定)。<b>只能用我们自己合成或自己录制的音频,不得用他人作品里的声音。</b></p>
+<div class="card" data-voice-templates>
+  {% for t in templates %}
+    <div class="row" data-template="{{ t.id }}"><b>{{ t.name }}</b> <audio controls preload="none" src="/media/{{ t.path }}"></audio>
+      <span class="hint">来源:{{ t.source }}{% if t.note %} · {{ t.note }}{% endif %}</span></div>
+  {% else %}<p class="empty">还没有念法模板 —— 在下面角色声音卡里「生成念法候选」,或导入一段</p>{% endfor %}
+  <form method="post" action="/drama/{{ drama.id }}/voice-template/import" enctype="multipart/form-data" class="row">
+    <input type="text" name="name" placeholder="名称(例:喝令)" required>
+    <input type="text" name="source" placeholder="来源(必填:谁合成 / 谁录的)" required style="flex: 1">
+    <input type="file" name="file" accept=".wav" required>
+    <button class="btn small" type="submit" data-template-import>导入</button>
+  </form>
+</div>
+
 <h2 id="voices">角色声音</h2>
 <p class="hint">按资产里的「声音描述」让 Qwen3-TTS 念一句试听(念的是这个角色剧本里最长的一句台词),一次出 3 版;
   每版都由 Whisper 回听、按拼音核对念没念对。挑一版「用这一版」后定稿 —— 定稿的音色以后用来念这个角色的全部台词。
@@ -122,6 +138,28 @@
     {% if v.desc and not v.approval %}
       <form method="post" action="/character/{{ v.id }}/voice/design">
         <button class="btn small" type="submit" data-voice-design>生成 3 版试听</button></form>
+    {% endif %}
+    {% if v.approval %}
+      <form method="post" action="/character/{{ v.id }}/voice-template" class="row">
+        <label>念法模板 <select name="template_id" data-voice-template-select>
+          <option value="">(不选)</option>
+          {% for t in templates %}<option value="{{ t.id }}"{% if t.id == v.template_id %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+        </select></label>
+        <button class="btn small" type="submit" data-voice-template-save>保存</button></form>
+      <form method="post" action="/character/{{ v.id }}/voice-template/generate" class="row">
+        <select name="preset">{% for p in presets %}<option>{{ p }}</option>{% endfor %}</select>
+        <button class="btn small" type="submit" data-template-generate>生成 3 个念法候选</button></form>
+      {% for t in v.candidates %}
+        <div class="row" data-template-candidate="{{ t.id }}">
+          <audio controls preload="none" src="/media/{{ t.result_path }}"></audio>
+          {% if t.prosody %}<span class="{{ 'status-bad' if t.prosody.problems else 'status-ok' }}">出声 {{ "%.0f"|format(t.prosody.occupancy * 100) }}% · 起伏 {{ "%.1f"|format(t.prosody.range_st) }} 半音</span>{% endif %}
+          {% if t.prosody and not t.prosody.problems %}
+          <form method="post" action="/task/{{ t.id }}/save-template" class="row">
+            <input type="text" name="name" placeholder="模板名" required>
+            <button class="btn small" type="submit" data-template-save="{{ t.id }}">存为模板</button></form>
+          {% elif t.prosody %}<span class="hint">{{ t.prosody.problems | join(";") }}</span>{% endif %}
+        </div>
+      {% endfor %}
     {% endif %}
     {% if v.versions %}
       <p class="hint">生成过、还没用上的版本:</p>

@@ -35,6 +35,10 @@ def world(store, sample, host_id, tmp_path):
         repo.update(store, "character", cid, voice_ref_path=f"v/{name}.wav", voice_ref_text=f"{name}的试听句")
         store.conn.execute("INSERT INTO asset_approval (table_name, row_id, slot, path, sha256, created_at)"
                            " VALUES ('character', ?, 'voice', ?, 'x', 't')", (cid, f"v/{name}.wav"))
+    (tmp_path / "v/tpl.wav").write_bytes(b"RIFF")              # 念法模板(IndexTTS2 港片念法,spec 2026-10-31)
+    tpl = repo.add_voice_template(store, sample["drama"], name="喝令", path="v/tpl.wav", sha256="t", source="synth:1", note="")
+    for cid in (sample["lin"], sample["shen"]):
+        repo.update(store, "character", cid, voice_template_id=tpl)
     return {"root": tmp_path, "host": get_host(store, host_id), "comfy": FakeComfy(), "tts": FakeTts()}
 
 
@@ -53,9 +57,9 @@ def test_lines_are_cloned_listened_to_and_written_back(store, sample, world):
     assert check["ok"] and check["attempt"] == 1 and check["hits"] == [1.0, 1.0] and len(check["spans"]) == 2
     assert repo.get(store, "task", tid)["result_sec"] == check["sec"] > 0
     job = json.loads(world["tts"].calls[0][1])
-    assert job["seed"] == 5 and job["voices"]["沈墨"]["text"] == "shen的试听句"
+    assert job["seed"] == 5 and job["voices"]["沈墨"] == {"audio": job["voices"]["沈墨"]["audio"]}   # IndexTTS2 不要参考文本
     assert job["voices"]["林小雨"]["audio"].startswith("/root/autodl-tmp/ComfyUI/input/ai-short-drama/")
-    assert len(world["comfy"].uploaded) == 3          # 两个定稿音色 + 合成出的台词音频
+    assert len(world["comfy"].uploaded) == 5          # 两个定稿音色 + 两句的念法模板 + 合成出的台词音频
 
 
 def test_a_missed_line_retries_with_a_new_seed(store, sample, world):
@@ -106,3 +110,14 @@ def test_cuda_oom_mid_run_waits_for_the_next_gap(store, sample, world, step):
     out = _run(store, world, tid, oom if step == "align" else Hearing(BOTH))
     assert out.state == "pending" and "显存" in out.message
     assert repo.get(store, "task", tid)["state"] == "pending"
+
+
+def test_new_engine_uploads_templates_and_sends_the_recipe(store, sample, world):
+    """IndexTTS2 港片念法(spec 2026-10-31 §4):音色 + 逐句模板都上传;job 带配方,不带参考文本;脚本是 idx_remote。"""
+    tid = plan_tts(store, sample["seg"], seed=5)
+    assert _run(store, world, tid, Hearing(BOTH)).state == "done"
+    args = world["tts"].calls[0]
+    job = json.loads(args[1])
+    assert args[0].endswith("/indextts/checkpoints")
+    assert set(job) == {"lines", "voices", "templates", "seed", "gap", "lead", "tail", "recipe", "sr_out"}
+    assert len(job["templates"]) == 2 and job["gap"] == 0.15 and "text" not in job["voices"]["林小雨"]

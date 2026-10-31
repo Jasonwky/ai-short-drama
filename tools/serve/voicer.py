@@ -13,20 +13,22 @@ import json
 import sqlite3
 from pathlib import Path
 
-from tools.cut import speech
+from tools.cut import prosody, speech
 from tools.drama import repo
 from tools.drama.db import Store
 from tools.drama.tasks import set_task_state
 from tools.gen import preflight
-from tools.gen.capability import QWEN3_TTS, WHISPER_ALIGN
+from tools.gen.capability import INDEX_TTS2, QWEN3_TTS, WHISPER_ALIGN
 from tools.gen.comfy_client import ComfyError, ComfyUnreachable
 from tools.serve import aligner
 from tools.serve.dispatch import Outcome, sha256_file
 from tools.serve.hosts import Host
 
 SCRIPT = Path(__file__).with_name("voice_remote.py")
+SCRIPT_IDX = Path(__file__).with_name("idx_remote.py")      # 念法模板候选(IndexTTS2)
 HIT_OK = 0.9            # 拼音命中率:实测念对的 10 条按拼音全是 1.0(spike-results/2026-10-29 第 4.2 节)
 CHECK = "voice.json"
+PROSODY = "prosody.json"
 
 
 def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
@@ -36,6 +38,9 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
     def fail(msg: str) -> Outcome:
         set_task_state(store, tid, "failed", error=msg)
         return Outcome("failed", msg)
+
+    if p.get("workflow") == "indextts2_template":
+        return _template(store, client, host, task, root, run_tts, fail)
 
     try:
         wait = aligner.gpu_ready(client, QWEN3_TTS.vram_gb, "配音")
@@ -92,6 +97,58 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
         repo.update(store, "character", task["target_id"], voice_ref_path=rel, voice_ref_text=p["text"])
     set_task_state(store, tid, "done", result_path=rel, result_sha256=sha256_file(wav))
     return Outcome("done", note or rel)
+
+
+def _template(store: Store, client, host: Host, task: sqlite3.Row, root: Path, run_tts: preflight.Runner, fail) -> Outcome:
+    """念法模板候选(spec 2026-10-31-IndexTTS2港片配音-design.md §3):IndexTTS2 用定稿音色 + 情绪向量念一句(去停顿、起伏放大),
+    本机量韵律写 `prosody.json`;不回听(只当「怎么念」的参考)、不写回角色 —— 人挑了、过了门槛才存成模板。"""
+    tid, p = task["id"], json.loads(task["params_json"])
+    if not (root / p["voice"]["path"]).is_file():
+        return fail(f"定稿音色文件不在本机:{p['voice']['path']}")
+    try:
+        wait = aligner.gpu_ready(client, INDEX_TTS2.vram_gb, "合成念法候选")
+        if wait is None:
+            ref = f"{WHISPER_ALIGN.input_dir}/" + client.upload_image(
+                root / p["voice"]["path"], subfolder=f"ai-short-drama/{sha256_file(root / p['voice']['path'])[:16]}")
+    except ComfyUnreachable as e:
+        return Outcome("pending", f"连不上云机,下轮再试:{e}")
+    except ComfyError as e:
+        return fail(f"定稿音色传不上云机:{e}")
+    if wait is not None:
+        return fail(wait.message) if wait.state == "failed" else wait
+    who = repo.get(store, "character", task["target_id"])["name"]
+    job = {"lines": [[who, p["text"]]], "voices": {who: {"audio": ref}}, "emo_vector": p["emo_vector"], "seed": task["seed"],
+           "gap": 0, "lead": 0, "tail": 0, "recipe": p["recipe"], "sr_out": p["sr_out"]}
+    code, out = run_tts([INDEX_TTS2.ckpt_dir, json.dumps(job, ensure_ascii=False)], SCRIPT_IDX.read_bytes())
+    if code == aligner.SSH_UNREACHABLE:
+        return Outcome("pending", f"ssh 连不上云机,下轮再试:{out.strip()[-300:]}")
+    if code != 0 and (busy := aligner.oom_wait(out, "合成念法候选")):
+        return busy
+    if code != 0:
+        return fail(f"云机念法脚本失败(退出码 {code}):{out.strip()[-500:]}")
+    rows = [line for line in out.splitlines() if line.startswith('{"wav_b64"')]
+    if not rows:
+        return fail(f"云机念法脚本没有输出结果:{out.strip()[-500:]}")
+    out_dir = root / "outputs" / "tasks" / str(tid)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    wav = out_dir / "template.wav"
+    wav.write_bytes(base64.b64decode(json.loads(rows[-1])["wav_b64"]))
+    x, sr = prosody.load_wav(wav)
+    (out_dir / PROSODY).write_text(json.dumps(
+        {"occupancy": round(prosody.occupancy(x, sr), 3), "range_st": round(prosody.pitch_range_st(x, sr), 1),
+         "problems": prosody.template_problems(x, sr)}, ensure_ascii=False, indent=1), encoding="utf-8")
+    rel = wav.relative_to(root).as_posix()
+    set_task_state(store, tid, "queued", external_id=f"voice-{tid}", host_id=host.id)
+    set_task_state(store, tid, "done", result_path=rel, result_sha256=sha256_file(wav))
+    return Outcome("done", rel)
+
+
+def prosody_of(data_root: Path, path: str | None) -> dict | None:
+    """念法候选的韵律量值(与 wav 同目录的 prosody.json);没有返回 None。"""
+    if not path:
+        return None
+    f = (Path(data_root) / path).with_name(PROSODY)
+    return json.loads(f.read_text(encoding="utf-8")) if f.is_file() else None
 
 
 def check_of(data_root: Path, path: str | None) -> dict | None:

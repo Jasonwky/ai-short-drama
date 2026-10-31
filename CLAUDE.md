@@ -122,6 +122,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   「资产图审」页底部试听 / 挑版 / 定稿(`asset_approval` slot = voice,回听不过要写理由);新依赖 `pypinyin`;
   **台词音频**:`kind = 'tts'`(`gen/tts.py` 规划,快照说话人的定稿音色;`serve/ttser.py` 执行,云机 `tts_remote.py` 用 Base 逐句克隆拼接),
   `speech.line_hits` 逐句按拼音判,不过换种子(+1000·k)重合成最多 3 次;视频面板每段「台词音频」;`tts.stale` 判台词 / 音色改过;
+  **2026-11 起引擎换 IndexTTS2 港片念法**(spec 2026-10-31-IndexTTS2港片配音-design.md,依据 spike 2026-10-31 §12):新任务 `workflow = indextts2_hk`,
+  云机 `serve/idx_remote.py`(indextts 独立 venv 借 ComfyUI 的 torch;垫片:`torchaudio.save` → soundfile、HF 走 hf-mirror),
+  配方集中在 `capability.INDEX_TTS2`(去句内停顿、剪 >0.06 s 静音、WORLD 音高起伏 ×1.4、句间 0.15 s);worker 按 workflow 选解释器(`idx_for`);
+  **念法模板**(v26 `voice_template`,只当「怎么念」的情绪参考,来源必填,入库前 `cut/prosody` 代码判出声占比 ≥ 85 %、起伏 ≥ 15 半音):
+  角色默认 `character.voice_template_id` + 段落逐句覆盖 `segment.line_templates_json`;候选是 `kind='voice'`、`workflow='indextts2_template'` 的任务;
+  旧引擎(Qwen3 克隆)出的台词音频一律过期;溯源报告列每段台词音频的引擎与模板来源;
   **视频钉台词音频**(v25 `task.result_sec`):`plan_video` 要求有台词、有没过期的台词音频(`tts.audio_problems`),
   `build_h3(guide_audio=)` 串 `MiniMaxH3AddGuide(audio, audio_vae=7, frame_idx=0)`,帧数按音频时长(短的补到训练下限,超上限拒绝);
   提示词里不再写「XX 的声音」/「全程没有人说话」(H3 会把提示词里的中文念出来);`graphs.load_images` 认 LoadAudio,改参重跑照样上传音频;

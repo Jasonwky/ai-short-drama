@@ -44,7 +44,7 @@ from tools.gen.planner import plan_first_frame, plan_key_frame, plan_video
 from tools.gen.tts import plan_tts
 from tools.gen.voice import plan_voice
 from tools.gen.workflows import DRAFT_STEPS
-from tools.serve.dispatch import SUBMITTED
+from tools.serve.dispatch import SUBMITTED, sha256_file
 from tools.serve.hosts import add_host, get_host
 from tools.serve.worker import POLL_SEC, Worker
 
@@ -180,6 +180,12 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
             if writes in ("fourview_path", "voice_ref_path"):     # 验收里没有人:四视图、试听音出来就定稿(写明是自动的)
                 approval.approve(store, data_root, "character", lin, "fourview" if writes == "fourview_path" else "voice",
                                  failed=[], reason=AUTO_APPROVE)
+            if writes == "voice_ref_path":                          # 台词音频要念法模板:验收里拿她自己的试听音当模板(写明来源)
+                ref = repo.get(store, "character", lin)["voice_ref_path"]
+                tpl = repo.add_voice_template(store, repo.get(store, "character", lin)["drama_id"], name="验收",
+                                              path=ref, sha256=sha256_file(data_root / ref),
+                                              source=f"synth:{tid}(验收:角色自己的试听音)", note=AUTO_APPROVE)
+                repo.update(store, "character", lin, voice_template_id=tpl)
             report["tasks"].append(provenance(store, tid))
         s = repo.get(store, "segment", seg)
         report["first_frame_path"], report["video_path"] = s["first_frame_path"], s["video_path"]

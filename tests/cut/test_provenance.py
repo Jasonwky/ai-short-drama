@@ -104,3 +104,13 @@ def test_sha256_is_cached_until_the_file_changes(tmp_path, monkeypatch):
     f.write_bytes(b"two")
     os.utime(f, ns=(f.stat().st_atime_ns, f.stat().st_mtime_ns + 10**9))   # 同样大小,修改时间变了
     assert provenance.cached_sha256(f) != first and len(calls) == 2
+
+
+def test_line_audio_engine_and_template_sources_are_listed(store, two_segments):
+    """IndexTTS2 港片念法(spec 2026-10-31 §9 V9):每段写明视频钉的台词音频用的引擎、每句念法模板与它的来源。"""
+    s, root = two_segments, two_segments["root"]
+    r = provenance.build(store, root, s["episode"], produce_id="ASD-2", producer="P1", videos=_videos(store, s))
+    la = r["segments"][0]["line_audio"]
+    assert la["engine"] == "indextts2_hk"
+    assert la["templates"] and all(t["source"] == "synth:0" for t in la["templates"])
+    assert "念法模板" in provenance.to_markdown(r)

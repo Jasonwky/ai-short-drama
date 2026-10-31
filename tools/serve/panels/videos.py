@@ -77,7 +77,19 @@ def _line_audio(store, root, seg, tasks) -> dict:
     path = seg["line_audio_path"]
     mine = [t for t in tasks if t["kind"] == "tts"]
     check = ttser.check_of(root, path)
+    chars = {c["name"]: c for c in repo.segment_assets(store, seg["id"])["characters"]}
+    names = list(chars)
+    drama = repo.get(store, "episode", seg["episode_id"])["drama_id"]
+    templates = {t["id"]: t for t in repo.voice_templates(store, drama)}
+    over = json.loads(seg["line_templates_json"] or "{}")
+    lines = [{"n": k, "who": who, "line": line, "chosen": over.get(str(k)),
+              "default": templates.get(chars[who]["voice_template_id"])["name"]
+              if who in chars and chars[who]["voice_template_id"] in templates else None}
+             for k, (who, line) in enumerate(rules.dialogue_lines(seg["description"], names), 1)]
+    made_by = tts.producer(store, seg) if path else None
+    engine = (json.loads(made_by["params_json"]).get("engine") or "qwen3(旧引擎,已过期)") if made_by else None
     return {"path": path, "check": check, "stale": tts.stale(store, seg),
+            "lines": lines, "templates": list(templates.values()), "engine": engine,
             "rows": [(who, line, h) for (who, line), h in zip(check["lines"], check["hits"])] if check else [],
             "problems": tts.tts_problems(store, seg["id"]),
             "flying": sum(1 for t in mine if t["state"] in LINE_FLYING),
@@ -211,6 +223,25 @@ def measure_lipsync(request: Request, segment_id: int):
     if spans is None:
         raise ValueError("当前视频没有钉台词音频,没有逐句时间可量 —— 先合成台词音频、重出视频")
     lipsync.check(runtime.data_root, seg["video_path"], spans)
+    return RedirectResponse(f"/episode/{seg['episode_id']}/videos#seg-{segment_id}", status_code=303)
+
+
+@router.post("/segment/{segment_id}/line-templates")
+async def line_templates(request: Request, segment_id: int):
+    """逐句念法模板(spec 2026-10-31-IndexTTS2港片配音-design.md §9 V1):表单 line-<句序号> = 模板 id;空 = 跟角色默认。"""
+    store = rt(request).store
+    seg = repo.get(store, "segment", segment_id)
+    drama = repo.get(store, "episode", seg["episode_id"])["drama_id"]
+    mine = {t["id"] for t in repo.voice_templates(store, drama)}
+    form = await request.form()
+    chosen = {}
+    for key, value in form.items():
+        if key.startswith("line-") and key[5:].isdigit() and str(value).strip():
+            tid = int(value)
+            if tid not in mine:
+                raise ValueError(f"念法模板 {tid} 不属于本剧")
+            chosen[key[5:]] = tid
+    repo.update(store, "segment", segment_id, line_templates_json=json.dumps(chosen, sort_keys=True))
     return RedirectResponse(f"/episode/{seg['episode_id']}/videos#seg-{segment_id}", status_code=303)
 
 

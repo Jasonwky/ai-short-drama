@@ -13,8 +13,17 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v26(s):
+    """退回 v25:删掉 v26 新增的念法模板表与两列。"""
+    for table, col in (("character", "voice_template_id"), ("segment", "line_templates_json")):
+        if col in _cols(s, table):
+            s.conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
+    s.conn.execute("DROP TABLE IF EXISTS voice_template")
+
+
 def _drop_v25(s):
-    """退回 v24:删掉 v25 新增的 task.result_sec。"""
+    """退回 v24:删掉 v25 新增的 task.result_sec;v26 的也一并退掉。"""
+    _drop_v26(s)
     if "result_sec" in _cols(s, "task"):
         s.conn.execute("ALTER TABLE task DROP COLUMN result_sec")
 
@@ -578,4 +587,21 @@ def test_v22_to_v23_art_and_asset_approval(tmp_path):
                    " VALUES ('character', 1, 'image', 'a.png', 'x', 't')")
     with pytest.raises(sqlite3.DatabaseError, match="不可改"):
         s.conn.execute("UPDATE asset_approval SET reason = 'r'")
+    s.close()
+
+
+def test_v25_database_gains_voice_templates(tmp_path):
+    """v26:念法模板(spec 2026-10-31-IndexTTS2港片配音-design.md §3、§9 V1)。旧数据原样保留,新列有默认值。"""
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "玉佩", "9:16")
+    lin = repo.add_character(s, d, "林小雨")
+    _drop_v26(s)
+    s.conn.execute("UPDATE meta SET value = '25' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    assert "voice_template_id" in _cols(s, "character") and "line_templates_json" in _cols(s, "segment")
+    assert repo.get(s, "character", lin)["voice_template_id"] is None
+    assert s.conn.execute("SELECT COUNT(*) FROM voice_template").fetchone()[0] == 0
     s.close()

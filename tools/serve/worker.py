@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from collections.abc import Callable
@@ -26,7 +27,7 @@ from pathlib import Path
 
 from tools.drama.db import Store
 from tools.gen import preflight
-from tools.gen.capability import QWEN3_TTS, WHISPER_ALIGN
+from tools.gen.capability import INDEX_TTS2, QWEN3_TTS, WHISPER_ALIGN
 from tools.gen.comfy_client import ComfyClient
 from tools.serve import aligner, lipgate, ttser, voicer
 from tools.serve.collect import IN_FLIGHT, Collector
@@ -54,6 +55,16 @@ def _ssh_tts(host: Host) -> preflight.Runner:
                                 python=QWEN3_TTS.python)
 
 
+def _ssh_idx(host: Host) -> preflight.Runner:
+    """IndexTTS2 港片念法(台词音频 / 念法模板候选)用 indextts 独立 venv 跑(借 ComfyUI 的 torch);
+    首次加载模型约 30 秒、逐句合成 + WORLD 处理,给足 10 分钟(spec 2026-10-31-IndexTTS2港片配音-design.md §4)。"""
+    return preflight.ssh_runner(host.ssh_host, host.ssh_port, host.ssh_user, host.key_ref, timeout=600,
+                                python=INDEX_TTS2.python)
+
+
+IDX_WORKFLOWS = ("indextts2_hk", "indextts2_template")
+
+
 class Worker:
     def __init__(self, store: Store, host_id: int, *, data_root: Path,
                  client_for: Callable[[Host], object] = lambda h: ComfyClient(h.local_endpoint),
@@ -61,6 +72,7 @@ class Worker:
                  run_for: Callable[[Host], preflight.Runner] = _ssh_run,
                  align_for: Callable[[Host], preflight.Runner] = _ssh_align,
                  tts_for: Callable[[Host], preflight.Runner] = _ssh_tts,
+                 idx_for: Callable[[Host], preflight.Runner] = _ssh_idx,
                  collector: Collector | None = None):
         self.store = store
         self.host_id = host_id
@@ -70,8 +82,14 @@ class Worker:
         self.run_for = run_for
         self.align_for = align_for
         self.tts_for = tts_for
+        self.idx_for = idx_for
         self.collector = collector or Collector(self.data_root)
         self._last_host: Host | None = None
+
+    def _speech_runner(self, task, host: Host) -> preflight.Runner:
+        """配音类任务按 workflow 选云机上的解释器:IndexTTS2(新)/ qwen-tts(试听音设计、旧台词任务)。"""
+        wf = json.loads(task["params_json"]).get("workflow")
+        return (self.idx_for if wf in IDX_WORKFLOWS else self.tts_for)(host)
 
     def tick(self) -> list[str]:
         log: list[str] = []
@@ -111,10 +129,10 @@ class Worker:
                                   run=self.align_for(host))
             elif task["kind"] == "voice":
                 out = voicer.run(self.store, client, host, task, data_root=self.data_root,
-                                 run_tts=self.tts_for(host), run_align=self.align_for(host))
+                                 run_tts=self._speech_runner(task, host), run_align=self.align_for(host))
             elif task["kind"] == "tts":
                 out = ttser.run(self.store, client, host, task, data_root=self.data_root,
-                                run_tts=self.tts_for(host), run_align=self.align_for(host))
+                                run_tts=self._speech_runner(task, host), run_align=self.align_for(host))
             else:
                 out = dispatch(self.store, client, host, task, data_root=self.data_root, run=self.run_for(host))
             log.append(f"task {task['id']}: pending → {out.state} {out.message}".rstrip())

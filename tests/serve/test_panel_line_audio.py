@@ -5,6 +5,7 @@ import re
 
 from tools.drama import repo
 from tools.drama.tasks import set_task_state
+from tests.drama.conftest import give_voice_template
 from tools.gen.tts import plan_tts
 
 
@@ -14,6 +15,7 @@ def _approved_voice(store, root, cid):
     repo.update(store, "character", cid, voice_ref_path="v/lin.wav", voice_ref_text="试听句")
     store.conn.execute("INSERT INTO asset_approval (table_name, row_id, slot, path, sha256, created_at)"
                        " VALUES ('character', ?, 'voice', 'v/lin.wav', 'x', 't')", (cid,))
+    give_voice_template(store, cid, root)
 
 
 def _card(page, seg_id):

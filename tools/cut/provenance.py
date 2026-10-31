@@ -75,7 +75,8 @@ def build(store: Store, data_root: Path, episode_id: int, *, produce_id: str, pr
                      "subtitles": node(store, Path(data_root), sub) if sub else None,
                      "blank_override": v.get("blank_override"),      # 白屏检测命中、人工确认放行的(早于 v12 的导出没有)
                      "review": v.get("review"),                      # 看片确认(早于 v13 的导出没有)
-                     "grade": v.get("grade")})                        # 导出调色(港片画风;早于它的导出没有)
+                     "grade": v.get("grade"),                         # 导出调色(港片画风;早于它的导出没有)
+                     "line_audio": _line_audio(store, v["video_path"])})
     return {"produce_id": produce_id, "content_producer": producer, "drama": drama["title"],
             "aspect_ratio": drama["aspect_ratio"], "episode": ep["number"], "license": LICENSE_NOTE,
             "models": sorted(_models([n for s in segs for n in (s["video"], s["subtitles"]) if n])), "segments": segs,
@@ -126,6 +127,23 @@ def problems(report: dict) -> list[str]:
     return list(dict.fromkeys(out))      # 字幕链里又走一遍视频,同一条问题只报一次
 
 
+def _line_audio(store: Store, video_path: str) -> dict | None:
+    """视频钉的台词音频用的引擎与逐句念法模板(及来源)(spec 2026-10-31-IndexTTS2港片配音-design.md §9 V9)。没钉 → None。"""
+    video = store.conn.execute("SELECT params_json FROM task WHERE kind = 'video' AND state = 'done' AND result_path = ?"
+                               " ORDER BY id DESC LIMIT 1", (video_path,)).fetchone()
+    audio = (json.loads(video["params_json"]).get("script") or {}).get("line_audio") if video else None
+    if not audio:
+        return None
+    t = store.conn.execute("SELECT params_json FROM task WHERE kind = 'tts' AND state = 'done' AND result_path = ?"
+                           " ORDER BY id DESC LIMIT 1", (audio["path"],)).fetchone()
+    p = json.loads(t["params_json"]) if t else {}
+    out = []
+    for tpl in p.get("line_templates", []):
+        row = store.conn.execute("SELECT source FROM voice_template WHERE id = ?", (tpl["id"],)).fetchone()
+        out.append({"name": tpl["name"], "sha256": tpl["sha256"], "source": row["source"] if row else "(模板已删)"})
+    return {"path": audio["path"], "engine": p.get("engine") or p.get("workflow"), "templates": out}
+
+
 def to_markdown(report: dict) -> str:
     lines = [f"# 溯源报告 · {report['drama']} 第 {report['episode']} 集", "",
              f"- 内容制作编号(ProduceID):`{report['produce_id']}`",
@@ -151,6 +169,10 @@ def to_markdown(report: dict) -> str:
         if s.get("subtitles"):
             lines.append("字幕:")
             emit(s["subtitles"], 0)
+        la = s.get("line_audio")
+        if la:
+            tpl = ";".join(f"第 {k} 句「{t['name']}」来源 {t['source']}" for k, t in enumerate(la["templates"], 1))
+            lines.append(f"台词音频:`{la['path']}` · 引擎 {la['engine']}" + (f" · 念法模板:{tpl}" if tpl else ""))
         if s.get("blank_override"):
             lines.append(blankscan.override_note(s["number"], s["blank_override"]))
         if s.get("review"):

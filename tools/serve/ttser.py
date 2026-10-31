@@ -19,13 +19,15 @@ from tools.drama import repo
 from tools.drama.db import Store
 from tools.drama.tasks import set_task_state
 from tools.gen import preflight
-from tools.gen.capability import QWEN3_TTS, WHISPER_ALIGN
+from tools.gen.capability import INDEX_TTS2, QWEN3_TTS, WHISPER_ALIGN
 from tools.gen.comfy_client import ComfyError, ComfyUnreachable
 from tools.serve import aligner
 from tools.serve.dispatch import Outcome, sha256_file
 from tools.serve.hosts import Host
 
 SCRIPT = Path(__file__).with_name("tts_remote.py")
+SCRIPT_IDX = Path(__file__).with_name("idx_remote.py")       # IndexTTS2 港片念法(新任务的 workflow = indextts2_hk)
+IDX = "indextts2_hk"
 HIT_OK = 0.9            # 每句拼音命中率(与试听音同一条线)
 SEED_STEP = 1000        # 换种子:与脚本内逐句 +k 错开
 CHECK = "tts.json"
@@ -34,6 +36,7 @@ CHECK = "tts.json"
 def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
         run_tts: preflight.Runner, run_align: preflight.Runner) -> Outcome:
     tid, root, p = task["id"], Path(data_root), json.loads(task["params_json"])
+    idx = p.get("workflow") == IDX
 
     def fail(msg: str) -> Outcome:
         set_task_state(store, tid, "failed", error=msg)
@@ -45,10 +48,14 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
     missing = [v["path"] for v in p["voices"].values() if not (root / v["path"]).is_file()]
     if missing:
         return fail(f"定稿音色文件不在本机:{', '.join(missing)}")
+    missing = [t["path"] for t in p.get("line_templates", []) if not (root / t["path"]).is_file()]
+    if missing:
+        return fail(f"念法模板文件不在本机:{', '.join(missing)}")
     try:
-        wait = aligner.gpu_ready(client, QWEN3_TTS.vram_gb, "合成台词")
+        wait = aligner.gpu_ready(client, (INDEX_TTS2 if idx else QWEN3_TTS).vram_gb, "合成台词")
         if wait is None:
             refs = {who: upload(root / v["path"]) for who, v in p["voices"].items()}
+            tpls = [upload(root / t["path"]) for t in p.get("line_templates", [])]
     except ComfyUnreachable as e:
         return Outcome("pending", f"连不上云机,下轮再试:{e}")
     except ComfyError as e:
@@ -63,9 +70,15 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
     attempts = []
     for k in range(p["attempts"]):
         seed = task["seed"] + SEED_STEP * k
-        job = {"lines": p["lines"], "voices": {who: {"audio": refs[who], "text": v["ref_text"]} for who, v in p["voices"].items()},
-               "seed": seed, "gap": p["gap_sec"], "lead": p["lead_sec"], "tail": p["tail_sec"], "language": p["language"]}
-        code, out = run_tts([QWEN3_TTS.base_dir, json.dumps(job, ensure_ascii=False)], SCRIPT.read_bytes())
+        if idx:
+            job = {"lines": p["lines"], "voices": {who: {"audio": refs[who]} for who in p["voices"]},
+                   "templates": [{"audio": a} for a in tpls], "seed": seed, "gap": p["gap_sec"], "lead": p["lead_sec"],
+                   "tail": p["tail_sec"], "recipe": p["recipe"], "sr_out": p["sr_out"]}
+            code, out = run_tts([INDEX_TTS2.ckpt_dir, json.dumps(job, ensure_ascii=False)], SCRIPT_IDX.read_bytes())
+        else:       # 旧任务(Qwen3 克隆):云机模型已删,照旧退出码 2 失败并写明(spec §9 V6)
+            job = {"lines": p["lines"], "voices": {who: {"audio": refs[who], "text": v["ref_text"]} for who, v in p["voices"].items()},
+                   "seed": seed, "gap": p["gap_sec"], "lead": p["lead_sec"], "tail": p["tail_sec"], "language": p["language"]}
+            code, out = run_tts([QWEN3_TTS.base_dir, json.dumps(job, ensure_ascii=False)], SCRIPT.read_bytes())
         if code == aligner.SSH_UNREACHABLE:
             return Outcome("pending", f"ssh 连不上云机,下轮再试:{out.strip()[-300:]}")
         if code != 0 and (busy := aligner.oom_wait(out, "合成台词")):

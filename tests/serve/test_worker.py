@@ -117,7 +117,7 @@ def test_voice_tasks_run_through_the_tts_and_align_runners(store, sample, host_i
     from tools.serve.fakes import FakeAligner, FakeVoice
     tts, asr, comfy = FakeVoice(), FakeAligner("这块玉佩是我母亲留给我的"), FakeComfy()
     w = Worker(store, host_id, data_root=tmp_path, client_for=lambda h: comfy, tunnel=FakeTunnel(), run_for=_no_ssh,
-               align_for=lambda h: asr, tts_for=lambda h: tts)
+               align_for=lambda h: asr, tts_for=lambda h: tts, idx_for=lambda h: tts)
     tid = plan_voice(store, sample["lin"], seed=1)
     w.tick()
     assert repo.get(store, "task", tid)["state"] == "done" and len(tts.calls) == 1 and len(asr.calls) == 1
@@ -142,9 +142,31 @@ def test_tts_tasks_run_through_the_tts_and_align_runners(store, sample, host_id,
     repo.update(store, "character", sample["lin"], voice_ref_path="v/lin.wav", voice_ref_text="试听句")
     store.conn.execute("INSERT INTO asset_approval (table_name, row_id, slot, path, sha256, created_at)"
                        " VALUES ('character', ?, 'voice', 'v/lin.wav', 'x', 't')", (sample["lin"],))
+    from tests.drama.conftest import give_voice_template
+    give_voice_template(store, sample["lin"], tmp_path)
     tts, asr, comfy = fake_tts_runner(), FakeAligner("这块玉佩是我母亲留给我的"), FakeComfy()
     w = Worker(store, host_id, data_root=tmp_path, client_for=lambda h: comfy, tunnel=FakeTunnel(), run_for=_no_ssh,
-               align_for=lambda h: asr, tts_for=lambda h: tts)
+               align_for=lambda h: asr, tts_for=lambda h: tts, idx_for=lambda h: tts)
     tid = plan_tts(store, sample["seg"], seed=1)
     w.tick()
     assert repo.get(store, "task", tid)["state"] == "done" and len(tts.lines.calls) == 1 and tts.voice.calls == []
+
+
+def test_new_engine_line_audio_uses_the_indextts_interpreter(store, sample, host_id, tmp_path):
+    """IndexTTS2 港片念法(spec 2026-10-31 §4):新引擎台词任务走 idx_for(indextts venv),不走 qwen-tts 的 tts_for。"""
+    from tests.drama.conftest import give_voice_template
+    from tools.gen.tts import plan_tts
+    from tools.serve.fakes import FakeAligner, fake_tts_runner
+    (tmp_path / "v").mkdir()
+    (tmp_path / "v/lin.wav").write_bytes(b"RIFF")
+    repo.update(store, "character", sample["lin"], voice_ref_path="v/lin.wav", voice_ref_text="试听句")
+    store.conn.execute("INSERT INTO asset_approval (table_name, row_id, slot, path, sha256, created_at)"
+                       " VALUES ('character', ?, 'voice', 'v/lin.wav', 'x', 't')", (sample["lin"],))
+    give_voice_template(store, sample["lin"], tmp_path)
+    qwen, idx = fake_tts_runner(), fake_tts_runner()
+    w = Worker(store, host_id, data_root=tmp_path, client_for=lambda h: FakeComfy(), tunnel=FakeTunnel(), run_for=_no_ssh,
+               align_for=lambda h: FakeAligner("这块玉佩是我母亲留给我的"), tts_for=lambda h: qwen, idx_for=lambda h: idx)
+    tid = plan_tts(store, sample["seg"], seed=1)
+    w.tick()
+    assert repo.get(store, "task", tid)["state"] == "done"
+    assert len(idx.lines.calls) == 1 and qwen.lines.calls == [] and qwen.voice.calls == []

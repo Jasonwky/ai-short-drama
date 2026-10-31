@@ -23,6 +23,18 @@ def approve_all(store):
                                    " VALUES (?, ?, ?, ?, 'test', 't')", (table, r[0], slot, r[1]))
 
 
+def give_voice_template(store, character_id, root=None, name="喝令"):
+    """给角色一个默认念法模板(IndexTTS2 港片念法,spec 2026-10-31);给 root 就把模板文件也放好(要真跑 ttser 的测试)。"""
+    path = f"v/tpl_{character_id}.wav"
+    if root is not None:
+        (root / "v").mkdir(parents=True, exist_ok=True)
+        (root / path).write_bytes(b"RIFF")
+    drama = repo.get(store, "character", character_id)["drama_id"]
+    t = repo.add_voice_template(store, drama, name=name, path=path, sha256="test", source="synth:0", note="")
+    repo.update(store, "character", character_id, voice_template_id=t)
+    return t
+
+
 def give_line_audio(store, seg, sec=8.0):
     """段落里说话的角色都有定稿音色,段落有一条已合成、记了时长的台词音频(spec 2026-10-30 第 4 节;视频规划要它)。
     时长默认等于样例段落的 8 秒,原有的帧数断言不变。测试改了台词要重新给。"""
@@ -34,6 +46,10 @@ def give_line_audio(store, seg, sec=8.0):
             repo.update(store, "character", c["id"], voice_ref_path=path, voice_ref_text="试听句")
             store.conn.execute("INSERT INTO asset_approval (table_name, row_id, slot, path, sha256, created_at)"
                                " VALUES ('character', ?, 'voice', ?, 'test', 't')", (c["id"], path))
+        if c["voice_template_id"] is None:      # 念法模板(IndexTTS2 港片配音,spec 2026-10-31):每个说话人一个默认
+            t = repo.add_voice_template(store, c["drama_id"], name=f"模板{c['id']}", path=f"audio/tpl_{c['id']}.wav",
+                                        sha256="test", source="synth:0", note="")
+            repo.update(store, "character", c["id"], voice_template_id=t)
     if not tts._lines(store, seg):
         return
     tid = tts.plan_tts(store, seg, seed=1)

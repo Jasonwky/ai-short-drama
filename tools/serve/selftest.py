@@ -45,7 +45,7 @@ from tools.drama import approval, repo
 from tools.drama.db import Store
 from tools.gen.assets import _png
 from tools.serve.app import create_app
-from tools.cut import lipsync
+from tools.cut import lipsync, prosody
 from tools.serve.fakes import fake_backend, lip_measure_following_audio
 from tools.serve.hosts import add_host
 from tools.serve.panels import REGISTRY, url_for
@@ -323,6 +323,17 @@ def _heard(backend, text: str):
     return act
 
 
+def _silent_wav(path: Path, seconds: float = 2) -> Path:
+    """自测导入念法模板用的 2 秒静音 wav(16 位 PCM,16 kHz)。"""
+    import wave
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\0\0" * int(16000 * seconds))
+    return path
+
+
 def _voice_approve(char_id: int):
     """角色声音:等假后端交回试听音(反复刷新),试听控件在,再定稿(假回听没听到话 → 要写理由)。"""
     def act(page) -> None:
@@ -369,6 +380,8 @@ def run(out_dir: Path) -> dict:
     ids = seed_demo(store, work)
     backend, _ = fake_backend(demo_products())
     lipsync.measure = lip_measure_following_audio     # 假 GPU 的片不是照台词音频生成的,量它的口型没有意义(见 fakes 说明)
+    prosody.template_problems = lambda x, sr: []      # 自测导入的念法模板是静音 wav;韵律门槛由单测覆盖(tests/cut/test_prosody.py)
+    tpl_wav = _silent_wav(work / "selftest_template.wav")
     backend.align_for(None).heard = "这块玉佩是我母亲留给我的我会一直带着它"     # 两段的台词
     runtime = Runtime(store, work, backend, poll_sec=1)
     runtime.start()
@@ -420,6 +433,16 @@ def run(out_dir: Path) -> dict:
                     ("asset_review", "角色声音:生成 3 版试听 → 定稿", {},
                      [f"#character-{lin}-voice [data-voice-design]", _voice_approve(lin)],
                      f"#character-{lin}-voice [data-voice-approved]", 40),
+                    # IndexTTS2 港片念法(spec 2026-10-31):台词音频要念法模板 —— 导入一段(来源必填),给林小雨选上
+                    ("asset_review", "念法模板:导入一段(写明来源)", {
+                        "[data-voice-templates] input[name=name]": "喝令",
+                        "[data-voice-templates] input[name=source]": "自测:假后端合成的静音",
+                        "[data-voice-templates] input[type=file]": lambda: tpl_wav},
+                     ["[data-template-import]"], "[data-voice-templates] [data-template]", 20),
+                    ("asset_review", "给林小雨选念法模板 → 保存", {},
+                     [lambda pg: pg.locator(f"#character-{lin}-voice [data-voice-template-select]").select_option(label="喝令"),
+                      f"#character-{lin}-voice [data-voice-template-save]"],
+                     f'#character-{lin}-voice [data-voice-template-select] option[selected]:has-text("喝令")', 20),
                     # 台词配音第 2 期:林小雨音色定稿后,段落 1 按它合成台词音频,逐句回听命中(假回听多听到的半句不影响)
                     ("videos", "台词音频:合成 → 试听 + 逐句命中", {}, [f"#seg-{seg} [data-synthesize]"],
                      f"#seg-{seg} [data-line-audio] [data-line-hits]", 40),

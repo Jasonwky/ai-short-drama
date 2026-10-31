@@ -30,7 +30,7 @@ from tools.llm.service import LLMBackend
 from tools.serve import journal
 from tools.serve.hosts import Host, get_host
 from tools.serve.tunnel import TunnelManager
-from tools.serve.worker import POLL_SEC, Worker, _ssh_align, _ssh_run, _ssh_tts
+from tools.serve.worker import POLL_SEC, Worker, _ssh_align, _ssh_run, _ssh_idx, _ssh_tts
 
 
 @dataclass
@@ -44,6 +44,7 @@ class Backend:
     llm: Callable[[], LLMBackend] | None = None     # 点「LLM 生成」时才调用
     align_for: Callable[[Host], preflight.Runner] = _ssh_align   # 字幕对齐:云机上跑 whisper 的 ssh
     tts_for: Callable[[Host], preflight.Runner] = _ssh_tts       # 配音:云机上跑 qwen-tts 的 ssh
+    idx_for: Callable[[Host], preflight.Runner] = _ssh_idx       # 台词音频(IndexTTS2 港片念法):云机上跑 indextts 的 ssh
 
 
 def real_llm() -> LLMBackend:
@@ -109,7 +110,7 @@ class Runtime:
                 b = self.backend
                 w = self._workers[hid] = Worker(self.store, hid, data_root=self.data_root,
                                                 client_for=b.client_for, tunnel=b.tunnel, run_for=b.run_for,
-                                                align_for=b.align_for, tts_for=b.tts_for)
+                                                align_for=b.align_for, tts_for=b.tts_for, idx_for=b.idx_for)
             lines = journal.append(self.data_root, w.tick(), prefix=f"host={hid} ")
             host = get_host(self.store, hid)
             st = probe(host, self.backend)

@@ -130,3 +130,20 @@ def test_grade_preview_makes_a_graded_copy_without_touching_the_segment(client, 
     assert repo.get(store, "segment", seg)["video_path"] == rel
     made = list((runtime.data_root / "outputs/preview").glob("*_hk90.mp4"))
     assert len(made) == 1 and "data-grade-preview-video" in client.get(url).text
+
+
+def test_per_line_template_override(client, store, sample):
+    """IndexTTS2 港片念法(spec 2026-10-31 §6、V1):台词音频块每句一个念法模板下拉;空 = 跟角色默认。"""
+    import json as _json
+    a = repo.add_voice_template(store, sample["drama"], name="喝令", path="a.wav", sha256="a", source="synth:1", note="")
+    b = repo.add_voice_template(store, sample["drama"], name="惊疑", path="b.wav", sha256="b", source="synth:2", note="")
+    repo.update(store, "character", sample["lin"], voice_template_id=a)
+    html = client.get(f"/episode/{sample['episode']}/videos").text
+    assert "data-line-template" in html and "跟角色:喝令" in html
+    r = client.post(f"/segment/{sample['seg']}/line-templates", data={"line-1": str(b)}, follow_redirects=False)
+    assert r.status_code == 303 and _json.loads(repo.get(store, "segment", sample["seg"])["line_templates_json"]) == {"1": b}
+    client.post(f"/segment/{sample['seg']}/line-templates", data={"line-1": ""})
+    assert _json.loads(repo.get(store, "segment", sample["seg"])["line_templates_json"]) == {}
+    other = repo.create_drama(store, "别的剧", "9:16", "realistic")
+    c = repo.add_voice_template(store, other, name="外剧", path="c.wav", sha256="c", source="synth:3", note="")
+    assert client.post(f"/segment/{sample['seg']}/line-templates", data={"line-1": str(c)}).status_code == 400

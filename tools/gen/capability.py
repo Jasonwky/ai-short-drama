@@ -167,6 +167,31 @@ QWEN3_TTS = TtsBackend(
 )
 
 
+@dataclass(frozen=True)
+class IndexTtsBackend:
+    """IndexTTS2 港片念法配方(spec 2026-10-31-IndexTTS2港片配音-design.md §2;实测 spike-results/2026-10-31-降低AI感调研.md §12,
+    用户选「① ×1.4 快版」)。配方只在这里写,规划快照它、云机脚本照它做。"""
+    name: str
+    python: str             # 云机 indextts 独立 venv(借 ComfyUI 的 torch)
+    repo_dir: str
+    ckpt_dir: str
+    emo_alpha: float        # 念法模板(情绪参考)的强度
+    pitch_widen: float      # WORLD 对数音高围绕中位数放大倍数
+    squeeze_gap_sec: float  # 句内超过它的静音剪到它
+    squeeze_db: float       # 静音阈值
+    gap_sec: float          # 句与句之间
+    sr_out: int             # 拼好后统一重采样(旧链路 24 kHz)
+    vram_gb: float          # 暂定;上线前云机实测改
+
+
+INDEX_TTS2 = IndexTtsBackend(
+    name="IndexTTS-2", python="/root/autodl-tmp/indextts/venv/bin/python",
+    repo_dir="/root/autodl-tmp/indextts", ckpt_dir="/root/autodl-tmp/indextts/checkpoints",
+    emo_alpha=1.0, pitch_widen=1.4, squeeze_gap_sec=0.06, squeeze_db=-38.0, gap_sec=0.15, sr_out=24000,
+    vram_gb=8.0,
+)
+
+
 # ──────────────────────────────────────────────────────────────
 # 实测耗时,按卡分开存(给「重跑要多久」报估算,不是承诺)
 #   最终用哪张卡没定(用户 2026-10-09):每台云机登记自己的卡,估时按已登记里最慢的一张(gen/estimate.py)。

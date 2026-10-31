@@ -18,20 +18,21 @@ _COLUMNS: dict[str, set[str]] = {
     "drama": {"premise_json", "skeleton_json", "flow_auto", "art_json", "style"},   # 立项发散(v16)、原创骨架(v20)、自动推进(v21)、美术设定(v23)、画风可改(港片画风 G6);剧名、画幅不在这里 —— 画幅建后不可改
     "episode": {"source_text", "outline", "script", "beats_json"},
     "character": {"appearance", "styling", "voice_desc", "final_prompt", "seed",
-                  "turnaround_path", "fourview_path", "voice_ref_path", "voice_ref_text"},
+                  "turnaround_path", "fourview_path", "voice_ref_path", "voice_ref_text", "voice_template_id"},
     "scene": {"episode_id", "location", "time", "lighting", "final_prompt", "image_path", "purpose", "furnishings"},
     "prop": {"description", "final_prompt", "image_path"},
     # scene_id 不在这里:改场景要走 set_scene(),它会核对归属
     "segment": {"duration_sec", "shot_type", "angle", "movement", "description", "result",
                 "atmosphere", "layout", "image_prompt", "last_image_prompt", "video_prompt", "bgm_prompt", "sfx_prompt",
-                "reference_mode", "first_frame_path", "last_frame_path", "video_path", "line_audio_path", "subtitle_path", "blocking_json"},
+                "reference_mode", "first_frame_path", "last_frame_path", "video_path", "line_audio_path", "subtitle_path", "blocking_json",
+                "line_templates_json"},
     # segment_id 不在这里:关键帧建在哪段就属于哪段,不挪
     "segment_keyframe": {"time_sec", "image_prompt", "frame_path"},
     # path / sha256 不在这里:文件按内容寻址,换文件就是新挂一条
     "music_cue": {"license", "start_sec", "end_sec", "gain_db", "duck_db", "fade_in", "fade_out"},
 }
 _READABLE = {"drama", "episode", "character", "scene", "prop", "segment", "task", "host", "segment_keyframe",
-             "music_cue", "blank_override", "segment_review"}
+             "music_cue", "blank_override", "segment_review", "voice_template"}
 
 
 def _check_cols(table: str, fields: dict) -> None:
@@ -301,3 +302,19 @@ def segment_assets(store: Store, segment_id: int) -> dict:
                       "WHERE sp.segment_id = ? ORDER BY sp.position", (segment_id,)).fetchall()
     scene = get(store, "scene", seg["scene_id"]) if seg["scene_id"] is not None else None
     return {"characters": chars, "scene": scene, "props": props}
+
+
+def add_voice_template(store: Store, drama_id: int, *, name: str, path: str, sha256: str, source: str, note: str) -> int:
+    """念法模板(只当「怎么念」的参考,spec 2026-10-31-IndexTTS2港片配音-design.md §3)。来源必填(V9):
+    synth:<任务号>,或上传音频的来历 —— 不得用他人作品里的声音。"""
+    if not source.strip():
+        raise ValueError("念法模板要写来源(合成任务号,或上传音频的来历)—— 不得用他人作品里的声音")
+    get(store, "drama", drama_id)
+    with store.write() as c:
+        return c.execute("INSERT INTO voice_template (drama_id, name, path, sha256, source, note, created_at)"
+                         " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                         (drama_id, name.strip(), path, sha256, source.strip(), note.strip(), now())).lastrowid
+
+
+def voice_templates(store: Store, drama_id: int) -> list[sqlite3.Row]:
+    return store.conn.execute("SELECT * FROM voice_template WHERE drama_id = ? ORDER BY id", (drama_id,)).fetchall()

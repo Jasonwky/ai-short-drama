@@ -9,17 +9,20 @@
 """
 from __future__ import annotations
 
+import json
 import random
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
 
+from tools.cut import prosody
 from tools.drama import approval, repo
 from tools.gen import assetscan
 from tools.gen.assets import locked_seed, plan_asset_image, plan_fourview
-from tools.gen.voice import plan_voice
+from tools.gen.voice import EMO_PRESETS, plan_template, plan_voice
 from tools.llm import asset_check, asset_review
 from tools.serve import voicer
+from tools.serve.dispatch import sha256_file
 from tools.serve.panels.common import render, rt
 
 router = APIRouter()
@@ -82,6 +85,11 @@ def voice_cards(store, root, drama_id: int) -> list[dict]:
                     "anchor": _anchor("character", ch["id"], "voice"),
                     "versions": [dict(v, check=voicer.check_of(root, v["result_path"]))
                                  for v in _versions(store, "character", ch["id"], "voice", path)],
+                    "template_id": ch["voice_template_id"],
+                    "candidates": [dict(t, prosody=voicer.prosody_of(root, t["result_path"])) for t in store.conn.execute(
+                        "SELECT * FROM task WHERE kind = 'voice' AND target_id = ? AND state = 'done'"
+                        " AND json_extract(params_json, '$.writes') = 'voice_template_candidate' ORDER BY id DESC LIMIT 6",
+                        (ch["id"],)).fetchall()],
                     "flying": store.conn.execute(
                         f"SELECT COUNT(*) FROM task WHERE kind = 'voice' AND target_id = ? AND state IN"
                         f" ({','.join('?' * len(VOICE_FLYING))})", (ch["id"], *VOICE_FLYING)).fetchone()[0]})
@@ -99,6 +107,7 @@ def page(request: Request, drama_id: int):
     return render(request, "asset_review.html", "asset_review", drama_id=drama_id, drama=drama, cards=cards,
                   state=state, detail=detail, drama_run=asset_review.drama_run(store, drama_id),
                   voices=voice_cards(store, runtime.data_root, drama_id),
+                  templates=repo.voice_templates(store, drama_id), presets=list(EMO_PRESETS),
                   clean=sum(1 for c in cards if c.get("clean") and c.get("approval") is None))
 
 
@@ -162,6 +171,79 @@ def voice_design(request: Request, row_id: int):
     for _ in range(VOICE_TAKES):
         plan_voice(store, row_id, seed=random.randrange(1, 2**31))
     return _back(store, "character", row_id, "voice")
+
+
+# ── 念法模板(IndexTTS2 港片念法,spec 2026-10-31-IndexTTS2港片配音-design.md §3)────────────
+TEMPLATE_DIR = "voice_templates"
+
+
+def _templates_back(drama_id: int) -> RedirectResponse:
+    return RedirectResponse(f"/drama/{drama_id}/asset-review#voice-templates", status_code=303)
+
+
+@router.post("/drama/{drama_id}/voice-template/import")
+def template_import(request: Request, drama_id: int, name: str = Form(...), source: str = Form(""),
+                    file: UploadFile = File(...)):
+    """导入一段我们自己合成 / 自己录的音频当念法模板:来源必填(V9),过韵律门槛(V2)才收。"""
+    runtime = rt(request)
+    repo.get(runtime.store, "drama", drama_id)
+    if not source.strip():
+        raise ValueError("念法模板要写来源(合成任务号,或这段音频的来历)—— 不得用他人作品里的声音")
+    tmp = runtime.data_root / TEMPLATE_DIR / "_incoming.wav"
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    tmp.write_bytes(file.file.read())
+    try:
+        problems = prosody.template_problems(*prosody.load_wav(tmp))
+    except Exception as e:                       # 读不了 = 不是 16 位 PCM wav:说清楚,不当通过
+        tmp.unlink()
+        raise ValueError(f"读不了这个音频(要 16 位 PCM 的 wav):{type(e).__name__}: {e}") from e
+    if problems:
+        tmp.unlink()
+        raise ValueError("念法不够格:" + ";".join(problems))
+    sha = sha256_file(tmp)
+    rel = f"{TEMPLATE_DIR}/{sha[:16]}.wav"
+    tmp.replace(runtime.data_root / rel)
+    repo.add_voice_template(runtime.store, drama_id, name=name, path=rel, sha256=sha, source=f"upload:{source.strip()}", note="")
+    return _templates_back(drama_id)
+
+
+@router.post("/character/{row_id}/voice-template")
+def template_pick(request: Request, row_id: int, template_id: str = Form("")):
+    """角色的默认念法模板(他的台词默认都用它;段落里可以逐句换)。空 = 不选。"""
+    store = rt(request).store
+    ch = repo.get(store, "character", row_id)
+    tid = int(template_id) if template_id.strip() else None
+    if tid is not None and repo.get(store, "voice_template", tid)["drama_id"] != ch["drama_id"]:
+        raise ValueError("这个念法模板不属于本剧")
+    repo.update(store, "character", row_id, voice_template_id=tid)
+    return _back(store, "character", row_id, "voice")
+
+
+@router.post("/character/{row_id}/voice-template/generate")
+def template_generate(request: Request, row_id: int, preset: str = Form(...)):
+    """按预设出 3 个念法候选(用角色的定稿音色;云机 IndexTTS2)。"""
+    store = rt(request).store
+    for _ in range(VOICE_TAKES):
+        plan_template(store, row_id, preset=preset, seed=random.randrange(1, 2**31))
+    return _back(store, "character", row_id, "voice")
+
+
+@router.post("/task/{task_id}/save-template")
+def template_save(request: Request, task_id: int, name: str = Form(...)):
+    """把一个念法候选存成模板:过了韵律门槛才行;来源记 synth:<任务号>。"""
+    runtime = rt(request)
+    t = repo.get(runtime.store, "task", task_id)
+    if t["state"] != "done" or not t["result_path"]:
+        raise ValueError("这个候选还没生成完")
+    report = voicer.prosody_of(runtime.data_root, t["result_path"])
+    if report is None:
+        raise ValueError("这个候选没有韵律量值,不能存成模板")
+    if report["problems"]:
+        raise ValueError("念法不够格:" + ";".join(report["problems"]))
+    drama = repo.get(runtime.store, "character", t["target_id"])["drama_id"]
+    repo.add_voice_template(runtime.store, drama, name=name, path=t["result_path"], sha256=t["result_sha256"],
+                            source=f"synth:{task_id}", note=json.loads(t["params_json"]).get("preset", ""))
+    return _templates_back(drama)
 
 
 @router.post("/asset/{table}/{row_id}/{slot}/regenerate")

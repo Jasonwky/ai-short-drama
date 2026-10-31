@@ -88,3 +88,15 @@ def test_drama_style_is_writable_but_aspect_is_not(store, sample):
     assert repo.get(store, "drama", sample["drama"])["style"] == "hk90"
     with pytest.raises(ValueError, match="不允许写入字段"):
         repo.update(store, "drama", sample["drama"], aspect_ratio="16:9")
+
+
+def test_voice_templates_belong_to_a_drama_and_need_a_source(store, sample):
+    """念法模板(spec 2026-10-31 §3、V9):来源必填;角色默认模板与段落逐句覆盖都能写。"""
+    tid = repo.add_voice_template(store, sample["drama"], name="喝令", path="voice_templates/a.wav", sha256="x",
+                                  source="synth:12", note="")
+    assert [t["name"] for t in repo.voice_templates(store, sample["drama"])] == ["喝令"]
+    repo.update(store, "character", sample["lin"], voice_template_id=tid)
+    repo.update(store, "segment", sample["seg"], line_templates_json='{"1": %d}' % tid)
+    assert repo.get(store, "segment", sample["seg"])["line_templates_json"] == '{"1": %d}' % tid
+    with pytest.raises(ValueError, match="来源"):
+        repo.add_voice_template(store, sample["drama"], name="x", path="p", sha256="y", source=" ", note="")

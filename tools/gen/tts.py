@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""段落台词音频:按说话人的**定稿音色**逐句克隆、拼成一条(spec 2026-10-30-台词配音与口型闸门-design.md 第 4 节)。
+"""段落台词音频:按说话人的**定稿音色**逐句合成、拼成一条(spec 2026-10-30-台词配音与口型闸门-design.md 第 4 节)。
 
-规划时定死:逐句台词(`rules.dialogue_lines`,按本段角色名认说话人 —— 与视频规划同口径)、每个说话人的定稿音色快照
-(路径 + 定稿记录里的 sha256 + 参考文本)、停顿与种子。执行在 `serve/ttser.py`。
-**过期**:现在的台词、或任一说话人现在的定稿音色,与当前台词音频那条任务的快照不同 —— 视频规划(第 3 期)据此拦。
+引擎 2026-11 起是 IndexTTS2 港片念法(spec 2026-10-31-IndexTTS2港片配音-design.md):克隆定稿音色 + **念法模板**
+(情绪参考,段落逐句覆盖 > 说话人默认)+ 去句内停顿 + 音高起伏放大,配方在 `capability.INDEX_TTS2`。
+规划时定死:逐句台词(`rules.dialogue_lines`,按本段角色名认说话人 —— 与视频规划同口径)、音色快照(路径 + 定稿 sha256)、
+逐句模板快照(id + 路径 + sha256)、配方、停顿与种子。执行在 `serve/ttser.py`。
+**过期**:台词、任一说话人的定稿音色、任一句的念法模板、配方,与当前台词音频那条任务的快照不同;旧引擎(Qwen3 克隆)出的一律过期。
 """
 from __future__ import annotations
 
@@ -13,12 +15,18 @@ import sqlite3
 from tools.drama import approval, repo, rules
 from tools.drama.db import Store
 from tools.drama.tasks import create_task
-from tools.gen.capability import MINIMAX_H3, QWEN3_TTS
+from tools.gen.capability import INDEX_TTS2, MINIMAX_H3
 
-GAP_SEC = 0.4       # 句间停顿
+ENGINE = "indextts2_hk"
 LEAD_SEC = 0.3      # 开头留白
 TAIL_SEC = 0.5      # 结尾留白
 ATTEMPTS = 3        # 回听不过换种子重合成,最多这么多次
+
+
+def recipe() -> dict:
+    """当前配方(快照进任务;变了 = 过期)。"""
+    return {"emo_alpha": INDEX_TTS2.emo_alpha, "pitch_widen": INDEX_TTS2.pitch_widen,
+            "squeeze_gap_sec": INDEX_TTS2.squeeze_gap_sec, "squeeze_db": INDEX_TTS2.squeeze_db}
 
 
 def _lines(store: Store, segment_id: int) -> list[list[str]]:
@@ -28,7 +36,7 @@ def _lines(store: Store, segment_id: int) -> list[list[str]]:
 
 
 def _voices(store: Store, segment_id: int, speakers) -> tuple[dict, list[str]]:
-    """{说话人: 音色快照} 与问题清单。说话人必须是本段绑定的角色、且有定稿音色。"""
+    """{说话人: 音色快照} 与问题清单。说话人必须是本段绑定的角色、且有定稿音色(IndexTTS2 只要音频,不要参考文本 —— V3)。"""
     chars = {c["name"]: c for c in repo.segment_assets(store, segment_id)["characters"]}
     voices, problems = {}, []
     for who in dict.fromkeys(speakers):
@@ -40,17 +48,33 @@ def _voices(store: Store, segment_id: int, speakers) -> tuple[dict, list[str]]:
         if a is None:
             problems.append(f"角色「{who}」还没有定稿的音色(到「资产图审」页底部「角色声音」生成试听并定稿)")
             continue
-        voices[who] = {"path": a["path"], "sha256": a["sha256"], "ref_text": ch["voice_ref_text"] or ""}
-        if not voices[who]["ref_text"]:
-            problems.append(f"角色「{who}」的定稿音色不知道念的是哪句(手工放的音频),克隆需要参考文本 —— 用试听任务重新生成")
+        voices[who] = {"path": a["path"], "sha256": a["sha256"]}
     return voices, problems
+
+
+def _templates(store: Store, segment_id: int, lines) -> tuple[list[dict | None], list[str]]:
+    """每句用哪个念法模板:段落逐句覆盖(`line_templates_json`,{句序号: 模板 id})> 说话人默认(V1)。"""
+    seg = repo.get(store, "segment", segment_id)
+    over = json.loads(seg["line_templates_json"] or "{}")
+    chars = {c["name"]: c for c in repo.segment_assets(store, segment_id)["characters"]}
+    out, problems = [], []
+    for k, (who, _) in enumerate(lines, 1):
+        tid = over.get(str(k)) or (chars[who]["voice_template_id"] if who in chars else None)
+        if tid is None:
+            if who in chars:
+                problems.append(f"角色「{who}」还没选念法模板(到「资产图审 → 角色声音」给他选一个,或在本段逐句选)")
+            out.append(None)
+            continue
+        t = repo.get(store, "voice_template", tid)
+        out.append({"id": t["id"], "name": t["name"], "path": t["path"], "sha256": t["sha256"]})
+    return out, list(dict.fromkeys(problems))
 
 
 def tts_problems(store: Store, segment_id: int) -> list[str]:
     lines = _lines(store, segment_id)
     if not lines:
         return ["这段没有台词"]
-    return _voices(store, segment_id, [who for who, _ in lines])[1]
+    return _voices(store, segment_id, [who for who, _ in lines])[1] + _templates(store, segment_id, lines)[1]
 
 
 def plan_tts(store: Store, segment_id: int, *, seed: int) -> int:
@@ -59,12 +83,13 @@ def plan_tts(store: Store, segment_id: int, *, seed: int) -> int:
         raise ValueError(";".join(problems))
     lines = _lines(store, segment_id)
     voices, _ = _voices(store, segment_id, [who for who, _ in lines])
-    params = {"workflow": "qwen3_tts_clone", "lines": lines, "voices": voices, "language": QWEN3_TTS.language,
-              "gap_sec": GAP_SEC, "lead_sec": LEAD_SEC, "tail_sec": TAIL_SEC, "attempts": ATTEMPTS,
-              "writes": "line_audio_path", "expect_ext": ".wav"}
-    return create_task(store, kind="tts", target_type="segment", target_id=segment_id, model=QWEN3_TTS.name,
+    templates, _ = _templates(store, segment_id, lines)
+    params = {"workflow": ENGINE, "engine": ENGINE, "lines": lines, "voices": voices, "line_templates": templates,
+              "recipe": recipe(), "gap_sec": INDEX_TTS2.gap_sec, "lead_sec": LEAD_SEC, "tail_sec": TAIL_SEC,
+              "attempts": ATTEMPTS, "sr_out": INDEX_TTS2.sr_out, "writes": "line_audio_path", "expect_ext": ".wav"}
+    return create_task(store, kind="tts", target_type="segment", target_id=segment_id, model=INDEX_TTS2.name,
                        params=params, seed=seed, prompt="\n".join(f"{who}:{line}" for who, line in lines),
-                       refs=[v["path"] for v in voices.values()])
+                       refs=[v["path"] for v in voices.values()] + [t["path"] for t in templates])
 
 
 def producer(store: Store, segment: sqlite3.Row) -> sqlite3.Row | None:
@@ -82,6 +107,8 @@ def stale(store: Store, segment: sqlite3.Row) -> list[str]:
     if task is None:
         return ["当前台词音频不是由台词音频任务生成的,重新合成"]
     p = json.loads(task["params_json"])
+    if p.get("engine") != ENGINE:
+        return ["配音引擎换了(Qwen3 克隆 → IndexTTS2 港片念法),重新合成"]
     out = []
     lines = _lines(store, segment["id"])
     if lines != p["lines"]:
@@ -90,6 +117,13 @@ def stale(store: Store, segment: sqlite3.Row) -> list[str]:
     for who, v in p["voices"].items():
         if who in now and (now[who]["path"], now[who]["sha256"]) != (v["path"], v["sha256"]):
             out.append(f"角色「{who}」换了定稿音色")
+    if lines == p["lines"]:
+        tpl, _ = _templates(store, segment["id"], lines)
+        for k, (was, cur) in enumerate(zip(p["line_templates"], tpl), 1):
+            if cur is None or (cur["id"], cur["sha256"]) != (was["id"], was["sha256"]):
+                out.append(f"第 {k} 句的念法模板换了")
+    if p["recipe"] != recipe():
+        out.append("配音配方参数改了")
     return out
 
 

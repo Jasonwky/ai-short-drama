@@ -251,7 +251,8 @@ def fake_tts_runner():
     voice, lines = FakeVoice(), FakeTts()
 
     def run(args, stdin):
-        return (lines if b"generate_voice_clone" in stdin else voice)(args, stdin)
+        clone = b"generate_voice_clone" in stdin or b"IndexTTS2" in stdin    # 台词合成:Qwen3 克隆 / IndexTTS2 港片念法
+        return (lines if clone else voice)(args, stdin)
     run.voice, run.lines = voice, lines
     return run
 
@@ -280,5 +281,5 @@ def fake_backend(demo: dict | None = None):
     backend = Backend("假后端(测试专用)", lambda host: comfy, FakeTunnel(), lambda host: (lambda args, stdin: (0, "")),
                       fake=True, before_tick=gpu.run_pending,
                       llm=lambda: LLMBackend(FakeLLM(), DEFAULT_MODEL, "fake"), align_for=lambda host: aligner,
-                      tts_for=lambda host: tts)
+                      tts_for=lambda host: tts, idx_for=lambda host: tts)
     return backend, comfy

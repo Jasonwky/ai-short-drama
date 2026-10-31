@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""段落台词音频的规划:说话人要有定稿音色;参数定死台词与音色快照;台词 / 音色变了算过期。"""
+"""段落台词音频的规划:说话人要有定稿音色与念法模板;参数定死台词、音色、逐句模板与配方快照;任一变了算过期。
+引擎:IndexTTS2 港片念法(spec 2026-10-31-IndexTTS2港片配音-design.md);旧引擎 qwen3_tts_clone 的音频一律过期。"""
 import json
 
 import pytest
@@ -18,13 +19,21 @@ def _voice(store, cid, path, text="试听句"):
                   " VALUES ('character', ?, 'voice', ?, ?, 't')", (cid, path, f"sha-{path}"))
 
 
+def _template(store, drama, name="喝令"):
+    return repo.add_voice_template(store, drama, name=name, path=f"voice_templates/{name}.wav", sha256=f"sha-{name}",
+                                   source="synth:1", note="")
+
+
 @pytest.fixture
 def two(store, sample):
     repo.bind_characters(store, sample["seg"], [sample["lin"], sample["shen"]])
     repo.update(store, "segment", sample["seg"], description=TWO)
     _voice(store, sample["lin"], "v/lin.wav", "林的试听句")
     _voice(store, sample["shen"], "v/shen.wav", "沈的试听句")
-    return sample
+    t = _template(store, sample["drama"])
+    for c in ("lin", "shen"):
+        repo.update(store, "character", sample[c], voice_template_id=t)
+    return {**sample, "tpl": t}
 
 
 def test_plan_freezes_lines_and_approved_voices(store, two):
@@ -33,9 +42,13 @@ def test_plan_freezes_lines_and_approved_voices(store, two):
     p = json.loads(t["params_json"])
     assert (t["kind"], t["target_type"], t["seed"]) == ("tts", "segment", 9)
     assert p["lines"] == [["林小雨", "这块玉佩，是我母亲留给我的。"], ["沈墨", "我知道。"]]
-    assert p["voices"]["沈墨"] == {"path": "v/shen.wav", "sha256": "sha-v/shen.wav", "ref_text": "沈的试听句"}
+    assert p["voices"]["沈墨"] == {"path": "v/shen.wav", "sha256": "sha-v/shen.wav"}          # IndexTTS2 不要参考文本(V3)
     assert p["writes"] == "line_audio_path" and p["expect_ext"] == ".wav"
-    assert json.loads(t["refs_json"]) == ["v/lin.wav", "v/shen.wav"]
+    assert (p["workflow"], p["engine"], t["model"]) == ("indextts2_hk", "indextts2_hk", "IndexTTS-2")
+    assert [x["name"] for x in p["line_templates"]] == ["喝令", "喝令"]
+    assert p["recipe"] == {"emo_alpha": 1.0, "pitch_widen": 1.4, "squeeze_gap_sec": 0.06, "squeeze_db": -38.0}
+    assert (p["gap_sec"], p["sr_out"]) == (0.15, 24000)
+    assert json.loads(t["refs_json"]) == ["v/lin.wav", "v/shen.wav", "voice_templates/喝令.wav", "voice_templates/喝令.wav"]
 
 
 def test_speaker_without_an_approved_voice_is_named(store, two):
@@ -102,3 +115,38 @@ def test_audio_longer_than_the_video_limit_is_refused(store, two):
 def test_audio_without_a_recorded_length_must_be_redone(store, two):
     _done(store, tts.plan_tts(store, two["seg"], seed=1), "outputs/tasks/62/lines.wav")
     assert "没记时长" in tts.audio_problems(store, repo.get(store, "segment", two["seg"]))[0]
+
+
+def test_speaker_without_a_template_is_named(store, two):
+    repo.update(store, "character", two["shen"], voice_template_id=None)
+    assert any("沈墨" in p and "念法模板" in p for p in tts.tts_problems(store, two["seg"]))
+    with pytest.raises(ValueError, match="念法模板"):
+        tts.plan_tts(store, two["seg"], seed=1)
+
+
+def test_per_line_template_overrides_the_speaker_default(store, two):
+    b = _template(store, two["drama"], "惊疑")
+    repo.update(store, "segment", two["seg"], line_templates_json=json.dumps({"2": b}))
+    p = json.loads(repo.get(store, "task", tts.plan_tts(store, two["seg"], seed=3))["params_json"])
+    assert [x["id"] for x in p["line_templates"]] == [two["tpl"], b]
+
+
+def test_stale_when_a_line_template_changes(store, two):
+    _done(store, tts.plan_tts(store, two["seg"], seed=1), "outputs/tasks/70/lines.wav")
+    seg = lambda: repo.get(store, "segment", two["seg"])   # noqa: E731
+    assert tts.stale(store, seg()) == []
+    b = _template(store, two["drama"], "惊疑")
+    repo.update(store, "segment", two["seg"], line_templates_json=json.dumps({"1": b}))
+    assert any("第 1 句" in r and "念法模板" in r for r in tts.stale(store, seg()))
+    repo.update(store, "segment", two["seg"], line_templates_json="{}")
+    assert tts.stale(store, seg()) == []
+
+
+def test_old_engine_line_audio_is_stale(store, two):
+    """旧引擎(Qwen3 克隆)出的台词音频:引擎换了 → 过期(spec §5、V6)。"""
+    from tools.drama.tasks import create_task
+    tid = create_task(store, kind="tts", target_type="segment", target_id=two["seg"], model="Qwen3-TTS-12Hz-1.7B",
+                      params={"workflow": "qwen3_tts_clone", "lines": tts._lines(store, two["seg"]), "voices": {},
+                              "writes": "line_audio_path", "expect_ext": ".wav"}, seed=1, prompt="p", refs=[])
+    _done(store, tid, "outputs/tasks/71/lines.wav")
+    assert any("引擎" in r for r in tts.stale(store, repo.get(store, "segment", two["seg"])))

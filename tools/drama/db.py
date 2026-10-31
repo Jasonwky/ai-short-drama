@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 25
+SCHEMA_VERSION = 26
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -454,6 +454,24 @@ VOICE_DDL = [
 RESULT_SEC_DDL = ["ALTER TABLE task ADD COLUMN result_sec REAL"]
 SCHEMA += "".join(f"{stmt};\n" for stmt in RESULT_SEC_DDL)
 
+# v26:IndexTTS2 港片配音(spec 2026-10-31-IndexTTS2港片配音-design.md §3、§9 V1/V9)。
+# 念法模板 = 只当「怎么念」的参考音频(IndexTTS2 的情绪参考),来源必填;角色默认模板 + 段落逐句覆盖({句序号: 模板 id})。
+VOICE_TEMPLATE_DDL = [
+    """CREATE TABLE voice_template (
+  id INTEGER PRIMARY KEY,
+  drama_id INTEGER NOT NULL REFERENCES drama(id),
+  name TEXT NOT NULL,
+  path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (trim(source) <> ''),
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+)""",
+    "ALTER TABLE character ADD COLUMN voice_template_id INTEGER REFERENCES voice_template(id)",
+    "ALTER TABLE segment ADD COLUMN line_templates_json TEXT NOT NULL DEFAULT '{}'",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in VOICE_TEMPLATE_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -519,6 +537,8 @@ MIGRATIONS: dict[int, list[str]] = {
     23: VOICE_DDL,
     # v25:产物时长
     24: RESULT_SEC_DDL,
+    # v26:念法模板
+    25: VOICE_TEMPLATE_DDL,
 }
 
 

@@ -36,7 +36,7 @@ def _worker_on(comfy):
     aligner, tts = FakeAligner("这块玉佩是我母亲留给我的"), fake_tts_runner()
     return lambda store, host_id, root: Worker(store, host_id, data_root=root, client_for=lambda h: comfy,
                                                tunnel=FakeTunnel(), run_for=lambda h: None,
-                                               align_for=lambda h: aligner, tts_for=lambda h: tts)
+                                               align_for=lambda h: aligner, tts_for=lambda h: tts, idx_for=lambda h: tts)
 
 
 def _gpu(comfy):
@@ -129,7 +129,7 @@ def _worker_with_tunnel(comfy, tunnel):
     aligner, tts = FakeAligner("这块玉佩是我母亲留给我的"), fake_tts_runner()
     return lambda store, host_id, root: Worker(store, host_id, data_root=root, client_for=lambda h: comfy,
                                                tunnel=tunnel, run_for=lambda h: None, align_for=lambda h: aligner,
-                                               tts_for=lambda h: tts)
+                                               tts_for=lambda h: tts, idx_for=lambda h: tts)
 
 
 def test_preset_step_waits_for_a_fresh_tunnel(tmp_path, images):

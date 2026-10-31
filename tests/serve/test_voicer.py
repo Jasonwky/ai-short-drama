@@ -87,3 +87,25 @@ def test_cuda_oom_mid_run_waits_for_the_next_gap(store, sample, world, step):
                      run_tts=world["tts"], run_align=oom if step == "align" else FakeAligner(LINE))
     assert out.state == "pending" and "显存" in out.message
     assert repo.get(store, "task", tid)["state"] == "pending"
+
+
+def test_template_candidate_runs_on_indextts_and_records_prosody(store, sample, world):
+    """候选只落盘 + 量韵律(prosody.json),不写回角色、不回听;脚本是 idx_remote。"""
+    from tools.gen import voice
+    from tools.serve.fakes import FakeTts
+    (world["root"] / "v").mkdir(exist_ok=True)
+    (world["root"] / "v/lin.wav").write_bytes(b"RIFF")
+    repo.update(store, "character", sample["lin"], voice_ref_path="v/lin.wav", voice_ref_text="试听句")
+    store.conn.execute("INSERT INTO asset_approval (table_name, row_id, slot, path, sha256, created_at)"
+                       " VALUES ('character', ?, 'voice', 'v/lin.wav', 'x', 't')", (sample["lin"],))
+    tid = voice.plan_template(store, sample["lin"], preset="喝令", seed=3)
+    tts = FakeTts()
+    out = voicer.run(store, world["comfy"], world["host"], repo.get(store, "task", tid), data_root=world["root"],
+                     run_tts=tts, run_align=lambda a, s: (_ for _ in ()).throw(AssertionError("候选不回听")))
+    t = repo.get(store, "task", tid)
+    assert out.state == "done" and t["result_path"] == f"outputs/tasks/{tid}/template.wav"
+    job = json.loads(tts.calls[0][1])
+    assert tts.calls[0][0].endswith("/indextts/checkpoints") and job["emo_vector"] == voice.EMO_PRESETS["喝令"]
+    report = json.loads((world["root"] / f"outputs/tasks/{tid}/prosody.json").read_text(encoding="utf-8"))
+    assert set(report) == {"occupancy", "range_st", "problems"} and report["problems"]     # 假脚本出的是静音:不合格
+    assert repo.get(store, "character", sample["lin"])["voice_ref_path"] == "v/lin.wav"

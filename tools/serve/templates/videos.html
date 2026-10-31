@@ -29,7 +29,20 @@
         {% elif s.row.duration_sec %}<p class="hint" data-estimate>{{ est_note }}</p>{% endif %}
         {% set la = s.line_audio %}
         <div data-line-audio>
-          <p><b>台词音频</b> <span class="hint">(按说话人的定稿音色逐句合成,Whisper 按拼音逐句回听;不过自动换种子,最多 3 次)</span></p>
+          <p><b>台词音频</b> <span class="hint">(IndexTTS2 港片念法:定稿音色 + 念法模板,去停顿、起伏放大;Whisper 按拼音逐句回听,不过自动换种子,最多 3 次)</span>
+            {% if la.engine %}<span class="hint" data-line-engine>· 引擎:{{ la.engine }}</span>{% endif %}</p>
+          {% if la.lines %}
+          <form method="post" action="/segment/{{ s.row.id }}/line-templates" data-line-templates>
+            {% for l in la.lines %}
+              <div class="row">第 {{ l.n }} 句 · {{ l.who }}:{{ l.line }}
+                <select name="line-{{ l.n }}" data-line-template="{{ l.n }}">
+                  <option value="">跟角色:{{ l.default or "(没选)" }}</option>
+                  {% for t in la.templates %}<option value="{{ t.id }}"{% if t.id == l.chosen %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+                </select></div>
+            {% endfor %}
+            <button class="btn small" type="submit" data-line-templates-save>保存逐句念法</button>
+          </form>
+          {% endif %}
           {% if la.path %}
             <audio controls preload="none" src="/media/{{ la.path }}"></audio>
             {% if la.check %}
