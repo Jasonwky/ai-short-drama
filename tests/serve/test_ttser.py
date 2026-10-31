@@ -91,3 +91,18 @@ def test_busy_comfyui_and_unreachable_ssh_wait(store, sample, world):
     world["tts"] = lambda args, stdin: (255, "ssh: connect timed out")
     assert _run(store, world, tid, Hearing(BOTH)).state == "pending"
     assert repo.get(store, "task", tid)["state"] == "pending"
+
+
+OOM = "torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 20.00 MiB. Process 1516 has 31.12 GiB memory in use."
+
+
+@pytest.mark.parametrize("step", ["tts", "align"])
+def test_cuda_oom_mid_run_waits_for_the_next_gap(store, sample, world, step):
+    """2026-10-31 实测:查队列时空着,刚开跑别人的任务就进来占满显存 —— 合成 / 回听报 OOM,退回 pending 等下个空档。"""
+    tid = plan_tts(store, sample["seg"], seed=5)
+    oom = lambda args, stdin: (3, OOM)
+    if step == "tts":
+        world["tts"] = oom
+    out = _run(store, world, tid, oom if step == "align" else Hearing(BOTH))
+    assert out.state == "pending" and "显存" in out.message
+    assert repo.get(store, "task", tid)["state"] == "pending"

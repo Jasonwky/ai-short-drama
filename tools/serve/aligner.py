@@ -7,6 +7,7 @@
 - **显存**:whisper 与 ComfyUI 同卡。2026-09-29 真链路:H3 视频跑完 ComfyUI 还占着 19.6 GiB,whisper 显存不够。
   所以对齐前:ComfyUI 队列里有任何任务(这台是多个项目共用的)→ 留在 `pending` 不打断;
   空闲而显存不够 → 让 ComfyUI 卸载模型(用户 2026-09-29 同意),等显存真腾出来;等不到 → `failed`(占显存的不是 ComfyUI);
+  查完队列、开跑之后别人的任务才进来、脚本报 CUDA OOM → 留 `pending` 等下个空档(`oom_wait`,对齐 / 配音 / 台词共用);
 - 成功 → 一次走完 `queued → done`(对齐 30 秒内同步跑完,不进 ComfyUI 队列,没有可接管的在途状态)。
   中途进程被杀,任务还在 `pending`,下一轮重跑 —— 对齐是确定性的、便宜的,重跑无害。
 
@@ -34,6 +35,15 @@ from tools.serve.hosts import Host
 SCRIPT = Path(__file__).with_name("align_remote.py")
 SSH_UNREACHABLE = 255
 FREE_WAIT_SEC = 60          # 让 ComfyUI 卸载模型后,最多等这么久看显存腾没腾出来
+CUDA_OOM = "CUDA out of memory"
+
+
+def oom_wait(out: str, what: str) -> Outcome | None:
+    """云机脚本因显存不够退出 → 留 `pending` 等下个空档,不算失败。2026-10-31 实测:查队列时空着,
+    刚开跑共用机上别人的下一个任务就进来占满显存。别的报错返回 None,照旧 failed。"""
+    if CUDA_OOM not in out:
+        return None
+    return Outcome("pending", f"{what}时显存被共用机上新进来的任务占满(CUDA out of memory),下个空档再跑")
 
 
 def parse_output(out: str) -> list[tuple[str, float, float]]:
@@ -93,6 +103,8 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
     code, out = run([WHISPER_ALIGN.model_dir, f"{WHISPER_ALIGN.input_dir}/{name}"], SCRIPT.read_bytes())
     if code == SSH_UNREACHABLE:
         return Outcome("pending", f"ssh 连不上云机,下轮再试:{out.strip()[-300:]}")
+    if code != 0 and (wait := oom_wait(out, "对齐")):
+        return wait
     if code != 0:
         return fail(f"云机对齐脚本失败(退出码 {code}):{out.strip()[-500:]}")
     try:

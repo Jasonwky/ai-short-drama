@@ -75,3 +75,15 @@ def test_ssh_unreachable_waits_but_script_errors_fail(store, sample, world, code
 def test_check_of_returns_none_for_uploaded_voices(tmp_path):
     (tmp_path / "v.wav").write_bytes(b"RIFF")
     assert voicer.check_of(tmp_path, "v.wav") is None and voicer.check_of(tmp_path, None) is None
+
+
+@pytest.mark.parametrize("step", ["tts", "align"])
+def test_cuda_oom_mid_run_waits_for_the_next_gap(store, sample, world, step):
+    oom = lambda args, stdin: (3, "torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 20.00 MiB.")
+    if step == "tts":
+        world["tts"] = oom
+    tid = plan_voice(store, sample["lin"], seed=3)
+    out = voicer.run(store, world["comfy"], world["host"], repo.get(store, "task", tid), data_root=world["root"],
+                     run_tts=world["tts"], run_align=oom if step == "align" else FakeAligner(LINE))
+    assert out.state == "pending" and "显存" in out.message
+    assert repo.get(store, "task", tid)["state"] == "pending"

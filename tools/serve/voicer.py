@@ -48,6 +48,8 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
                         SCRIPT.read_bytes())
     if code == aligner.SSH_UNREACHABLE:
         return Outcome("pending", f"ssh 连不上云机,下轮再试:{out.strip()[-300:]}")
+    if code != 0 and (busy := aligner.oom_wait(out, "合成试听音")):
+        return busy
     if code != 0:
         return fail(f"云机配音脚本失败(退出码 {code}):{out.strip()[-500:]}")
     rows = [line for line in out.splitlines() if line.startswith('{"wav_b64"')]
@@ -68,6 +70,8 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
     code, out = run_align([WHISPER_ALIGN.model_dir, f"{WHISPER_ALIGN.input_dir}/{name}"], aligner.SCRIPT.read_bytes())
     if code == aligner.SSH_UNREACHABLE:
         return Outcome("pending", f"ssh 连不上云机,下轮再试:{out.strip()[-300:]}")
+    if code != 0 and (busy := aligner.oom_wait(out, "回听试听音")):
+        return busy
     if code != 0:
         return fail(f"云机转写脚本失败(退出码 {code}):{out.strip()[-500:]}")
     try:

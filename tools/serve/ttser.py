@@ -2,7 +2,8 @@
 """执行一条台词音频任务(kind = tts):参考音频传云机 → Qwen3-TTS Base 逐句克隆、拼接 → wav 回本机 → 传回云机让 whisper 转写 →
 **本机**按拼音逐句判;有句子没念对就换种子重合成,最多 `attempts` 次(spec 2026-10-30-台词配音与口型闸门-design.md 第 4 节)。
 
-与 `voicer` 同一套结局:连不上 → pending;ComfyUI 队列有任务 → pending 不打断;脚本报错 → failed;
+与 `voicer` 同一套结局:连不上 → pending;ComfyUI 队列有任务 → pending 不打断;
+跑到一半显存被别人占满(CUDA OOM)→ pending 等下个空档(`aligner.oom_wait`);其余脚本报错 → failed;
 次数用完仍有句子不过 → failed,写明哪句、命中多少,`tts.json` 留下每次尝试听到了什么(人可以查是识别错了还是真念错了)。
 第 k 次尝试的种子 = 任务种子 + 1000·k(脚本里逐句再加句序号),全部记进 `tts.json`,可复现。写回只填空位。
 """
@@ -67,6 +68,8 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
         code, out = run_tts([QWEN3_TTS.base_dir, json.dumps(job, ensure_ascii=False)], SCRIPT.read_bytes())
         if code == aligner.SSH_UNREACHABLE:
             return Outcome("pending", f"ssh 连不上云机,下轮再试:{out.strip()[-300:]}")
+        if code != 0 and (busy := aligner.oom_wait(out, "合成台词")):
+            return busy
         if code != 0:
             return fail(f"云机台词合成脚本失败(退出码 {code}):{out.strip()[-500:]}")
         rows = [line for line in out.splitlines() if line.startswith('{"wav_b64"')]
@@ -83,6 +86,8 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
         code, out = run_align([WHISPER_ALIGN.model_dir, remote], aligner.SCRIPT.read_bytes())
         if code == aligner.SSH_UNREACHABLE:
             return Outcome("pending", f"ssh 连不上云机,下轮再试:{out.strip()[-300:]}")
+        if code != 0 and (busy := aligner.oom_wait(out, "回听台词")):
+            return busy
         if code != 0:
             return fail(f"云机转写脚本失败(退出码 {code}):{out.strip()[-500:]}")
         try:

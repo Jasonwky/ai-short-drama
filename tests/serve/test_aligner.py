@@ -145,3 +145,9 @@ def test_voice_in_a_silent_segment_fails_the_speech_check(store, sample, world):
     assert out.state == "failed" and "没有台词,视频里却有人说话" in out.message and "火中又可火也不回" in out.message
     saved = json.loads((world["root"] / f"outputs/tasks/{tid}/align.json").read_text(encoding="utf-8"))
     assert saved["extra"][0]["text"] == "火中又可火也不回"
+
+
+def test_cuda_oom_mid_run_waits_for_the_next_gap(store, sample, world):
+    tid = plan_align(store, sample["seg"])
+    out = _run(store, world, tid, lambda args, stdin: (3, "torch.OutOfMemoryError: CUDA out of memory."))
+    assert out.state == "pending" == repo.get(store, "task", tid)["state"] and "显存" in out.message
