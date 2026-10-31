@@ -49,7 +49,7 @@ def _raise_if(problems: list[str]) -> None:
 
 def build_qwen(prompt: str, image_names: list[str], seed: int, *, preset: str = "fast",
                size: tuple[int, int] | None = None, angles_lora: bool = False,
-               second_pass: tuple[str, list[str]] | None = None) -> dict:
+               second_pass: tuple[str, list[str]] | None = None, negative: str = "") -> dict:
     """Qwen-Image-Edit-2511(GGUF)。size 为 None 时输出画幅跟随参考图 1(改背景、出四视图);
     合成分镜首帧**必须给 size** —— 闸门 0-3 实测提示词压不过 latent 尺寸。
 
@@ -73,6 +73,7 @@ def build_qwen(prompt: str, image_names: list[str], seed: int, *, preset: str = 
     wf["10"]["inputs"]["value"] = wf["11"]["inputs"]["value"] = steps
     wf["13"]["inputs"]["value"] = wf["14"]["inputs"]["value"] = cfg
     wf["21"]["inputs"]["prompt"] = prompt
+    wf["22"]["inputs"]["prompt"] = negative        # 负向:CFG 1(Lightning 快档)时不起作用,只对 baseline 资产图有效
     wf["27"]["inputs"]["seed"] = seed
 
     if size is None:

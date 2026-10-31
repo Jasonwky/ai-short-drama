@@ -9,6 +9,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
 from tools.drama import art, repo
+from tools.drama.styles import STYLES
 from tools.llm import asset_review, batch, flow, llm_queue, script_writer
 from tools.serve.panels.common import render, rt
 
@@ -87,13 +88,18 @@ REVIEW_KEYS = {"r1": "script", "r3": "assets", "r4": "storyboard"}
 
 
 @router.post("/drama/{drama_id}/art")
-def save_art(request: Request, drama_id: int, era: str = Form(""), costume: str = Form(""), banned: str = Form("")):
-    """剧级美术设定(spec 2026-10-28 第 2 节):时代必填,保存即写 art_json;之后出的图 / 首帧 / 视频由代码拼进提示词。"""
+def save_art(request: Request, drama_id: int, era: str = Form(""), costume: str = Form(""), banned: str = Form(""),
+             style: str = Form("")):
+    """剧级美术设定(spec 2026-10-28 第 2 节):时代必填,保存即写 art_json;之后出的图 / 首帧 / 视频由代码拼进提示词。
+    画风也在这里改(spec 2026-10-31 港片画风 G6):只影响之后规划的任务,已生成的不作废(首帧卡片提示「旧画风」)。"""
     store = rt(request).store
     repo.get(store, "drama", drama_id)
     if not era.strip():
         raise ValueError("时代 / 世界观要填(例:架空古代,类北宋边军)—— 资产表、出图都按它来")
-    repo.update(store, "drama", drama_id, art_json=art.dumps(art.Art(era.strip(), costume.strip(), art.split_words(banned))))
+    if style and style not in {s.key for s in STYLES}:
+        raise ValueError(f"未知画风 {style!r},可选:{[s.key for s in STYLES]}")
+    repo.update(store, "drama", drama_id, art_json=art.dumps(art.Art(era.strip(), costume.strip(), art.split_words(banned))),
+                **({"style": style} if style else {}))
     return RedirectResponse(f"/drama/{drama_id}/episodes#art", status_code=303)
 
 

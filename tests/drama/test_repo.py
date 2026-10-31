@@ -80,3 +80,11 @@ def test_music_cues_are_written_through_the_whitelist(store, sample):
     assert repo.music_cues(store, sample["episode"]) == []
     with pytest.raises(KeyError):
         repo.delete_music_cue(store, cid)
+
+
+def test_drama_style_is_writable_but_aspect_is_not(store, sample):
+    """港片画风(spec 2026-10-31 G6):建剧后可以改画风;画幅照旧不可改。"""
+    repo.update(store, "drama", sample["drama"], style="hk90")
+    assert repo.get(store, "drama", sample["drama"])["style"] == "hk90"
+    with pytest.raises(ValueError, match="不允许写入字段"):
+        repo.update(store, "drama", sample["drama"], aspect_ratio="16:9")

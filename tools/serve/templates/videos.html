@@ -14,6 +14,14 @@
       <div class="current-media">
         {% if s.row.video_path %}<video src="/media/{{ s.row.video_path }}" controls preload="metadata"></video>
         {% else %}<p class="empty">还没有视频</p>{% endif %}
+        {% if s.look and s.row.video_path %}
+        <div data-grade-preview>
+          {% if s.graded %}<p class="hint">导出调色预览(只是预览,导出时才真正套用;段落的视频不变)</p>
+          <video src="/media/{{ s.graded }}" controls preload="metadata" data-grade-preview-video></video>
+          {% else %}<form method="post" action="/segment/{{ s.row.id }}/grade-preview">
+            <button class="btn small" type="submit" data-grade-preview-btn>预览导出调色</button></form>{% endif %}
+        </div>
+        {% endif %}
       </div>
       <div style="flex: 1; min-width: 260px" data-readiness>
         {{ checklist(s.checks) }}

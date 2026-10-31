@@ -57,3 +57,16 @@ def test_approving_a_whole_script_enqueues_the_storyboard(client, store, sample)
     client.post(f"/llm/run/{rid}/approve", data={})
     item = store.conn.execute("SELECT task, target_id FROM llm_queue").fetchone()
     assert tuple(item) == ("storyboard", e2)
+
+
+def test_art_form_offers_and_saves_the_look(client, store, sample):
+    html = client.get(f"/drama/{sample['drama']}/episodes").text
+    assert 'data-art-style' in html and "90 年代港产武侠片" in html
+    r = client.post(f"/drama/{sample['drama']}/art", data={"era": "架空古代", "costume": "", "banned": "", "style": "hk90"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and repo.get(store, "drama", sample["drama"])["style"] == "hk90"
+
+
+def test_art_form_rejects_an_unknown_look(client, store, sample):
+    r = client.post(f"/drama/{sample['drama']}/art", data={"era": "架空古代", "style": "watercolor"})
+    assert r.status_code == 400 and repo.get(store, "drama", sample["drama"])["style"] != "watercolor"

@@ -17,6 +17,9 @@
     <input type="text" name="costume" value="{{ setting.costume }}" placeholder="例:交领右衽、粗布短褐或皮甲,无纽扣、无口袋、无翻领" style="width: 100%" data-art-costume>
     <label>禁用词(逗号、顿号或空格分隔;英文按整词、不分大小写)</label>
     <input type="text" name="banned" value="{{ setting.banned | join('、') }}" placeholder="例:uniform、pocket、button、口袋、纽扣" style="width: 100%" data-art-banned>
+    <label>画风 <select name="style" data-art-style>
+      {% for key, label in styles.items() %}<option value="{{ key }}"{% if key == drama.style %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></label>
     <button class="btn small" type="submit" data-art-save>保存美术设定</button>
   </form>
   <p class="hint">每一关都是 AI 出、你批准才写回;全剧审你一条都不采纳 = 这一关通过。自动推进只把下一步排进队列,不替你批准;

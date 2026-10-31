@@ -192,3 +192,14 @@ def test_second_pass_images_are_uploaded_and_chained(store, sample, host_id, dat
     wf = comfy.submitted[out.message]
     assert wf["32"]["inputs"]["image1"] == ["28", 0] and wf["29"]["inputs"]["images"] == ["35", 0]
     assert wf["31"]["inputs"]["image"].endswith("wang.png") and wf["34"]["inputs"]["seed"] == 8
+
+
+def test_build_workflow_passes_the_negative_prompt(store, sample):
+    from tools.serve.dispatch import build_workflow
+    tid = create_task(store, kind="image", target_type="character", target_id=sample["lin"], model="q",
+                      params={"workflow": "qwen_image", "preset": "baseline", "size": [928, 1664],
+                              "image_refs": ["a.png"], "writes": "turnaround_path", "expect_ext": ".png",
+                              "negative": "蜡像感"},
+                      seed=1, prompt="a man", refs=["a.png"])
+    wf = build_workflow(repo.get(store, "task", tid), {"a.png": "up/a.png"})
+    assert wf["22"]["inputs"]["prompt"] == "蜡像感"

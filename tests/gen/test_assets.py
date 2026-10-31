@@ -85,3 +85,32 @@ def test_no_art_keeps_prompt_unchanged(store, sample):
     repo.update(store, "character", sample["lin"], final_prompt="A young woman.")
     row, p = _task(store, plan_asset_image(store, "character", sample["lin"], seed=1))
     assert "Setting:" not in row["prompt"] and "art" not in p
+
+
+def test_hk90_asset_prompt_uses_the_per_table_prefix_and_keeps_the_white_backdrop():
+    from tools.drama.styles import get_style
+    from tools.gen.assets import asset_prompt
+    hk = get_style("hk90")
+    p = asset_prompt("character", "hk90", "a young cook")
+    assert p.startswith(f"Completely replace the entire image with a {hk.asset_prefix['character']}.")
+    assert "fictional person" in p and "plain white studio background" in p          # G4:浅色底照旧
+    assert asset_prompt("scene", "hk90", "a kitchen").startswith(
+        f"Completely replace the entire image with a {hk.asset_prefix['scene']}.")
+
+
+def test_realistic_asset_prompt_is_byte_identical():
+    from tools.gen.assets import asset_prompt
+    assert asset_prompt("scene", "realistic", "a kitchen") == (
+        "Completely replace the entire image with a photorealistic photograph, real human, realistic skin texture, "
+        "natural lighting, 50mm lens. a kitchen Absolutely no people, no human figures, no silhouettes. "
+        "Wide establishing shot, eye level, fixed camera. Avoid: anime, illustration, cartoon, 3D render, painting.")
+
+
+def test_hk90_asset_task_carries_the_negative_prompt_and_realistic_does_not(store, sample):
+    repo.update(store, "character", sample["lin"], final_prompt="A young cook.")
+    store.conn.execute("UPDATE drama SET style = 'hk90' WHERE id = ?", (sample["drama"],))
+    _, p = _task(store, plan_asset_image(store, "character", sample["lin"], seed=1))
+    assert "蜡像感" in p["negative"] and p["style"] == "hk90"
+    store.conn.execute("UPDATE drama SET style = 'realistic' WHERE id = ?", (sample["drama"],))
+    _, p = _task(store, plan_asset_image(store, "character", sample["lin"], seed=1))
+    assert "negative" not in p

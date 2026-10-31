@@ -134,6 +134,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   流程栏「⑤ 资产图审」(`llm/asset_review.py`)自动排检查。视频规划另拦**在途 / 缺失的四视图**(说话的角色),
   (第一期曾让没台词的段落写「全程没有人说话」—— 已废:H3 照念不误,现在每段都必须有台词);**每段都要过语音检查**,导出拦;
   旁白只出字幕(`subtitles.place_narration`,放进最长空档);「成片」面板有整集预览(不过导出闸门)。
+  **画风 hk90「90 年代港产武侠片」**(spec 2026-10-31-港片画风-design.md,依据 spike-results/2026-10-31-降低AI感调研.md):
+  `Style` 加可选字段(资产按用途前缀 / 首帧质感 / 昼夜光线 / 英文视频开场 / 负向 / 导出调色),老预设拼法逐字节不变;
+  光线按场景 `time` 分昼夜(`art.is_night`);视频英文风格句放提示词最前;负向只对 baseline 资产正面图生效(`build_qwen(negative=)`);
+  导出逐段先调色(`cut/grade.py`,只动画面)再烧字幕与标识,检测吃原片,字幕读回拿调过色的段落比;`drama.style` 可在美术设定里改(画幅不可),
+  首帧任务记 `style`,卡片提示「旧画风」;视频卡片「预览导出调色」只出 `outputs/preview/` 副本。
   `cast` / `drama_review` 要 `batch` 时在函数里取(`batch` 模块级引用 `service`,`service` 登记它们 —— 循环导入)
   派 worktree agent 前先推送或让它先 `git merge --ff-only main`:worktree 从远程 `origin/HEAD` 建(findings/2026-10-24-多agent并行开发复盘.md)
   ⚠️ `Store` 的连接被网页线程和后台线程共用:`cached_statements=0` 不能去掉(同一条 SQL 并发会拿到同一个缓存语句、读空,P19-B 实测)

@@ -411,3 +411,29 @@ def test_art_setting_reaches_frame_and_video_and_banned_words_block(store, sampl
         plan_first_frame(store, sample["seg"], seed=1)
     with pytest.raises(ValueError, match="视频提示词含本剧禁用词「uniform」"):
         plan_video(store, sample["seg"], seed=1)
+
+
+# ── 港片画风(spec 2026-10-31-港片画风-design.md)────────────
+
+def _hk90(store, sample, time):
+    store.conn.execute("UPDATE drama SET style = 'hk90' WHERE id = ?", (sample["drama"],))
+    store.conn.execute("UPDATE scene SET time = ? WHERE id = ?", (time, sample["yard"]))
+
+
+def test_hk90_first_frame_lights_by_scene_time_and_records_the_style(store, sample):
+    hk = get_style("hk90")
+    _hk90(store, sample, "夜")
+    row, p = _task(store, plan_first_frame(store, sample["seg"], seed=1))
+    assert hk.light_night in row["prompt"] and hk.light_day not in row["prompt"] and "Avoid" not in row["prompt"]
+    assert p["style"] == "hk90"
+    _hk90(store, sample, "白天")
+    row, _ = _task(store, plan_first_frame(store, sample["seg"], seed=1))
+    assert hk.light_day in row["prompt"]
+
+
+def test_hk90_video_prompt_opens_with_the_english_style_line(store, sample):
+    hk = get_style("hk90")
+    _hk90(store, sample, "白天")
+    row, _ = _task(store, plan_video(store, sample["seg"], seed=7))
+    assert row["prompt"].startswith(hk.video_en["day"] + " <Picture 1> 是本段的首帧。")
+    assert "画面风格" not in row["prompt"] and "电影质感" not in row["prompt"]

@@ -87,7 +87,8 @@ def build_workflow(task: sqlite3.Row, names: dict[str, str]) -> dict:
     if p["workflow"] == "qwen_image":
         sp = p.get("second_pass")
         wf = build_qwen(task["prompt"], image_names, task["seed"], preset=p["preset"], size=tuple(p["size"]),
-                        second_pass=(sp["prompt"], [names[r] for r in sp["image_refs"]]) if sp else None)
+                        second_pass=(sp["prompt"], [names[r] for r in sp["image_refs"]]) if sp else None,
+                        negative=p.get("negative", ""))
     elif p["workflow"] == "qwen_region":
         # 不吃首帧模板预设:预设按首帧模板的节点号写,对不上这份图
         return build_qwen_region(task["prompt"], names[p["source"]], names[p["ref"]], tuple(p["box"]),

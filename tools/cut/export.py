@@ -18,10 +18,12 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
-from tools.cut import aigc, blankscan, media, music, provenance, review, subtitles, textscan
+from tools.cut import aigc, blankscan, grade, media, music, provenance, review, subtitles, textscan
 from tools.drama import repo, rules
+from tools.drama.styles import get_style
 from tools.drama.db import Store, now
 from tools.drama.tasks import producer
 from tools.gen import tts
@@ -131,6 +133,7 @@ def begin(store: Store, data_root: Path, episode_id: int, producer: str) -> int:
     if problems:
         raise ValueError(";".join(problems))
     segs = _segments(store, episode_id)
+    look = get_style(repo.get(store, "drama", repo.get(store, "episode", episode_id)["drama_id"])["style"]).grade
     probes = {s["number"]: media.probe(root / s["video_path"]) for s in segs}
     sizes = {(p.width, p.height) for p in probes.values()}
     if len(sizes) != 1:
@@ -141,7 +144,8 @@ def begin(store: Store, data_root: Path, episode_id: int, producer: str) -> int:
                "subtitle_sha256": sha256_file(root / s["subtitle_path"]) if s["subtitle_path"] else None,
                "blank_override": blankscan.snapshot(blankscan.override_for(store, root, s)),
                "review": review.snapshot(review.review_for(store, root, s)),
-               "narration": rules.narration(s["description"] or "")}
+               "narration": rules.narration(s["description"] or ""),
+               "grade": look}                       # 导出调色(港片画风 §2):快照进来,run 只认它
               for s in segs]
     cues = music.snapshot(store, episode_id)
     problems += provenance.problems(provenance.build(store, root, episode_id, produce_id="", producer=producer,
@@ -217,9 +221,19 @@ def run(store: Store, data_root: Path, export_id: int) -> None:
         srt_path.parent.mkdir(parents=True, exist_ok=True)
         srt_path.write_text(srt, encoding="utf-8")
     mix = music.mixes(root, cues, music.speech_of([(c, o) for c, o, _ in _parts(root, videos)]))
+    # 调色逐段先做(只动画面),再交给 encode_episode 烧字幕与标识 —— 检测都已对原片跑完(spec 2026-10-31 港片画风 G5)
+    graded_dir = root / out / "graded"
+    looks = []
+    for v, c in zip(videos, clips):
+        if v.get("grade"):
+            g = graded_dir / f"{v['number']:03d}.mp4"
+            grade.apply(c, g, v["grade"])
+            looks.append(g)
+        else:
+            looks.append(c)
     for key, lab in (("plain", None), ("labeled", label)):
         raw = root / out / f"{key}.raw.mp4"
-        media.encode_episode(clips, raw, lab, subtitles=srt_path, music=mix)
+        media.encode_episode(looks, raw, lab, subtitles=srt_path, music=mix)
         tag = aigc.build(row["content_producer"], row["produce_id"], media.stream_sha256(raw))
         media.write_tags(raw, root / rel[key], {aigc.TAG: tag, "comment": COMMENT})
         raw.unlink()
@@ -229,6 +243,8 @@ def run(store: Store, data_root: Path, export_id: int) -> None:
     (root / report_rel).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     (root / out / "provenance.md").write_text(provenance.to_markdown(report), encoding="utf-8")
     checks = check(store, root, row, rel["labeled"], rel["plain"], report_rel, label)
+    if graded_dir.exists():                # 字幕读回要拿调过色的段落当对照,自检完才删
+        shutil.rmtree(graded_dir)
     bad = [c["name"] for c in checks if not c["ok"]]
     _finish(store, export_id, "failed" if bad else "done", labeled_path=rel["labeled"], plain_path=rel["plain"],
             report_path=report_rel, checks_json=json.dumps(checks, ensure_ascii=False),
@@ -266,7 +282,10 @@ def _subtitle_check(root: Path, videos: list[dict], plain: Path, report_rel: str
     saved = root / Path(report_rel).parent / "subtitles.srt"
     if not saved.is_file() or saved.read_text(encoding="utf-8") != want:
         return False, "整集字幕文件缺失,或与各段字幕按段落起点重拼的结果不同"
-    cues, offset, clip = next(p for p in parts if p[0])
+    k, (cues, offset, clip) = next((i, p) for i, p in enumerate(parts) if p[0])
+    graded = root / Path(report_rel).parent / "graded" / f"{videos[k]['number']:03d}.mp4"
+    if videos[k].get("grade") and graded.is_file():
+        clip = graded                      # 调过色的成片要和调过色的段落比(港片画风 §2),否则整幅都是差异
     mid = (cues[0].start + cues[0].end) / 2
     p = media.probe(plain)
     box = media.diff_bbox(media.gray_frame(plain, offset + mid, p.width, p.height),
@@ -325,6 +344,13 @@ def check(store: Store, root: Path, row, labeled_rel: str, plain_rel: str, repor
     ok, detail = music.readback(root, [p for _, _, p in parts], cues, music.speech_of([(c, o) for c, o, _ in parts]),
                                 root / plain_rel)
     add("配乐", ok, detail)
+    look = next((v["grade"] for v in videos if v.get("grade")), "")
+    if look:                               # 调色真的套上了:成片第 1 段中点那帧比原片饱和度低、暗部低位抬高
+        first = root / videos[0]["video_path"]
+        at = media.probe(first).duration / 2
+        before, after = grade.measure(first, at), grade.measure(root / plain_rel, at)
+        add(f"调色({look})", after["sat"] < before["sat"] and after["ylow"] > before["ylow"],
+            f"第 1 段饱和度 {before['sat']:.1f} → {after['sat']:.1f},暗部低位 {before['ylow']:.0f} → {after['ylow']:.0f}")
     want = sum(media.probe(root / v["video_path"]).duration for v in videos)
     got = media.probe(root / labeled_rel).duration
     tol = 0.1 * len(videos) + 0.1

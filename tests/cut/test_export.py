@@ -472,3 +472,32 @@ def test_narration_is_burned_as_subtitles_and_blocks_when_it_does_not_fit(store,
     repo.update(store, "segment", s["seg1"], description=repo.get(store, "segment", s["seg1"])["description"]
                 + "旁白：这是一句很长很长很长的旁白放不下。")
     assert any("段落 1 的旁白" in p and "放不下" in p for p in export.readiness(store, root, s["episode"]))
+
+
+def test_hk90_export_grades_each_clip_but_scans_the_originals(store, two_segments, monkeypatch):
+    """港片画风(spec 2026-10-31 §2 / G5):逐段先调色再烧字幕标识;白屏 / 烧字幕检测吃原片;读回自检与溯源记调色。"""
+    s, root = two_segments, two_segments["root"]
+    repo.update(store, "drama", s["drama"], style="hk90")
+    scanned = []
+    real = export.blankscan.check
+    monkeypatch.setattr(export.blankscan, "check", lambda r, rel: scanned.append(rel) or real(r, rel))
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    export.run(store, root, eid)
+    row = export.get(store, eid)
+    checks = {c["name"]: c for c in json.loads(row["checks_json"])}
+    assert row["state"] == "done", checks
+    assert all(v["grade"] == "hk90" for v in json.loads(row["inputs_json"]))
+    assert scanned and all("graded" not in rel for rel in scanned)
+    assert checks["调色(hk90)"]["ok"] and len(checks) == 10
+    report = json.loads((root / row["report_path"]).read_text(encoding="utf-8"))
+    assert [seg["grade"] for seg in report["segments"]] == ["hk90", "hk90"]
+    assert not (root / row["plain_path"]).parent.joinpath("graded").exists()
+
+
+def test_looks_without_a_grade_export_as_before(store, two_segments):
+    s, root = two_segments, two_segments["root"]
+    eid = export.begin(store, root, s["episode"], PRODUCER)
+    export.run(store, root, eid)
+    row = export.get(store, eid)
+    assert all(v["grade"] == "" for v in json.loads(row["inputs_json"]))
+    assert not any(c["name"].startswith("调色") for c in json.loads(row["checks_json"]))

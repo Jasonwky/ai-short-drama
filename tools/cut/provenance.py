@@ -74,7 +74,8 @@ def build(store: Store, data_root: Path, episode_id: int, *, produce_id: str, pr
                      "video": node(store, Path(data_root), v["video_path"]),
                      "subtitles": node(store, Path(data_root), sub) if sub else None,
                      "blank_override": v.get("blank_override"),      # 白屏检测命中、人工确认放行的(早于 v12 的导出没有)
-                     "review": v.get("review")})                      # 看片确认(早于 v13 的导出没有)
+                     "review": v.get("review"),                      # 看片确认(早于 v13 的导出没有)
+                     "grade": v.get("grade")})                        # 导出调色(港片画风;早于它的导出没有)
     return {"produce_id": produce_id, "content_producer": producer, "drama": drama["title"],
             "aspect_ratio": drama["aspect_ratio"], "episode": ep["number"], "license": LICENSE_NOTE,
             "models": sorted(_models([n for s in segs for n in (s["video"], s["subtitles"]) if n])), "segments": segs,

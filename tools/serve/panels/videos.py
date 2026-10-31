@@ -22,8 +22,9 @@ import random
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from tools.cut import blankscan, checklist, cuts, keycheck, lipsync, media, review, subtitles
+from tools.cut import blankscan, checklist, cuts, grade, keycheck, lipsync, media, review, subtitles
 from tools.drama import blocking, repo, rules
+from tools.drama.styles import get_style
 from tools.llm import runs, vision_check
 from tools.drama.tasks import producer, tasks_for
 from tools.gen.capability import MINIMAX_H3
@@ -97,11 +98,17 @@ def _lipsync(root, s, cur) -> dict | None:
     return {"lines": lipsync.cached(root, s["video_path"], spans), "r_min": lipsync.R_MIN, "lag_max": lipsync.LAG_MAX}
 
 
+def _graded_rel(data_root, video_rel: str, look: str) -> str:
+    """调色预览文件(按视频内容命名:换了视频自动是另一份;只在预览目录,不进库)。"""
+    return f"outputs/preview/{sha256_file(data_root / video_rel)[:16]}_{look}.mp4"
+
+
 @router.get("/episode/{episode_id}/videos")
 def page(request: Request, episode_id: int):
     runtime = rt(request)
     store = runtime.store
     ep = repo.get(store, "episode", episode_id)
+    look = get_style(repo.get(store, "drama", ep["drama_id"])["style"]).grade    # 剧的导出调色(港片画风);空 = 没有
     segs, b = [], estimate.basis(store)
     preset_steps = presets.video_steps(store)
     full = preset_steps or H3_STEPS
@@ -126,7 +133,10 @@ def page(request: Request, episode_id: int):
                 cut = cuts.check(runtime.data_root, s["video_path"])
             except media.CutError as e:
                 cut_error = str(e)
-        segs.append({"row": s, "checks": readiness(runtime, s["id"]), "est_min": None if est is None else est / 60,
+        graded = _graded_rel(runtime.data_root, s["video_path"], look) if look and has_video else None
+        segs.append({"row": s, "look": look,
+                     "graded": graded if graded and (runtime.data_root / graded).is_file() else None,
+                     "checks": readiness(runtime, s["id"]), "est_min": None if est is None else est / 60,
                      "draft_min": None if draft is None else draft / 60, "tags": tags,
                      "few_now": few.get(cur["id"]) if cur else None,
                      "blank": blankscan.problem(s["number"], blank) if blank else None,
@@ -201,6 +211,23 @@ def measure_lipsync(request: Request, segment_id: int):
     if spans is None:
         raise ValueError("当前视频没有钉台词音频,没有逐句时间可量 —— 先合成台词音频、重出视频")
     lipsync.check(runtime.data_root, seg["video_path"], spans)
+    return RedirectResponse(f"/episode/{seg['episode_id']}/videos#seg-{segment_id}", status_code=303)
+
+
+@router.post("/segment/{segment_id}/grade-preview")
+def grade_preview(request: Request, segment_id: int):
+    """导出调色的预览(spec 2026-10-31 港片画风 §2):本机 ffmpeg 出一份调过色的副本,段落的当前视频不变。"""
+    runtime = rt(request)
+    seg = repo.get(runtime.store, "segment", segment_id)
+    ep = repo.get(runtime.store, "episode", seg["episode_id"])
+    look = get_style(repo.get(runtime.store, "drama", ep["drama_id"])["style"]).grade
+    if not look:
+        raise ValueError("这部剧的画风没有导出调色(到「逐集」页美术设定里换画风)")
+    if not (seg["video_path"] and (runtime.data_root / seg["video_path"]).is_file()):
+        raise ValueError("这段还没有视频")
+    out = runtime.data_root / _graded_rel(runtime.data_root, seg["video_path"], look)
+    if not out.is_file():
+        grade.apply(runtime.data_root / seg["video_path"], out, look)
     return RedirectResponse(f"/episode/{seg['episode_id']}/videos#seg-{segment_id}", status_code=303)
 
 

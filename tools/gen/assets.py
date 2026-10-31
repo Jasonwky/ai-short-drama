@@ -34,6 +34,7 @@ SPEC = {
              "Single isolated object centered on a pure white background, studio lighting, no people, no hands, no scenery."),
 }
 FICTIONAL = "A fictional person who does not resemble any real individual."
+REAL_PEOPLE = ("realistic", "hk90")     # 出真人长相的画风:角色一律强调虚构
 # 四视图:以定稿的正面图为输入。2026-09-26 云机实测(spike-results/2026-09-26-参考锚定与四视图云机实测.md §四):
 # 快档(4 步)2/2 合格,标准档(20 步)1/1 不合格(第 4 格又画了背面)—— 用快档、横版 1664x928。
 # 措辞沿用实测那一版(Qwen 对单张输入图不需要编号标签;这里照实测写 <Picture 1>)。
@@ -64,8 +65,8 @@ def ensure_canvas(data_root: Path) -> str:
 def asset_prompt(table: str, style_key: str, final_prompt: str, setting: art.Art = art.Art()) -> str:
     """setting:剧的美术设定,时代 / 服饰总则由代码拼在 final_prompt 之后(spec 2026-10-28 第 2 节;没填 = 与以前逐字节相同)。"""
     style = get_style(style_key)
-    who = f" {FICTIONAL}" if table == "character" and style_key == "realistic" else ""
-    return (f"Completely replace the entire image with a {style.prefix}.{who} {final_prompt.strip()}"
+    who = f" {FICTIONAL}" if table == "character" and style_key in REAL_PEOPLE else ""
+    return (f"Completely replace the entire image with a {art.asset_prefix(style, table)}.{who} {final_prompt.strip()}"
             f"{art.asset_suffix(setting, table)} {SPEC[table][2]} Avoid: {style.avoid}.")
 
 
@@ -123,10 +124,10 @@ def plan_fourview(store: Store, character_id: int, *, seed: int) -> int:
         raise ValueError(";".join(problems))
     row = repo.get(store, "character", character_id)
     drama = repo.get(store, "drama", row["drama_id"])
-    who = f" {FICTIONAL}" if drama["style"] == "realistic" else ""
+    who = f" {FICTIONAL}" if drama["style"] in REAL_PEOPLE else ""
     setting = art.of(drama)
     prompt = FOURVIEW.format(desc=row["final_prompt"].strip() + art.asset_suffix(setting, "character"),
-                             style=get_style(drama["style"]).prefix, who=who)
+                             style=art.asset_prefix(get_style(drama["style"]), "character"), who=who)
     params = {"workflow": "qwen_image", "preset": "fast", "size": list(FOURVIEW_SIZE),
               "image_refs": [row["turnaround_path"]], "writes": "fourview_path", "expect_ext": ".png",
               "style": drama["style"], **_art_param(setting)}
@@ -146,10 +147,11 @@ def plan_asset_image(store: Store, table: str, row_id: int, *, seed: int) -> int
     drama = repo.get(store, "drama", row["drama_id"])
     writes, size_of, _ = SPEC[table]
     setting = art.of(drama)
+    negative = get_style(drama["style"]).negative       # baseline 档 CFG 4,负向才生效(spec 2026-10-31 港片画风 G3)
     params = {
         "workflow": "qwen_image", "preset": "baseline", "size": list(size_of(drama["aspect_ratio"])),
         "image_refs": [CANVAS], "writes": writes, "expect_ext": ".png", "style": drama["style"],
-        **_art_param(setting),
+        **_art_param(setting), **({"negative": negative} if negative else {}),
     }
     prompt = asset_prompt(table, drama["style"], row["final_prompt"], setting)
     params = presets.stamp(store, "asset", params)

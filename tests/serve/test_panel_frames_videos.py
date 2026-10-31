@@ -83,3 +83,50 @@ def test_frame_drawn_from_an_older_shot_design_is_flagged(client, store, sample,
     assert "data-frame-stale" in client.get(url).text
     repo.update(store, "segment", seg, image_prompt="旧方案的句子")
     assert "data-frame-stale" not in client.get(url).text
+
+
+def test_frame_drawn_in_an_older_look_is_flagged(client, store, sample, runtime):
+    """港片画风(spec 2026-10-31):首帧任务记了画风;剧改了画风 → 提示「旧画风」;没记画风的旧首帧不提示。"""
+    from tools.drama.tasks import create_task, set_task_state
+    seg = sample["seg"]
+    rel = "frames/look.png"
+    (runtime.data_root / rel).parent.mkdir(parents=True, exist_ok=True)
+    (runtime.data_root / rel).write_bytes(b"png")
+    repo.update(store, "segment", seg, first_frame_path=rel)
+    url = f"/episode/{sample['episode']}/frames"
+
+    def done(params):
+        t = create_task(store, kind="image", target_type="segment", target_id=seg, model="m", params=params,
+                        seed=1, prompt="p", refs=[])
+        set_task_state(store, t, "queued", external_id=f"p{t}")
+        set_task_state(store, t, "done", result_path=rel, result_sha256="x")
+
+    repo.update(store, "drama", sample["drama"], style="hk90")
+    done({"writes": "first_frame_path"})                          # 没记画风
+    assert "data-old-look" not in client.get(url).text
+    done({"writes": "first_frame_path", "style": "realistic"})
+    html = client.get(url).text
+    assert "data-old-look" in html and "90 年代港产武侠片" in html
+    repo.update(store, "drama", sample["drama"], style="realistic")
+    assert "data-old-look" not in client.get(url).text
+
+
+def test_grade_preview_makes_a_graded_copy_without_touching_the_segment(client, store, sample, runtime):
+    """港片画风(spec 2026-10-31 §2):视频卡片「港片调色预览」只出预览文件,不改段落的当前视频;没有调色的画风不显示按钮。"""
+    from tools.serve.fakes import sample_mp4
+    seg = sample["seg"]
+    rel = "videos/cur.mp4"
+    (runtime.data_root / rel).parent.mkdir(parents=True, exist_ok=True)
+    (runtime.data_root / rel).write_bytes(sample_mp4(seconds=1))
+    repo.update(store, "segment", seg, video_path=rel)
+    url = f"/episode/{sample['episode']}/videos"
+    assert "data-grade-preview" not in client.get(url).text            # 写实画风:没有导出调色
+    r = client.post(f"/segment/{seg}/grade-preview", follow_redirects=False)
+    assert r.status_code == 400
+    repo.update(store, "drama", sample["drama"], style="hk90")
+    assert "data-grade-preview" in client.get(url).text
+    r = client.post(f"/segment/{seg}/grade-preview", follow_redirects=False)
+    assert r.status_code == 303
+    assert repo.get(store, "segment", seg)["video_path"] == rel
+    made = list((runtime.data_root / "outputs/preview").glob("*_hk90.mp4"))
+    assert len(made) == 1 and "data-grade-preview-video" in client.get(url).text

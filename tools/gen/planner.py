@@ -169,12 +169,15 @@ def _plan_image(store: Store, segment_id: int, text: str, seed: int, writes: dic
     drama = _drama(store, segment_id)
     setting = art.of(drama)
     # 画风 + 时代由代码拼(spec 2026-10-28 第 2 节):第 1 集首帧一个风格词都没有,Qwen 自行发挥出了卡通脸
-    prompt = tags.expand(first_text, kept, added + dropped, "qwen") + art.frame_suffix(get_style(drama["style"]), setting)
+    # 港片画风:光线按本段场景的昼 / 夜选(spec 2026-10-31-港片画风-design.md G2)
+    prompt = (tags.expand(first_text, kept, added + dropped, "qwen")
+              + art.frame_suffix(get_style(drama["style"]), setting, assets["scene"]))
     params = {
         "workflow": "qwen_image", "preset": "fast", "size": list(FRAME_SIZE[_aspect(store, segment_id)]),
         "image_refs": [r.path for r in kept], **writes, "expect_ext": ".png",
         "dropped": [r.name for r in dropped],   # 退化成文字的素材,溯源里要看得到(就绪清单提示用局部替换补)
         "frame": {"text": text},                # 生成时的图提示词拼句:镜头改过时比对用;改参重跑沿用(serve/rerun.py)
+        "style": drama["style"],                # 生成时的画风:剧改了画风,首帧卡片提示「旧画风」
         **({"art": json.loads(art.dumps(setting))} if setting != art.Art() else {}),
     }
     if added:                                   # 第一遍留位、第二遍加入(spike-results/2026-10-20-多人同框留位加人实测.md)
@@ -351,11 +354,13 @@ def plan_video(store: Store, segment_id: int, *, seed: int, steps: int | None = 
     audio = tts.current_audio(store, seg)                # video_problems 已保证有、没过期、不超长
     lo, _ = MINIMAX_H3.duration_range_sec()
     drama = _drama(store, segment_id)
-    look = art.video_phrase(get_style(drama["style"]), art.of(drama))
+    style = get_style(drama["style"])
+    look = art.video_phrase(style, art.of(drama), assets["scene"])
     who = "".join(f"<Picture {k}> 是{r.name}的四视图(正面、左侧、背面、右侧)。" for k, r in enumerate(views, 2))
     move = framing.move_phrase(seg["movement"])      # 运镜由代码写,没填不拼(老段落提示词不变)
-    prompt = f"<Picture 1> {intro}" + who + body + "".join(f" {part}" for part in (lines, ON_CAMERA if lip_retry else "",
-                                                                                   move, look) if part)
+    head, tail = (f"{look} ", "") if style.video_en else ("", look)    # 港片:英文风格句放最前(H3 指南);老预设中文拼末尾
+    prompt = head + f"<Picture 1> {intro}" + who + body + "".join(
+        f" {part}" for part in (lines, ON_CAMERA if lip_retry else "", move, tail) if part)
 
     image_refs = [seg[ref_field]] + [r.path for r in views]
     anchors = [[seg[f], idx] for f, idx in pins]

@@ -575,7 +575,13 @@ def run(out_dir: Path) -> dict:
                     ("assets", "场景选用途、填固定陈设 → 保存", {f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]': "石桌、古井"},
                      [lambda pg: pg.locator(f'[data-asset="scene-{ids["yard"]}"] [data-scene-purpose]').select_option("庭院"),
                       f'[data-asset="scene-{ids["yard"]}"] form button[type=submit]'],
-                     f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]:has-text("古井")', 20)), 1):
+                     f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]:has-text("古井")', 20),
+                    # 港片画风(spec 2026-10-31):放在最后 —— 切画风会改之后所有提示词的拼法
+                    ("episodes", "美术设定选画风「90 年代港产武侠片」→ 保存", {"[data-art-era]": "架空古代,类北宋边军"},
+                     [lambda pg: pg.locator("[data-art-style]").select_option("hk90"), "[data-art-save]"],
+                     '[data-art-style] option[value="hk90"][selected]', 20),
+                    ("videos", "港片画风:点「预览导出调色」→ 出调色预览视频", {}, [f"#seg-{seg} [data-grade-preview-btn]"],
+                     f"#seg-{seg} [data-grade-preview-video]", 60)), 1):
                 errors.clear()
                 key, _, ep_key = key.partition(":")               # 「面板:集」—— 默认第 1 集
                 p = next(x for x in REGISTRY if x.key == key)

@@ -175,3 +175,9 @@ def test_h3_without_guide_audio_is_byte_identical():
     a = build_h3("<Picture 1> x", ["f.png"], None, 192, 9, size=(768, 1344), anchors=[("f.png", 0)])
     b = build_h3("<Picture 1> x", ["f.png"], None, 192, 9, size=(768, 1344), anchors=[("f.png", 0)], guide_audio=None)
     assert json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+
+
+def test_qwen_negative_prompt_goes_to_node_22():
+    wf = build_qwen("a man", ["a.png"], 1, preset="baseline", size=(928, 1664), negative="蜡像感,磨皮")
+    assert wf["22"]["inputs"]["prompt"] == "蜡像感,磨皮"
+    assert build_qwen("a man", ["a.png"], 1, preset="baseline", size=(928, 1664))["22"]["inputs"]["prompt"] == ""

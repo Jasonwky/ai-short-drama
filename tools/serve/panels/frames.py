@@ -47,11 +47,21 @@ def frame_stale(store, seg) -> bool:
     return bool(snap) and snap["text"] != frame_text(store, seg["id"], "first_frame_path")
 
 
+def frame_old_look(store, seg, drama_style: str) -> bool:
+    """当前首帧画出来时用的画风,与剧现在的画风不一样(spec 2026-10-31 港片画风)。任务没记画风(旧任务)→ 不提示。"""
+    if not seg["first_frame_path"]:
+        return False
+    task = producer(store, "image", seg["first_frame_path"])
+    used = json.loads(task["params_json"]).get("style") if task else None
+    return used is not None and used != drama_style
+
+
 @router.get("/episode/{episode_id}/frames")
 def page(request: Request, episode_id: int):
     runtime = rt(request)
     store = runtime.store
     ep = repo.get(store, "episode", episode_id)
+    drama = repo.get(store, "drama", ep["drama_id"])
     rows = store.conn.execute("SELECT * FROM segment WHERE episode_id = ? ORDER BY number", (episode_id,)).fetchall()
     segs = []
     for i, s in enumerate(rows):
@@ -61,7 +71,8 @@ def page(request: Request, episode_id: int):
         keys = [{"row": k, "tasks": [t for t in by_field[targets.KEY_WRITES] if targets.slot(store, t)[1] == k["id"]],
                  "region_assets": region_assets(store, s["id"])}
                 for k in repo.keyframes(store, s["id"])]
-        segs.append({"row": s, "frame_stale": frame_stale(store, s), "prev": rows[i - 1] if i else None, "tasks": by_field["first_frame_path"],
+        segs.append({"row": s, "frame_stale": frame_stale(store, s), "old_look": frame_old_look(store, s, drama["style"]),
+                     "prev": rows[i - 1] if i else None, "tasks": by_field["first_frame_path"],
                      "last_tasks": by_field["last_frame_path"], "keyframes": keys,
                      "uses_first": s["reference_mode"] in FRAMES["first_frame_path"][0],
                      "uses_last": s["reference_mode"] in FRAMES["last_frame_path"][0],

@@ -62,14 +62,32 @@ def asset_suffix(art: Art, table: str) -> str:
     return f" Setting: {art.era}.{costume}"
 
 
-def frame_suffix(style: Style, art: Art) -> str:
-    """拼在首帧 / 尾帧 / 关键帧提示词之后:画风(原来首帧一个风格词都没有)+ 时代 + 不要什么。"""
+NIGHT_WORDS = ("夜", "黄昏", "傍晚", "入夜", "晚")
+
+
+def is_night(scene) -> bool:
+    """按场景的「时间」字段分昼 / 夜(港片画风选光线用);没有场景 = 白天。"""
+    return scene is not None and any(w in (scene["time"] or "") for w in NIGHT_WORDS)
+
+
+def asset_prefix(style: Style, table: str) -> str:
+    return style.asset_prefix[table] if style.asset_prefix else style.prefix
+
+
+def frame_suffix(style: Style, art: Art, scene=None) -> str:
+    """拼在首帧 / 尾帧 / 关键帧提示词之后:画风(原来首帧一个风格词都没有)+ 时代 + 不要什么。
+    港片画风(有 frame_look):质感 + 按场景昼夜选光线,**不写 Avoid**(CFG 1 下否定词会被当描述,spec 2026-10-31 港片画风 §1)。"""
     era = f" Setting: {art.era}." if art.era else ""
+    if style.frame_look:
+        light = style.light_night if is_night(scene) else style.light_day
+        return f" {style.frame_look}, {light}.{era}"
     return f" {style.prefix}.{era} Avoid: {style.avoid}."
 
 
-def video_phrase(style: Style, art: Art) -> str:
-    """拼在视频提示词末尾(H3 吃中文)。"""
+def video_phrase(style: Style, art: Art, scene=None) -> str:
+    """视频画风。老预设:中文,拼在提示词末尾(H3 吃中文);港片:英文开场句,调用方放在提示词最前(H3 指南)。"""
+    if style.video_en:
+        return style.video_en["night" if is_night(scene) else "day"] + (f" Setting: {art.era}." if art.era else "")
     return f"画面风格:{style.zh}。" + (f"时代:{art.era}。" if art.era else "")
 
 
