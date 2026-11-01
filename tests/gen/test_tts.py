@@ -175,3 +175,15 @@ def test_plan_snapshots_the_line_starts_and_goes_stale_when_shots_move(store, tw
     assert tts.stale(store, seg()) == []
     repo.update(store, "segment", two["seg"], duration_sec=10.0)
     assert any("镜头" in r for r in tts.stale(store, seg()))
+
+
+def test_line_audio_made_before_shot_timing_is_not_stale_for_it(store, two):
+    """方案 B 上线前合成的(参数里没有 starts):不因「镜头节奏」判过期 —— 已经过了口型的视频不被连带作废。"""
+    from tools.drama.tasks import create_task
+    p = json.loads(repo.get(store, "task", tts.plan_tts(store, two["seg"], seed=1))["params_json"])
+    p.pop("starts")
+    tid = create_task(store, kind="tts", target_type="segment", target_id=two["seg"], model="IndexTTS-2", params=p,
+                      seed=2, prompt="p", refs=[])
+    _done(store, tid, "outputs/tasks/90/lines.wav")
+    repo.update(store, "segment", two["seg"], duration_sec=13.0)
+    assert tts.stale(store, repo.get(store, "segment", two["seg"])) == []

@@ -142,7 +142,7 @@ def stale(store: Store, segment: sqlite3.Row) -> list[str]:
                 out.append(f"第 {k} 句的念法模板换了")
     if p["recipe"] != recipe():
         out.append("配音配方参数改了")
-    if lines == p["lines"] and p.get("starts") != _starts(store, segment["id"]):
+    if lines == p["lines"] and "starts" in p and p["starts"] != _starts(store, segment["id"]):   # 方案 B 之前合成的不追究
         out.append("镜头节奏改了(台词所在镜头或分镜时长变了),台词要按新镜头重新对时")
     return out
 
