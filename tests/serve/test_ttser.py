@@ -119,5 +119,5 @@ def test_new_engine_uploads_templates_and_sends_the_recipe(store, sample, world)
     args = world["tts"].calls[0]
     job = json.loads(args[1])
     assert args[0].endswith("/indextts/checkpoints")
-    assert set(job) == {"lines", "voices", "templates", "seed", "gap", "lead", "tail", "recipe", "sr_out"}
+    assert set(job) == {"lines", "voices", "templates", "seed", "gap", "lead", "tail", "recipe", "sr_out", "starts"}
     assert len(job["templates"]) == 2 and job["gap"] == 0.15 and "text" not in job["voices"]["林小雨"]

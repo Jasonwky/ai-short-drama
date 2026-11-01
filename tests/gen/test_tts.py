@@ -150,3 +150,28 @@ def test_old_engine_line_audio_is_stale(store, two):
                               "writes": "line_audio_path", "expect_ext": ".wav"}, seed=1, prompt="p", refs=[])
     _done(store, tid, "outputs/tasks/71/lines.wav")
     assert any("引擎" in r for r in tts.stale(store, repo.get(store, "segment", two["seg"])))
+
+
+# ── 台词按镜头对时(spec 2026-10-31-IndexTTS2港片配音-design.md §10)────────────
+
+FOUR = ("【镜头1】石子飞来。孙老栓说：「小子,你这手……」【镜头2】燕无咎回头。燕无咎说：「老栓叔,我就是碰巧。」"
+        "【镜头3】孙老栓摆手。孙老栓说：「放心,老头子嘴严。」【镜头4】燕无咎望向锅碗,闭口不语。")
+
+
+def test_line_starts_follow_the_subshot_each_line_sits_in():
+    assert tts.line_starts(FOUR, ["孙老栓", "燕无咎"], 12.0) == [0.0, 3.0, 6.0]
+    two_in_one = "【镜头1】甲说：「一」乙说：「二」【镜头2】甲说：「三」"
+    assert tts.line_starts(two_in_one, ["甲", "乙"], 8.0) == [0.0, 0.0, 4.0]   # 同一镜头里的句子接着说(拼的时候顺延)
+    assert tts.line_starts("没有镜头号。甲说：「一」", ["甲"], 8.0) == [0.0]
+
+
+def test_plan_snapshots_the_line_starts_and_goes_stale_when_shots_move(store, two):
+    repo.update(store, "segment", two["seg"], description="【镜头1】林小雨低头。【镜头2】林小雨说：「这块玉佩，是我母亲留给我的。」沈墨说：「我知道。」",
+                duration_sec=8.0)
+    tid = tts.plan_tts(store, two["seg"], seed=1)
+    assert json.loads(repo.get(store, "task", tid)["params_json"])["starts"] == [4.0, 4.0]
+    _done(store, tid, "outputs/tasks/80/lines.wav")
+    seg = lambda: repo.get(store, "segment", two["seg"])   # noqa: E731
+    assert tts.stale(store, seg()) == []
+    repo.update(store, "segment", two["seg"], duration_sec=10.0)
+    assert any("镜头" in r for r in tts.stale(store, seg()))

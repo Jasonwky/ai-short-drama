@@ -231,11 +231,12 @@ class FakeTts:
         import io
         import wave
         self.calls.append(list(args))
+        from tools.serve.idx_remote import layout
         job = json.loads(args[1])
         n = len(job["lines"])
-        sec = job["lead"] + n + job["gap"] * max(n - 1, 0) + job["tail"]
-        spans = [[round(job["lead"] + k * (1 + job["gap"]), 3), round(job["lead"] + k * (1 + job["gap"]) + 1, 3)]
-                 for k in range(n)]
+        at = layout([1.0] * n, job.get("starts"), lead=job["lead"], gap=job["gap"])     # 每句 1 秒,与真脚本同一套排法
+        spans = [[a, round(a + 1, 3)] for a in at]
+        sec = (spans[-1][1] if spans else job["lead"]) + job["tail"]
         buf = io.BytesIO()
         with wave.open(buf, "wb") as w:
             w.setnchannels(1)

@@ -92,6 +92,7 @@ def test_video_prompt_names_speaker_even_when_glued_to_action(store, sample):
     # 实战第 6 段:「说」前没有标点,整串动作描写曾被当成说话人写进提示词,H3 把它烧成了画面字幕
     repo.update(store, "segment", sample["seg"],
                 description="【镜头1】林小雨低头凝视玉佩林小雨说：「这块玉佩，是我母亲留给我的。」【镜头2】她抬眼")
+    give_line_audio(store, sample["seg"])          # 台词换了镜头:台词音频按新镜头重新对时
     row, _ = _task(store, plan_video(store, sample["seg"], seed=7))
     assert " 林小雨用普通话说:「这块玉佩，是我母亲留给我的。」 " in row["prompt"]
     assert "凝视玉佩林小雨" not in row["prompt"]

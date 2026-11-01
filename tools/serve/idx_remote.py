@@ -34,6 +34,17 @@ def strip_inner_pauses(text: str) -> str:
     return INNER_PAUSE.sub("", text)
 
 
+def layout(lens: list[float], starts: list[float] | None, *, lead: float, gap: float) -> list[float]:
+    """每句的起点:不早于它镜头的起点(starts,台词按镜头对时),也不早于上一句结束 + 句间停顿;第一句不早于开头留白。
+    starts 为 None(旧任务)= 连着排。纯函数,本机单测。"""
+    out, t = [], lead
+    for k, n in enumerate(lens):
+        at = max(t, starts[k]) if starts else t
+        out.append(round(at, 3))
+        t = at + n + gap
+    return out
+
+
 def main(argv: list[str]) -> int:
     ckpt_dir, job_json = argv
     job = json.loads(job_json)
@@ -108,14 +119,13 @@ def main(argv: list[str]) -> int:
         return 3
     sr = job["sr_out"]
     silence = lambda sec: np.zeros(int(round(sec * sr)), dtype=np.float32)   # noqa: E731
-    parts, spans, t = [silence(job["lead"])], [], job["lead"]
-    for k, clip in enumerate(clips):
-        if k:
-            parts.append(silence(job["gap"]))
-            t += job["gap"]
+    at = layout([len(c) / sr for c in clips], job.get("starts"), lead=job["lead"], gap=job["gap"])
+    parts, spans, t = [], [], 0.0
+    for clip, start in zip(clips, at):
+        parts.append(silence(start - t))                                  # 补静音,让这句落进它的镜头
         parts.append(clip)
-        spans.append([round(t, 3), round(t + len(clip) / sr, 3)])
-        t += len(clip) / sr
+        spans.append([round(start, 3), round(start + len(clip) / sr, 3)])
+        t = start + len(clip) / sr
     parts.append(silence(job["tail"]))
     audio = np.clip(np.concatenate(parts), -1, 1)
     buf = io.BytesIO()

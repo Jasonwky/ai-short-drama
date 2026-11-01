@@ -73,7 +73,7 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
         if idx:
             job = {"lines": p["lines"], "voices": {who: {"audio": refs[who]} for who in p["voices"]},
                    "templates": [{"audio": a} for a in tpls], "seed": seed, "gap": p["gap_sec"], "lead": p["lead_sec"],
-                   "tail": p["tail_sec"], "recipe": p["recipe"], "sr_out": p["sr_out"]}
+                   "tail": p["tail_sec"], "recipe": p["recipe"], "sr_out": p["sr_out"], "starts": p.get("starts")}
             code, out = run_tts([INDEX_TTS2.ckpt_dir, json.dumps(job, ensure_ascii=False)], SCRIPT_IDX.read_bytes())
         else:       # 旧任务(Qwen3 克隆):云机模型已删,照旧退出码 2 失败并写明(spec §9 V6)
             job = {"lines": p["lines"], "voices": {who: {"audio": refs[who], "text": v["ref_text"]} for who, v in p["voices"].items()},

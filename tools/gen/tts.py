@@ -35,6 +35,24 @@ def _lines(store: Store, segment_id: int) -> list[list[str]]:
     return [[who, line] for who, line in rules.dialogue_lines(seg["description"], names)]
 
 
+def line_starts(description: str, names, duration: float) -> list[float]:
+    """台词按镜头对时(spec 2026-10-31-IndexTTS2港片配音-design.md §10):每句台词所在的【镜头k】(共 n 个)
+    按分镜时长均分,起点 = (k-1)/n × 时长。同一镜头里的几句给同一个起点(拼接时顺延)。没有镜头号 → 全部 0。
+    港片念法一口气连着说,不对时的话声音全挤在片头、说话的人却在后面的镜头才出现(第 1 集第 3、4、5 段实测)。"""
+    blocks = [b for b in rules.SUBSHOT.split(description) if b.strip()] if rules.SUBSHOT.search(description) else [description]
+    n = len(blocks)
+    out = []
+    for k, block in enumerate(blocks):
+        out += [round(k / n * duration, 3)] * len(rules.dialogue_lines(block, names))
+    return out if len(out) == len(rules.dialogue_lines(description, names)) else [0.0] * len(rules.dialogue_lines(description, names))
+
+
+def _starts(store: Store, segment_id: int) -> list[float]:
+    seg = repo.get(store, "segment", segment_id)
+    names = [c["name"] for c in repo.segment_assets(store, segment_id)["characters"]]
+    return line_starts(seg["description"], names, seg["duration_sec"] or 0.0)
+
+
 def _voices(store: Store, segment_id: int, speakers) -> tuple[dict, list[str]]:
     """{说话人: 音色快照} 与问题清单。说话人必须是本段绑定的角色、且有定稿音色(IndexTTS2 只要音频,不要参考文本 —— V3)。"""
     chars = {c["name"]: c for c in repo.segment_assets(store, segment_id)["characters"]}
@@ -85,7 +103,7 @@ def plan_tts(store: Store, segment_id: int, *, seed: int) -> int:
     voices, _ = _voices(store, segment_id, [who for who, _ in lines])
     templates, _ = _templates(store, segment_id, lines)
     params = {"workflow": ENGINE, "engine": ENGINE, "lines": lines, "voices": voices, "line_templates": templates,
-              "recipe": recipe(), "gap_sec": INDEX_TTS2.gap_sec, "lead_sec": LEAD_SEC, "tail_sec": TAIL_SEC,
+              "recipe": recipe(), "starts": _starts(store, segment_id), "gap_sec": INDEX_TTS2.gap_sec, "lead_sec": LEAD_SEC, "tail_sec": TAIL_SEC,
               "attempts": ATTEMPTS, "sr_out": INDEX_TTS2.sr_out, "writes": "line_audio_path", "expect_ext": ".wav"}
     return create_task(store, kind="tts", target_type="segment", target_id=segment_id, model=INDEX_TTS2.name,
                        params=params, seed=seed, prompt="\n".join(f"{who}:{line}" for who, line in lines),
@@ -124,6 +142,8 @@ def stale(store: Store, segment: sqlite3.Row) -> list[str]:
                 out.append(f"第 {k} 句的念法模板换了")
     if p["recipe"] != recipe():
         out.append("配音配方参数改了")
+    if lines == p["lines"] and p.get("starts") != _starts(store, segment["id"]):
+        out.append("镜头节奏改了(台词所在镜头或分镜时长变了),台词要按新镜头重新对时")
     return out
 
 

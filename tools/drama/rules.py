@@ -33,6 +33,7 @@ _SPEECH = re.compile(r"说[：:]\s*「([^」]*)」")
 _SPEAKER = re.compile(r"([^\s【】：:「」，。！？]+?)说[：:]\s*「([^」]*)」")
 _NARRATION = re.compile(r"旁白[：:]\s*([^【\n]*)")
 _SUBSHOT = re.compile(r"【镜头\s*\d+】")
+SUBSHOT = _SUBSHOT          # 台词按镜头对时要用(gen/tts.line_starts)
 
 
 def narration(description: str) -> list[str]:

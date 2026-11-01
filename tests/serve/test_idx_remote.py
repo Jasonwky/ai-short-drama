@@ -24,3 +24,10 @@ def test_missing_files_exit_2_before_importing_torch(capsys, tmp_path):
 def test_strip_inner_pauses_keeps_sentence_ends():
     assert idx_remote.strip_inner_pauses("和尚听着,我是东厂首领、你们;快走:杀!") == "和尚听着我是东厂首领你们快走杀!"
     assert idx_remote.strip_inner_pauses("这不是我的身子，这是哪儿？") == "这不是我的身子这是哪儿？"
+
+
+def test_layout_places_each_line_at_its_shot_start_but_never_overlaps():
+    """台词按镜头对时:每句不早于它镜头的起点,也不早于上一句结束 + 句间停顿(spec §10)。"""
+    assert idx_remote.layout([2.0, 1.5, 2.9], [0.0, 3.0, 6.0], lead=0.3, gap=0.15) == [0.3, 3.0, 6.0]
+    assert idx_remote.layout([2.0, 1.5], [0.0, 1.0], lead=0.3, gap=0.15) == [0.3, 2.45]       # 上一句还没说完:顺延
+    assert idx_remote.layout([1.0, 1.0], None, lead=0.3, gap=0.15) == [0.3, 1.45]             # 没给起点:连着排
