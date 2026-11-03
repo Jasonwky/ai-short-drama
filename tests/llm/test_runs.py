@@ -53,6 +53,7 @@ def test_illegal_transitions_and_silent_failure(store):
 
 def test_v2_database_gets_the_llm_run_table(tmp_path):
     s = Store(tmp_path / "d.db")
+    s.conn.execute("DROP TABLE lip_override")                                # v27 新增
     s.conn.execute("ALTER TABLE character DROP COLUMN voice_template_id")    # v26 新增
     s.conn.execute("ALTER TABLE segment DROP COLUMN line_templates_json")
     s.conn.execute("DROP TABLE voice_template")

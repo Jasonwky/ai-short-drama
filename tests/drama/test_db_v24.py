@@ -17,7 +17,8 @@ def _v23(path):
            .replace(db._SLOTS_V24, db._SLOTS_V23)
            .replace("  voice_ref_text TEXT,\n", "").replace("  line_audio_path TEXT,\n", "")
            .replace("ALTER TABLE task ADD COLUMN result_sec REAL;\n", "")       # v25 的也退掉
-           .replace("".join(f"{x};\n" for x in db.VOICE_TEMPLATE_DDL), ""))      # v26 的也退掉
+           .replace("".join(f"{x};\n" for x in db.VOICE_TEMPLATE_DDL), "")       # v26 的也退掉
+           .replace("".join(f"{x};\n" for x in db.LIP_OVERRIDE_DDL), ""))        # v27 的也退掉
     assert old.count(db._TASK_KINDS_V1) == 1 and "voice_ref_text" not in old
     c = sqlite3.connect(path)
     c.executescript(old)
@@ -64,6 +65,7 @@ def test_v24_db_gains_result_sec(tmp_path):
     for table, col in (("character", "voice_template_id"), ("segment", "line_templates_json")):   # v26 的也退掉
         s.conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
     s.conn.execute("DROP TABLE voice_template")
+    s.conn.execute("DROP TABLE lip_override")                                       # v27 的也退掉
     s.conn.execute("UPDATE meta SET value = '24' WHERE key = 'schema_version'")
     s.close()
     s = Store(tmp_path / "d.db")

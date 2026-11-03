@@ -96,3 +96,36 @@ def test_export_problem_follows_the_current_video(store, world, monkeypatch):
     monkeypatch.setattr(lipsync, "measure", lambda path: TALKING)
     lipsync.check(world["root"], v["result_path"], [[0.3, 3.5]])
     assert lipgate.problem(store, world["root"], seg(), v) == ""
+
+
+# ── 人工看片放行(用户 2026-11-03 定;spec 第 6.5 节)────────────
+
+def test_human_release_clears_the_export_problem_only_for_that_video(store, world, monkeypatch):
+    v = _video(store, world, 1)
+    repo.update(store, "segment", world["seg"], video_path=v["result_path"])
+    seg = lambda: repo.get(store, "segment", world["seg"])   # noqa: E731
+    with pytest.raises(ValueError, match="不用放行"):                          # 还没量过:没什么可放行
+        lipgate.confirm(store, world["root"], world["seg"], "看过了")
+    monkeypatch.setattr(lipsync, "measure", lambda path: SILENT_FACE)
+    lipsync.check(world["root"], v["result_path"], [[0.3, 3.5]])
+    with pytest.raises(ValueError, match="★必填"):
+        lipgate.confirm(store, world["root"], world["seg"], "  ")
+    oid = lipgate.confirm(store, world["root"], world["seg"], "侧脸说话,看片嘴型对得上")
+    assert lipgate.problem(store, world["root"], seg(), v) == ""
+    row = repo.get(store, "lip_override", oid)
+    assert json.loads(row["lines_json"])[0]["n"] == 1 and row["reason"] == "侧脸说话,看片嘴型对得上"
+    note = lipsync.override_note(seg()["number"], lipsync.override_snapshot(row))
+    assert "第 1 句" in note and "侧脸说话" in note
+    (world["root"] / v["result_path"]).write_bytes(b"other")                 # 换了片:放行失效,重新量、重新拦
+    lipsync.check(world["root"], v["result_path"], [[0.3, 3.5]])
+    assert "口型不过" in lipgate.problem(store, world["root"], seg(), v)
+    assert lipgate.override_for(store, world["root"], seg()) is None
+
+
+def test_passing_lips_need_no_release(store, world, monkeypatch):
+    v = _video(store, world, 1)
+    repo.update(store, "segment", world["seg"], video_path=v["result_path"])
+    monkeypatch.setattr(lipsync, "measure", lambda path: TALKING)
+    lipsync.check(world["root"], v["result_path"], [[0.3, 3.5]])
+    with pytest.raises(ValueError, match="不用放行"):
+        lipgate.confirm(store, world["root"], world["seg"], "看过了")

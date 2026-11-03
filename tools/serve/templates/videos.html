@@ -185,6 +185,17 @@
                 {% if x.r is not none %}· 相关 {{ "%.2f"|format(x.r) }} · 滞后 {{ x.lag }} 帧{% endif %}{% if x.why %} —— {{ x.why }}{% endif %}</li>
             {% endfor %}
           </ul>
+          {% if s.lipsync.override %}
+            <p class="status-ok" data-lip-override>已{{ s.lipsync.override.note }}
+              <span class="hint">(口型闸门判不过,人看过片子确认可以接受;只对这条视频 sha256 <code>{{ s.lipsync.override.sha256[:16] }}</code> 有效,换了视频重新拦)</span></p>
+          {% elif s.lipsync.bad %}
+            <form method="post" action="/segment/{{ s.row.id }}/lip-override" class="row" data-lip-form>
+              <div style="flex: 1; min-width: 220px"><label>看过片子、口型可以接受?写明理由(★必填,如「侧脸说话,看片嘴型对得上」)</label>
+                <input type="text" name="reason" required data-lip-reason></div>
+              <button class="btn" type="submit" data-lip-confirm>看过,口型可以接受(放行)</button>
+            </form>
+            <p class="hint">放行不改量法与合格线,只对这条视频有效:重出或挑别的版本后哈希变了,会重新量、重新拦。放行记录写进导出的溯源报告。</p>
+          {% endif %}
         {% endif %}
       </div>
     {% endif %}

@@ -97,3 +97,32 @@ def test_lipsync_is_measured_on_demand_and_shown_per_line(client, runtime, store
     page = client.get(f"/episode/{sample['episode']}/videos").text      # 口型在卡片后半(卡片里还嵌着别的 section)
     lip = page.split("data-lipsync")[1].split("</ul>")[0]
     assert 'data-lip-verdict="过"' in lip and "第 1 句(0.3–2.7 秒)" in lip and "滞后 0 帧" in lip
+
+
+def test_failing_lips_can_be_released_with_a_reason_on_the_card(client, runtime, store, sample, monkeypatch):
+    """口型不过 → 卡片出放行表单;填理由放行 → 卡片显示放行记录、表单消失(用户 2026-11-03 定)。"""
+    from tests.drama.conftest import give_line_audio
+    from tools.cut import lipsync
+    from tools.gen.planner import plan_video
+    root = runtime.data_root
+    give_line_audio(store, sample["seg"])
+    lines = repo.get(store, "segment", sample["seg"])["line_audio_path"]
+    (root / lines).parent.mkdir(parents=True, exist_ok=True)
+    (root / lines).with_name("tts.json").write_text(json.dumps({"spans": [[0.3, 2.7]], "lines": [], "hits": [], "sec": 3.5,
+                                                                "attempt": 1, "heard": "", "ok": True, "attempts": []}),
+                                                    encoding="utf-8")
+    vid = plan_video(store, sample["seg"], seed=1)
+    set_task_state(store, vid, "queued", external_id="x")
+    set_task_state(store, vid, "done", result_path="outputs/tasks/v/h3.mp4")
+    (root / "outputs/tasks/v").mkdir(parents=True)
+    (root / "outputs/tasks/v/h3.mp4").write_bytes(b"mp4")
+    repo.update(store, "segment", sample["seg"], video_path="outputs/tasks/v/h3.mp4")
+    env = [0.05 + 0.04 * (t % 6) / 6 for t in range(72)]
+    monkeypatch.setattr(lipsync, "measure", lambda path: (24.0, [[(0.4, 0.01)] for _ in env], env))   # 嘴不动 = 不过
+    client.post(f"/segment/{sample['seg']}/lipsync", follow_redirects=False)
+    page = client.get(f"/episode/{sample['episode']}/videos").text
+    assert 'data-lip-verdict="不过"' in page and "data-lip-form" in page and "data-lip-override" not in page
+    r = client.post(f"/segment/{sample['seg']}/lip-override", data={"reason": "侧脸说话,看片对得上"}, follow_redirects=False)
+    assert r.status_code == 303
+    page = client.get(f"/episode/{sample['episode']}/videos").text
+    assert "data-lip-override" in page and "侧脸说话,看片对得上" in page and "data-lip-form" not in page

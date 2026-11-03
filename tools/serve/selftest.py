@@ -265,6 +265,27 @@ def _blank_video(store: Store, root: Path, segment_id: int):
     return act
 
 
+def _lip_fail(store: Store, root: Path, segment_id: int):
+    """假后端的片口型一律「过」(fakes.lip_measure_following_audio):把这段当前视频的口型缓存改成「嘴不动」量出来的结果,
+    卡片只读缓存,应出「不过」与放行表单。量法本身不假 —— 走的是 lipsync.judge。"""
+    def act(page) -> None:
+        from dataclasses import asdict
+        from tools.drama.tasks import producer
+        from tools.serve import lipgate
+        from tools.serve.dispatch import sha256_file
+        seg = repo.get(store, "segment", segment_id)
+        spans = lipgate.spans_of(root, producer(store, "video", seg["video_path"]))
+        if spans is None:
+            raise RuntimeError(f"段落 {segment_id} 的当前视频没钉台词音频,造不出口型「不过」")
+        env = [0.05 + 0.04 * (t % 6) / 6 for t in range(int(max(e for _, e in spans) * 24) + 24)]
+        lines = lipsync.judge(24.0, [[(0.4, 0.01)] for _ in env], env, spans)
+        (root / f"{seg['video_path']}.lipsync.json").write_text(json.dumps(
+            {"video_sha256": sha256_file(root / seg["video_path"]), "spans": spans, "params": lipsync.PARAMS,
+             "lines": [asdict(x) for x in lines]}, ensure_ascii=False), encoding="utf-8")
+        page.reload()
+    return act
+
+
 def _review(seg_id: int):
     """逐项勾选这段的验收清单,再点确认,等页面刷新出已确认(两段连着点,第二下要在新页面上点)。"""
     def act(page) -> None:
@@ -544,6 +565,12 @@ def run(out_dir: Path) -> dict:
                      {f"#seg-{seg3} [data-blank-reason]": "雪景,本来就白"}, [f"#seg-{seg3} [data-blank-confirm]"],
                      f"#seg-{seg3} [data-blank-override]", 20),
                     ("final:episode2", "放行后导出检查不再列这段白屏", {}, [_no_blank_problem], "[data-final-segment]", 20),
+                    # 口型人工看片放行(用户 2026-11-03 定):不过 → 卡片出表单 → 填理由放行 → 卡片显示放行记录
+                    ("videos", "口型不过 → 视频卡片出放行表单", {}, [_lip_fail(store, work, seg)],
+                     f"#seg-{seg} [data-lip-form]", 20),
+                    ("videos", "填理由 → 看过,口型可以接受(放行)→ 卡片显示「已口型人工确认放行」",
+                     {f"#seg-{seg} [data-lip-reason]": "侧脸说话,看片嘴型对得上"}, [f"#seg-{seg} [data-lip-confirm]"],
+                     f"#seg-{seg} [data-lip-override]", 20),
                     ("storyboard", "段落编辑页场记表:改姿态为跪 → 保存 → 预览句出现「跪着」", {},
                      [lambda pg: pg.goto(pg.url.split("/episode/")[0] + f"/segment/{seg}/edit"),
                       lambda pg: pg.locator('[data-blocking-row] [data-blocking-pose]').first.select_option("跪"),

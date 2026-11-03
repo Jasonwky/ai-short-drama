@@ -137,6 +137,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   逐句时间取钉进去的台词音频的 `tts.json` spans,按视频 sha256 缓存;视频卡片「量口型」;合格线暂定 0.30(真机标定见 spike 4.3 节);
   **口型闸门** `serve/lipgate.py`(用户 2026-10-30:画外音不算合格):worker 收到视频就量,有句「不过」→ 新种子 + 提示词加 `planner.ON_CAMERA`
   自动重出(参数 `lip_retry`,每份台词音频最多 2 次,之后交给人);导出拦当前视频口型「不过」/ 没量过;「无法判定」不拦、靠看片;
+  「不过」的人看过片子可**填理由放行**(用户 2026-11-03,`lip_override` 表 v27,照 `blank_override`:只认那条视频 sha256、不可改、
+  导出快照进 `inputs_json` 与溯源报告;量法与合格线不动);
   流程栏「⑤ 资产图审」(`llm/asset_review.py`)自动排检查。视频规划另拦**在途 / 缺失的四视图**(说话的角色),
   (第一期曾让没台词的段落写「全程没有人说话」—— 已废:H3 照念不误,现在每段都必须有台词);**每段都要过语音检查**,导出拦;
   旁白只出字幕(`subtitles.place_narration`,放进最长空档);「成片」面板有整集预览(不过导出闸门)。

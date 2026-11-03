@@ -5,7 +5,7 @@
 - 有一句「不过」→ 同一份台词音频、新种子、提示词加 `ON_CAMERA` 自动重出一条;**每份台词音频最多自动重出 RETRIES 次**,
   之后停下交给人(视频卡片上看得到每句结论)。重出的视频进历史,当前视频不自动替换(写回只填空位,与平常一样);
 - 「无法判定」(句子太短、这段时间没有正脸)不算不过,不重出,靠看片确认;
-- 导出:当前视频有「不过」的句子 → 拦(`problem`)。
+- 导出:当前视频有「不过」的句子 → 拦(`problem`);人看过片子、填理由放行(`confirm`,库表 lip_override,v27)的不拦。
 
 自动重出不看 `flow_auto`:这是用户在 2026-10-30 明确选的(「1」:不过就自动换种子重出)。
 """
@@ -17,8 +17,11 @@ import sqlite3
 from pathlib import Path
 
 from tools.cut import lipsync
+from tools.drama import repo
 from tools.drama.db import Store
+from tools.drama.tasks import producer
 from tools.serve import ttser
+from tools.serve.dispatch import sha256_file
 
 RETRIES = 2
 
@@ -77,7 +80,31 @@ def problem(store: Store, data_root: Path, seg: sqlite3.Row, video_task: sqlite3
     if lines is None:
         return f"段落 {n} 的当前视频还没量口型(在「视频」面板点「量口型」)"
     bad = [x for x in lines if x.verdict == "不过"]
-    if bad:
+    if bad and override_for(store, data_root, seg) is None:           # 人看过片子、填理由放行过这条视频的不拦
         return (f"段落 {n} 口型不过:" + ";".join(f"第 {x.n} 句 {x.why}" for x in bad)
-                + " —— 说话的人要在说话时正脸入镜、嘴随声动;重出后在历史里「调用」")
+                + " —— 说话的人要在说话时正脸入镜、嘴随声动;重出后在历史里「调用」,或看过片子后在视频卡片上填理由放行")
     return ""
+
+
+# ── 人工看片放行(用户 2026-11-03 定;spec 第 6.5 节「口型检查过或人填理由放行」)────────────
+# 照白屏放行(blankscan.confirm):只认这条视频的 sha256 —— 重出 / 挑别的版本就自动失效、重新拦。量法与阈值不动。
+
+def override_for(store: Store, data_root: Path, seg: sqlite3.Row) -> sqlite3.Row | None:
+    """这段当前视频的口型放行(按内容哈希对);没有视频 / 文件不在 / 没放行过 = None。"""
+    if not seg["video_path"] or not (Path(data_root) / seg["video_path"]).is_file():
+        return None
+    return repo.lip_override(store, seg["id"], sha256_file(Path(data_root) / seg["video_path"]))
+
+
+def confirm(store: Store, data_root: Path, segment_id: int, reason: str) -> int:
+    """放行这段的当前视频。只放行量过且有「不过」的视频(没有就没什么可放行的);理由★必填。"""
+    seg = repo.get(store, "segment", segment_id)
+    cur = producer(store, "video", seg["video_path"]) if seg["video_path"] else None
+    spans = spans_of(data_root, cur) if cur is not None else None
+    lines = lipsync.cached(data_root, seg["video_path"], spans) if spans is not None else None
+    bad = [x for x in lines or [] if x.verdict == "不过"]
+    if not bad:
+        raise ValueError(f"段落 {seg['number']} 的当前视频口型没有「不过」的句子(或还没量过),不用放行")
+    return repo.add_lip_override(store, segment_id, video_path=seg["video_path"],
+                                 sha256=sha256_file(Path(data_root) / seg["video_path"]),
+                                 lines=[{"n": x.n, "r": x.r, "lag": x.lag, "why": x.why} for x in bad], reason=reason)

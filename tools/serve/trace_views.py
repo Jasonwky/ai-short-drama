@@ -12,7 +12,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from tools.cut import blankscan, provenance
+from tools.cut import blankscan, lipsync, provenance
 from tools.drama import targets
 from tools.drama.db import Store
 from tools.llm import voices
@@ -175,4 +175,8 @@ def export_view(store: Store, root: Path, export_id: int) -> dict:
             changed.append(f"配乐 {m['path']} 的内容与导出时不同")
     releases = {s["number"]: blankscan.override_note(s["number"], s["blank_override"])     # 白屏人工放行(v12 起)
                 for s in report["segments"] if s.get("blank_override")}
+    for s in report["segments"]:                                                               # 口型人工放行(v27 起)
+        if s.get("lip_override"):
+            note = lipsync.override_note(s["number"], s["lip_override"])
+            releases[s["number"]] = f"{releases[s['number']]};{note}" if s["number"] in releases else note
     return {"row": row, "report": report, "changed": list(dict.fromkeys(changed)), "releases": releases}

@@ -21,7 +21,7 @@ import json
 import shutil
 from pathlib import Path
 
-from tools.cut import aigc, blankscan, grade, media, music, provenance, review, subtitles, textscan
+from tools.cut import aigc, blankscan, grade, lipsync, media, music, provenance, review, subtitles, textscan
 from tools.drama import repo, rules
 from tools.drama.styles import get_style
 from tools.drama.db import Store, now
@@ -143,6 +143,7 @@ def begin(store: Store, data_root: Path, episode_id: int, producer: str) -> int:
                "sha256": sha256_file(root / s["video_path"]), "subtitle_path": s["subtitle_path"],
                "subtitle_sha256": sha256_file(root / s["subtitle_path"]) if s["subtitle_path"] else None,
                "blank_override": blankscan.snapshot(blankscan.override_for(store, root, s)),
+               "lip_override": lipsync.override_snapshot(lipgate.override_for(store, root, s)),   # 口型人工放行(v27)
                "review": review.snapshot(review.review_for(store, root, s)),
                "narration": rules.narration(s["description"] or ""),
                "grade": look}                       # 导出调色(港片画风 §2):快照进来,run 只认它

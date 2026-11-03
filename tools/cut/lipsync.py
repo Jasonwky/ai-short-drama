@@ -132,6 +132,20 @@ def judge(fps: float, rows: list[list[tuple[float, float]]], env: list[float], s
     return out
 
 
+def override_snapshot(row) -> dict | None:
+    """口型人工放行(库表 lip_override,v27)导出 begin 时记进 inputs_json 的那份;没放行 = None。"""
+    if row is None:
+        return None
+    return {"id": row["id"], "sha256": row["sha256"], "lines": json.loads(row["lines_json"]),
+            "reason": row["reason"], "created_at": row["created_at"]}
+
+
+def override_note(number: int, snap: dict) -> str:
+    """溯源报告 / 视频卡片里的一行。"""
+    which = "、".join(f"第 {x['n']} 句" + (f"(相关 {x['r']:.2f})" if x.get("r") is not None else "") for x in snap["lines"])
+    return f"口型人工确认放行:段落 {number},{which},{snap['reason']},{snap['created_at']}"
+
+
 def _cache_path(root: Path, video_rel: str) -> Path:
     return Path(root) / f"{video_rel}.lipsync.json"
 

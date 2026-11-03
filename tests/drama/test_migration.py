@@ -13,8 +13,14 @@ def _cols(store, table):
     return {r[1] for r in store.conn.execute(f"PRAGMA table_info({table})")}
 
 
+def _drop_v27(s):
+    """退回 v26:删掉 v27 新增的口型放行表。"""
+    s.conn.execute("DROP TABLE IF EXISTS lip_override")
+
+
 def _drop_v26(s):
-    """退回 v25:删掉 v26 新增的念法模板表与两列。"""
+    """退回 v25:删掉 v26 新增的念法模板表与两列;v27 的也一并退掉。"""
+    _drop_v27(s)
     for table, col in (("character", "voice_template_id"), ("segment", "line_templates_json")):
         if col in _cols(s, table):
             s.conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
@@ -604,4 +610,31 @@ def test_v25_database_gains_voice_templates(tmp_path):
     assert "voice_template_id" in _cols(s, "character") and "line_templates_json" in _cols(s, "segment")
     assert repo.get(s, "character", lin)["voice_template_id"] is None
     assert s.conn.execute("SELECT COUNT(*) FROM voice_template").fetchone()[0] == 0
+    s.close()
+
+
+def test_v26_database_gains_locked_lip_overrides(tmp_path):
+    """v27:口型人工放行。理由空串在库这一层也拒;放行记录一经写下不可改。"""
+    import sqlite3
+
+    import pytest
+
+    path = tmp_path / "drama.db"
+    s = Store(path)
+    d = repo.create_drama(s, "玉佩", "9:16")
+    seg = repo.add_segment(s, repo.add_episode(s, d, 1, "script"), 1, video_path="v.mp4")
+    _drop_v27(s)
+    s.conn.execute("UPDATE meta SET value = '26' WHERE key = 'schema_version'")
+    s.close()
+
+    s = Store(path)
+    oid = repo.add_lip_override(s, seg, video_path="v.mp4", sha256="a" * 64, lines=[{"n": 1, "r": 0.1}], reason="看片对得上")
+    assert repo.get(s, "lip_override", oid)["reason"] == "看片对得上"
+    with pytest.raises(sqlite3.IntegrityError, match="不可改"):
+        s.conn.execute("UPDATE lip_override SET reason = '别的' WHERE id = ?", (oid,))
+    with pytest.raises(sqlite3.IntegrityError):
+        s.conn.execute("INSERT INTO lip_override (segment_id, video_path, sha256, lines_json, reason, created_at)"
+                       " VALUES (?, 'v.mp4', 'b', '[]', '  ', 'now')", (seg,))
+    with pytest.raises(ValueError, match="★必填"):
+        repo.add_lip_override(s, seg, video_path="v.mp4", sha256="a" * 64, lines=[], reason=" ")
     s.close()

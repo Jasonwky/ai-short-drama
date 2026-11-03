@@ -32,7 +32,7 @@ _COLUMNS: dict[str, set[str]] = {
     "music_cue": {"license", "start_sec", "end_sec", "gain_db", "duck_db", "fade_in", "fade_out"},
 }
 _READABLE = {"drama", "episode", "character", "scene", "prop", "segment", "task", "host", "segment_keyframe",
-             "music_cue", "blank_override", "segment_review", "voice_template"}
+             "music_cue", "blank_override", "segment_review", "voice_template", "lip_override"}
 
 
 def _check_cols(table: str, fields: dict) -> None:
@@ -167,6 +167,23 @@ def add_blank_override(store: Store, segment_id: int, *, video_path: str, sha256
 def blank_override(store: Store, segment_id: int, sha256: str) -> sqlite3.Row | None:
     """这段对这条视频(按内容哈希)最近的一次放行;没有 = None。"""
     return store.conn.execute("SELECT * FROM blank_override WHERE segment_id = ? AND sha256 = ?"
+                              " ORDER BY id DESC LIMIT 1", (segment_id, sha256)).fetchone()
+
+
+def add_lip_override(store: Store, segment_id: int, *, video_path: str, sha256: str, lines: list,
+                     reason: str) -> int:
+    """口型人工放行:只对这条视频(sha256)有效,写下不可改(触发器)。是否真有「不过」由 serve/lipgate.confirm 判。"""
+    if not reason.strip():
+        raise ValueError("放行理由是★必填:写清看过片子、为什么口型可以接受")
+    get(store, "segment", segment_id)
+    return _insert(store, "lip_override", {"segment_id": segment_id, "video_path": video_path, "sha256": sha256,
+                                           "lines_json": json.dumps(lines, ensure_ascii=False),
+                                           "reason": reason.strip(), "created_at": now()})
+
+
+def lip_override(store: Store, segment_id: int, sha256: str) -> sqlite3.Row | None:
+    """这段对这条视频(按内容哈希)最近的一次口型放行;没有 = None。"""
+    return store.conn.execute("SELECT * FROM lip_override WHERE segment_id = ? AND sha256 = ?"
                               " ORDER BY id DESC LIMIT 1", (segment_id, sha256)).fetchone()
 
 

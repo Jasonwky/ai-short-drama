@@ -102,12 +102,16 @@ def _spans(root, cur) -> list | None:
     return lipgate.spans_of(root, cur) if cur else None
 
 
-def _lipsync(root, s, cur) -> dict | None:
+def _lipsync(store, root, s, cur) -> dict | None:
     """口型检查(spec 2026-10-30 第 6.3 节):只读缓存,量要点按钮(本机 CPU 约 20 秒一条)。"""
     spans = _spans(root, cur)
     if spans is None or not s["video_path"] or not (root / s["video_path"]).is_file():
         return None
-    return {"lines": lipsync.cached(root, s["video_path"], spans), "r_min": lipsync.R_MIN, "lag_max": lipsync.LAG_MAX}
+    lines = lipsync.cached(root, s["video_path"], spans)
+    bad = any(x.verdict == "不过" for x in lines or [])
+    o = lipsync.override_snapshot(lipgate.override_for(store, root, s)) if bad else None    # 人看片放行(v27)
+    return {"lines": lines, "r_min": lipsync.R_MIN, "lag_max": lipsync.LAG_MAX, "bad": bad,
+            "override": o and {**o, "note": lipsync.override_note(s["number"], o)}}
 
 
 def _graded_rel(data_root, video_rel: str, look: str) -> str:
@@ -168,7 +172,7 @@ def page(request: Request, episode_id: int):
                      "vision": _vision(store, s, runtime.data_root) if has_video else None,
                      "review": _review(store, runtime.data_root, s) if has_video else None,
                      "extra": aligner.extra_speech_for(store, runtime.data_root, s["id"]),
-                     "lipsync": _lipsync(runtime.data_root, s, cur),
+                     "lipsync": _lipsync(store, runtime.data_root, s, cur),
                      "cues": subtitles.parse_srt(sub.read_text(encoding="utf-8")) if sub and sub.is_file() else []})
         prev = cut
     return render(request, "videos.html", "videos", episode_id=episode_id, ep=ep, segs=segs, seed=new_seed(),
@@ -199,6 +203,15 @@ def blank_override(request: Request, segment_id: int, reason: str = Form("")):
     """白屏命中、人看过确认不是白屏:填理由放行(★必填),只对这条视频的 sha256 有效。"""
     runtime = rt(request)
     blankscan.confirm(runtime.store, runtime.data_root, segment_id, reason)
+    ep_id = repo.get(runtime.store, "segment", segment_id)["episode_id"]
+    return RedirectResponse(f"/episode/{ep_id}/videos#seg-{segment_id}", status_code=303)
+
+
+@router.post("/segment/{segment_id}/lip-override")
+def lip_override(request: Request, segment_id: int, reason: str = Form("")):
+    """口型不过、人看过片子认为可以接受:填理由放行(★必填),只对这条视频的 sha256 有效(用户 2026-11-03 定)。"""
+    runtime = rt(request)
+    lipgate.confirm(runtime.store, runtime.data_root, segment_id, reason)
     ep_id = repo.get(runtime.store, "segment", segment_id)["episode_id"]
     return RedirectResponse(f"/episode/{ep_id}/videos#seg-{segment_id}", status_code=303)
 

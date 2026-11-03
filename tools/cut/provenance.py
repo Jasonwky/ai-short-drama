@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.cut import blankscan, review
+from tools.cut import blankscan, lipsync, review
 from tools.cut.music import NOTE as MUSIC_NOTE
 from tools.drama import repo
 from tools.drama.db import Store
@@ -74,6 +74,7 @@ def build(store: Store, data_root: Path, episode_id: int, *, produce_id: str, pr
                      "video": node(store, Path(data_root), v["video_path"]),
                      "subtitles": node(store, Path(data_root), sub) if sub else None,
                      "blank_override": v.get("blank_override"),      # 白屏检测命中、人工确认放行的(早于 v12 的导出没有)
+                     "lip_override": v.get("lip_override"),          # 口型不过、人看片放行的(早于 v27 的导出没有)
                      "review": v.get("review"),                      # 看片确认(早于 v13 的导出没有)
                      "grade": v.get("grade"),                         # 导出调色(港片画风;早于它的导出没有)
                      "line_audio": _line_audio(store, v["video_path"])})
@@ -175,6 +176,8 @@ def to_markdown(report: dict) -> str:
             lines.append(f"台词音频:`{la['path']}` · 引擎 {la['engine']}" + (f" · 念法模板:{tpl}" if tpl else ""))
         if s.get("blank_override"):
             lines.append(blankscan.override_note(s["number"], s["blank_override"]))
+        if s.get("lip_override"):
+            lines.append(lipsync.override_note(s["number"], s["lip_override"]))
         if s.get("review"):
             lines.append(review.note(s["number"], s["review"]))
         lines.append("")

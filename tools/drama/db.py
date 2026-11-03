@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 27
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -472,6 +472,24 @@ VOICE_TEMPLATE_DDL = [
 ]
 SCHEMA += "".join(f"{stmt};\n" for stmt in VOICE_TEMPLATE_DDL)
 
+# v27:口型人工放行(用户 2026-11-03 定;spec 2026-10-30-台词配音与口型闸门-design.md §6.5「口型检查过或人填理由放行」)。
+# 口型闸门判「不过」、人看过片子认为可以接受时填理由放行 —— 照 blank_override:只对这条视频的 sha256 有效,
+# 换了视频自动失效;理由★必填(空串库层也拒);一经写下不可改;lines_json 记放行时那几句「不过」的量值
+LIP_OVERRIDE_DDL = [
+    """CREATE TABLE lip_override (
+  id INTEGER PRIMARY KEY,
+  segment_id INTEGER NOT NULL REFERENCES segment(id) ON DELETE CASCADE,
+  video_path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  lines_json TEXT NOT NULL,
+  reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+  created_at TEXT NOT NULL
+)""",
+    """CREATE TRIGGER lip_override_immutable BEFORE UPDATE ON lip_override
+BEGIN SELECT RAISE(ABORT, '口型放行记录一经写下不可改 —— 它只对当时那条视频有效'); END""",
+]
+SCHEMA += "".join(f"{stmt};\n" for stmt in LIP_OVERRIDE_DDL)
+
 # 从版本 N 升到 N+1 要执行的语句。只追加,不改已发布的条目。
 MIGRATIONS: dict[int, list[str]] = {
     # v2:task.state_since 记录进入当前状态的时刻(waiting_host 超 24 小时放弃要用);
@@ -539,6 +557,8 @@ MIGRATIONS: dict[int, list[str]] = {
     24: RESULT_SEC_DDL,
     # v26:念法模板
     25: VOICE_TEMPLATE_DDL,
+    # v27:口型人工放行
+    26: LIP_OVERRIDE_DDL,
 }
 
 
