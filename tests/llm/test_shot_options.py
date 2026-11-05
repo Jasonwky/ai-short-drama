@@ -85,6 +85,9 @@ def test_judge_rejects_pose_jump_from_the_previous_segment(store, sample):
     assert ctx["prev"]["description"] == repo.get(store, "segment", sample["seg"])["description"]
     kneel = _opt(pose="跪", shot="近景", angle="俯拍")
     assert any("上一段开头站" in p for p in so.judge_factory(ctx)({"options": [kneel, _opt()]}))
+    # the model cannot edit the previous segment: the feedback must name the fix it can make (2026-11-05 contract failure)
+    assert any("本段开头沿用「站」" in p for p in so.judge_factory(ctx)({"options": [kneel, _opt()]}))
+    assert "本段开头沿用上一段的姿态" in so.user_message(ctx)
     repo.update(store, "segment", sample["seg"], description="林小雨站着,然后跪下。")
     assert so.judge_factory(so.context(store, cur, n=2))({"options": [kneel, _opt()]}) == []
 

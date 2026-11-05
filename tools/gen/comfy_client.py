@@ -116,6 +116,18 @@ class ComfyClient:
         return ([item[1] for item in q.get("queue_running", [])],
                 [item[1] for item in q.get("queue_pending", [])])
 
+    def cancel(self, prompt_id: str) -> str:
+        """撤掉**自己的**一条:排队中的从队列删掉,正在跑的按 prompt_id 中断(不给 id 是全局中断,会误伤别的项目)。
+        返回 "pending" / "running" / "gone"(已不在队列)。"""
+        running, pending = self.queue_ids()
+        if prompt_id in pending:
+            self._request("/queue", {"delete": [prompt_id]})
+            return "pending"
+        if prompt_id in running:
+            self._request("/interrupt", {"prompt_id": prompt_id})
+            return "running"
+        return "gone"
+
     # ---------- 素材上传 ----------
 
     def upload_image(self, path: str | Path, subfolder: str = "") -> str:

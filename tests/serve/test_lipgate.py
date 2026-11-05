@@ -70,6 +70,14 @@ def test_failing_lips_retry_with_the_speaker_on_camera_at_most_twice(store, worl
     assert "停下交给人看" in log[-1] and len(_videos(store, world["seg"])) == 3
 
 
+def test_retry_of_a_draft_stays_a_draft(store, world, monkeypatch):
+    """2026-11-05 acceptance: a 10-step draft's lip retry went out at 20 steps (params had no `steps`)."""
+    from tools.gen.planner import DRAFT_STEPS
+    monkeypatch.setattr(lipsync, "measure", lambda path: SILENT_FACE)
+    lipgate.after_video(store, world["root"], _video(store, world, 1, steps=DRAFT_STEPS))
+    assert json.loads(_videos(store, world["seg"])[-1]["params_json"])["steps"] == DRAFT_STEPS
+
+
 def test_new_line_audio_gets_its_own_retries(store, world, monkeypatch):
     monkeypatch.setattr(lipsync, "measure", lambda path: SILENT_FACE)
     _video(store, world, 1, lip_retry=True)

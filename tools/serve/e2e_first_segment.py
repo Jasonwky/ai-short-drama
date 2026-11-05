@@ -36,6 +36,7 @@ from pathlib import Path
 
 from tools.drama import approval, repo
 from tools.drama.db import Store
+from tools.drama.tasks import set_task_state
 from tools.gen.align import plan_align
 from tools.gen import graphs, presets
 from tools.gen.assets import plan_fourview
@@ -144,6 +145,27 @@ def _draft_check(data_root: Path, full: dict, draft: dict) -> dict:
     return {"task": draft["id"], "steps": steps, "seconds": b, "full_seconds": a, "ratio": ratio}
 
 
+LEFTOVER = "验收结束时撤掉:不是验收在等的任务(如口型自动重出),跑完也没人收"
+
+
+def cancel_leftovers(store: Store, client, awaited: set[int]) -> list[str]:
+    """验收退出前,把自己派生、没人等的任务撤掉(2026-11-05:口型自动重出留在云机上空跑了一条 20 步视频)。
+    验收在等的那条不动 —— 超时的提示是「它可能还在云机上跑,不要重新提交」,留给人看。"""
+    lines = []
+    for row in store.conn.execute("SELECT id, external_id FROM task WHERE state NOT IN ('done', 'failed') ORDER BY id"):
+        if row["id"] in awaited:
+            continue
+        where = client.cancel(row["external_id"]) if row["external_id"] else "没交出去"
+        set_task_state(store, row["id"], "failed", error=LEFTOVER)
+        lines.append(f"task {row['id']} 撤掉({where})")
+    return lines
+
+
+def _reap(store: Store, worker: Worker, host_id: int, awaited: set[int]) -> None:
+    for line in cancel_leftovers(store, worker.client_for(get_host(store, host_id)), awaited):
+        print(line, flush=True)
+
+
 def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, timeout_sec: float,
         make_worker: Callable[[Store, int, Path], Worker] = lambda s, h, root: Worker(s, h, data_root=root),
         sleep: Callable[[float], None] = time.sleep, check_key=keycheck.check) -> dict:
@@ -163,6 +185,7 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
             approval.approve(store, data_root, table, row_id, "image", failed=[], reason=AUTO_APPROVE)
     host_id = add_host(store, **host)
     worker = make_worker(store, host_id, data_root)
+    awaited: set[int] = set()
     try:
         report = {"segment": seg, "tasks": [], "preset": _use_frame_preset(store, worker, host_id, sleep)}
 
@@ -173,6 +196,7 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
                      # 草稿档:与定稿同种子、只差步数;当前视频已有,新版本只留在任务记录里
                      lambda: plan_video(store, seg, seed=seed + 1, steps=DRAFT_STEPS)):
             tid = plan()
+            awaited.add(tid)
             state = run_until_final(worker, store, tid, timeout_sec=timeout_sec, sleep=sleep)
             if state == "failed":
                 raise RuntimeError(f"task {tid} 失败:{repo.get(store, 'task', tid)['error']}")
@@ -206,6 +230,14 @@ def run(data_root: Path, images: dict[str, Path], host: dict, *, seed: int, time
             raise RuntimeError(f"视频钉了 {len(kcs)} 张关键帧,段落设了 {len(keys)} 张")
         report["draft"] = _draft_check(data_root, report["tasks"][6], report["tasks"][8])
         (data_root / "provenance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        _reap(store, worker, host_id, awaited)               # chain passed: a failed cleanup fails the run
+    except BaseException:
+        try:
+            _reap(store, worker, host_id, awaited)
+        except Exception as e:      # the chain's own error wins; still say loudly what may be left on the GPU
+            print(f"撤掉验收派生的任务失败:{type(e).__name__}: {e} —— 云机上可能还有没人收的任务,要手动看 /queue",
+                  flush=True)
+        raise
     finally:
         # 隧道是脱离进程起的,不收就一直留着(两次验收后残留);只停本进程起的,接管来的 stop 碰不到
         worker.tunnel.stop(host_id)

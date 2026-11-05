@@ -26,6 +26,7 @@ class FakeComfy:
         self.submitted: dict[str, dict] = {}
         self.running: list[str] = []
         self.pending: list[str] = []
+        self.cancelled: list[str] = []
         self.records: dict[str, dict] = {}
         self.files: dict[str, bytes] = {}
         self._n = 0
@@ -113,6 +114,15 @@ class FakeComfy:
         self.records[pid] = {"status": {"status_str": "error", "completed": False,
                                         "messages": [["execution_error", {"exception_message": message}]]},
                              "outputs": {}}
+
+    def cancel(self, pid):
+        self._up()
+        for where, q in (("pending", self.pending), ("running", self.running)):
+            if pid in q:
+                q.remove(pid)
+                self.cancelled.append(pid)
+                return where
+        return "gone"
 
     def vanish(self, pid):
         """任务从云机消失:不在队列、也不在 history(比如 ComfyUI 被重启过)。"""

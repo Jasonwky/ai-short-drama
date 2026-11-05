@@ -53,13 +53,15 @@ def after_video(store: Store, data_root: Path, task: sqlite3.Row) -> list[str]:
                                               for x in lines)]
     if not bad:
         return log
-    sha = json.loads(task["params_json"])["script"]["line_audio"]["sha256"]
+    params = json.loads(task["params_json"])
+    sha = params["script"]["line_audio"]["sha256"]
     used = retries_used(store, task["target_id"], sha)
     if used >= RETRIES:
         return log + [f"task {task['id']} 口型不过,同一份台词音频已自动重出 {used} 次,停下交给人看"]
     from tools.gen.planner import plan_video      # planner → tts → … 不依赖本模块;放这里免得 serve 启动时多一层导入
     try:
-        new = plan_video(store, task["target_id"], seed=random.randrange(1, 2**31), lip_retry=True)
+        new = plan_video(store, task["target_id"], seed=random.randrange(1, 2**31), steps=params.get("steps"),
+                         lip_retry=True)      # a draft's retry stays a draft
     except ValueError as e:
         return log + [f"task {task['id']} 口型不过,想自动重出但规划被拒:{e}"]
     return log + [f"task {task['id']} 口型不过(第 {'、'.join(str(x.n) for x in bad)} 句),自动重出 task {new}"

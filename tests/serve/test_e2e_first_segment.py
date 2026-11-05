@@ -187,3 +187,44 @@ def test_draft_that_saves_no_time_fails_the_chain(tmp_path):
     (sub / "workflow.json").write_text(json.dumps({"submitted": wf, "names": {}}), encoding="utf-8")
     with pytest.raises(RuntimeError, match="草稿档实际提交的是 20 步"):
         _draft_check(tmp_path, full, draft)
+
+
+def test_leftover_tasks_are_cancelled_but_the_awaited_one_is_kept(store, sample):
+    """2026-11-05: the lip gate's auto retry was left running on the GPU after the run exited."""
+    from tools.drama import repo
+    from tools.drama.tasks import set_task_state
+    from tools.gen.planner import plan_video
+    from tools.serve.e2e_first_segment import LEFTOVER, cancel_leftovers
+    comfy = FakeComfy()
+    a, b, c = (plan_video(store, sample["seg"], seed=n) for n in (1, 2, 3))
+    for tid, pid, q in ((a, "pa", comfy.running), (b, "pb", comfy.pending)):
+        set_task_state(store, tid, "queued", external_id=pid)
+        q.append(pid)
+    lines = cancel_leftovers(store, comfy, awaited={a})
+    assert comfy.cancelled == ["pb"] and comfy.running == ["pa"]
+    assert [repo.get(store, "task", t)["state"] for t in (a, b, c)] == ["queued", "failed", "failed"]
+    assert repo.get(store, "task", c)["error"] == LEFTOVER
+    assert lines == [f"task {b} 撤掉(pending)", f"task {c} 撤掉(没交出去)"]
+
+
+def test_lip_retries_do_not_outlive_the_run(tmp_path, images, monkeypatch):
+    """As on 2026-11-05: the full video passes the lip check, the draft fails it -> its retry is planned as the run ends."""
+    from tools.cut import lipsync
+    from tools.serve.e2e_first_segment import LEFTOVER
+    env = [0.05 + 0.04 * (i % 6) / 6 for i in range(240)]
+    calls = []
+
+    def measure(path):              # first video (the full one) talks; later ones keep the mouth still
+        calls.append(path)
+        mouth = [[(0.4, 0.02 + 0.5 * e)] for e in env] if len(calls) == 1 else [[(0.4, 0.01)] for _ in env]
+        return 24.0, mouth, env
+    monkeypatch.setattr(lipsync, "measure", measure)
+    comfy = FakeComfy()
+    root = tmp_path / "e2e"
+    run(root, images, HOST, seed=5, timeout_sec=60, make_worker=_worker_on(comfy), sleep=_gpu(comfy), check_key=_hit)
+    from tools.drama.db import Store
+    s = Store(root / "drama.db")
+    rows = s.conn.execute("SELECT state, error FROM task WHERE json_extract(params_json, '$.lip_retry') = 1").fetchall()
+    assert len(rows) == 1 and rows[0]["state"] == "failed" and rows[0]["error"] == LEFTOVER
+    assert not comfy.pending and not comfy.running
+    s.close()

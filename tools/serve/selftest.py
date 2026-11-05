@@ -499,7 +499,8 @@ def run(out_dir: Path) -> dict:
                     ("videos", "段落 1、2 逐项勾选验收清单 → 确认 → 卡片显示已确认", {},
                      [_review(seg), _review(seg2)], f"#seg-{seg2} [data-reviewed]", 20),
                     ("final", "导出成片", {"[data-producer]": "SELFTEST-ONLY"}, ["[data-export]"],
-                     '[data-export-state="done"] [data-export-video]', 90),
+                     # first export OCRs every segment cold on CPU; the panel itself promises "1–3 分钟"
+                     '[data-export-state="done"] [data-export-video]', 180),
                     # 配乐:第二次导出(上一条是 #1),等的是 #2 的自检里「配乐」PASS
                     ("final", "配乐:上传 → 设起止 → 曲线 → 试听 → 再导出 → 自检「配乐」PASS",
                      {"[data-music-file]": lambda: work / "demo_song.wav",
