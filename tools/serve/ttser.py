@@ -26,7 +26,7 @@ from tools.serve.dispatch import Outcome, sha256_file
 from tools.serve.hosts import Host
 
 SCRIPT = Path(__file__).with_name("tts_remote.py")
-SCRIPT_IDX = Path(__file__).with_name("idx_remote.py")       # IndexTTS2 港片念法(新任务的 workflow = indextts2_hk)
+SCRIPT_IDX = Path(__file__).with_name("idx_remote.py")       # IndexTTS2 港片念法(workflow = indextts2_hk;2026-11-06 起新任务不再走)
 IDX = "indextts2_hk"
 HIT_OK = 0.9            # 每句拼音命中率(与试听音同一条线)
 SEED_STEP = 1000        # 换种子:与脚本内逐句 +k 错开
@@ -75,9 +75,10 @@ def run(store: Store, client, host: Host, task: sqlite3.Row, *, data_root: Path,
                    "templates": [{"audio": a} for a in tpls], "seed": seed, "gap": p["gap_sec"], "lead": p["lead_sec"],
                    "tail": p["tail_sec"], "recipe": p["recipe"], "sr_out": p["sr_out"], "starts": p.get("starts")}
             code, out = run_tts([INDEX_TTS2.ckpt_dir, json.dumps(job, ensure_ascii=False)], SCRIPT_IDX.read_bytes())
-        else:       # 旧任务(Qwen3 克隆):云机模型已删,照旧退出码 2 失败并写明(spec §9 V6)
+        else:       # Qwen3 克隆(港片念法 2026-11-06 暂停后新任务都走这里;11-01 之前的旧任务没有 starts = 连着排)
             job = {"lines": p["lines"], "voices": {who: {"audio": refs[who], "text": v["ref_text"]} for who, v in p["voices"].items()},
-                   "seed": seed, "gap": p["gap_sec"], "lead": p["lead_sec"], "tail": p["tail_sec"], "language": p["language"]}
+                   "seed": seed, "gap": p["gap_sec"], "lead": p["lead_sec"], "tail": p["tail_sec"], "language": p["language"],
+                   "starts": p.get("starts")}
             code, out = run_tts([QWEN3_TTS.base_dir, json.dumps(job, ensure_ascii=False)], SCRIPT.read_bytes())
         if code == aligner.SSH_UNREACHABLE:
             return Outcome("pending", f"ssh 连不上云机,下轮再试:{out.strip()[-300:]}")

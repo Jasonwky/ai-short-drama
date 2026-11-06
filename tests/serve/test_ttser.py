@@ -57,9 +57,9 @@ def test_lines_are_cloned_listened_to_and_written_back(store, sample, world):
     assert check["ok"] and check["attempt"] == 1 and check["hits"] == [1.0, 1.0] and len(check["spans"]) == 2
     assert repo.get(store, "task", tid)["result_sec"] == check["sec"] > 0
     job = json.loads(world["tts"].calls[0][1])
-    assert job["seed"] == 5 and job["voices"]["沈墨"] == {"audio": job["voices"]["沈墨"]["audio"]}   # IndexTTS2 不要参考文本
+    assert job["seed"] == 5 and job["voices"]["沈墨"]["text"] == "shen的试听句"          # Qwen3 克隆要参考文本
     assert job["voices"]["林小雨"]["audio"].startswith("/root/autodl-tmp/ComfyUI/input/ai-short-drama/")
-    assert len(world["comfy"].uploaded) == 5          # 两个定稿音色 + 两句的念法模板 + 合成出的台词音频
+    assert len(world["comfy"].uploaded) == 3          # 两个定稿音色 + 合成出的台词音频(港片念法暂停:不传念法模板)
 
 
 def test_a_missed_line_retries_with_a_new_seed(store, sample, world):
@@ -112,9 +112,35 @@ def test_cuda_oom_mid_run_waits_for_the_next_gap(store, sample, world, step):
     assert repo.get(store, "task", tid)["state"] == "pending"
 
 
-def test_new_engine_uploads_templates_and_sends_the_recipe(store, sample, world):
-    """IndexTTS2 港片念法(spec 2026-10-31 §4):音色 + 逐句模板都上传;job 带配方,不带参考文本;脚本是 idx_remote。"""
+def test_new_tasks_clone_on_qwen3_with_line_starts(store, sample, world):
+    """港片念法 2026-11-06 暂停:新任务走 Qwen3 Base 克隆(tts_remote),job 带参考文本与逐句镜头起点。"""
     tid = plan_tts(store, sample["seg"], seed=5)
+    assert _run(store, world, tid, Hearing(BOTH)).state == "done"
+    args = world["tts"].calls[0]
+    job = json.loads(args[1])
+    assert args[0].endswith("/Qwen3-TTS-12Hz-1.7B-Base")
+    assert set(job) == {"lines", "voices", "seed", "gap", "lead", "tail", "language", "starts"}
+    assert job["gap"] == 0.4 and job["starts"] == [0.0, 0.0]
+
+
+def _idx_task(store, sample):
+    """暂停前排下、还没跑的 IndexTTS2 港片念法任务(参数照 11-05 的规划器)。"""
+    from tools.drama.tasks import create_task
+    from tools.gen.tts import _lines
+    voices = {"林小雨": {"path": "v/lin.wav", "sha256": "x"}, "沈墨": {"path": "v/shen.wav", "sha256": "x"}}
+    tpl = {"id": 1, "name": "喝令", "path": "v/tpl.wav", "sha256": "t"}
+    params = {"workflow": "indextts2_hk", "engine": "indextts2_hk", "lines": _lines(store, sample["seg"]), "voices": voices,
+              "line_templates": [tpl, tpl], "recipe": {"emo_alpha": 1.0, "pitch_widen": 1.4, "squeeze_gap_sec": 0.06,
+                                                         "squeeze_db": -38.0},
+              "starts": [0.0, 0.0], "gap_sec": 0.15, "lead_sec": 0.3, "tail_sec": 0.5, "attempts": 3, "sr_out": 24000,
+              "writes": "line_audio_path", "expect_ext": ".wav"}
+    return create_task(store, kind="tts", target_type="segment", target_id=sample["seg"], model="IndexTTS-2",
+                       params=params, seed=5, prompt="p", refs=[])
+
+
+def test_queued_hk_dubbing_task_still_runs_on_indextts(store, sample, world):
+    """暂停前已排下的 IndexTTS2 港片念法任务照参数跑完(不改已定死的任务):音色 + 逐句模板都上传;job 带配方,不带参考文本。"""
+    tid = _idx_task(store, sample)
     assert _run(store, world, tid, Hearing(BOTH)).state == "done"
     args = world["tts"].calls[0]
     job = json.loads(args[1])

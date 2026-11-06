@@ -107,10 +107,10 @@ def test_sha256_is_cached_until_the_file_changes(tmp_path, monkeypatch):
 
 
 def test_line_audio_engine_and_template_sources_are_listed(store, two_segments):
-    """IndexTTS2 港片念法(spec 2026-10-31 §9 V9):每段写明视频钉的台词音频用的引擎、每句念法模板与它的来源。"""
+    """每段写明视频钉的台词音频用的引擎(spec 2026-10-31 §9 V9);港片念法 2026-11-06 暂停后是 Qwen3 克隆、没有念法模板。"""
     s, root = two_segments, two_segments["root"]
     r = provenance.build(store, root, s["episode"], produce_id="ASD-2", producer="P1", videos=_videos(store, s))
     la = r["segments"][0]["line_audio"]
-    assert la["engine"] == "indextts2_hk"
-    assert la["templates"] and all(t["source"] == "synth:0" for t in la["templates"])
-    assert "念法模板" in provenance.to_markdown(r)
+    assert la["engine"] == "qwen3_tts_clone"
+    assert la["templates"] == []
+    assert "qwen3_tts_clone" in provenance.to_markdown(r)

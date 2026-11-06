@@ -4,7 +4,8 @@
     <venv python> - <Base 模型目录> <任务 JSON>
 
 任务 JSON:`{"lines": [[说话人, 台词]], "voices": {说话人: {"audio": 云机绝对路径, "text": 参考文本}},
-"seed": 种子, "gap": 句间停顿秒, "lead": 开头留白秒, "tail": 结尾留白秒, "language": "Chinese"}`。
+"seed": 种子, "gap": 句间停顿秒, "lead": 开头留白秒, "tail": 结尾留白秒, "language": "Chinese", "starts": [每句镜头起点秒] | null}`。
+starts(台词按镜头对时,spec 2026-10-31-IndexTTS2港片配音-design.md §10):每句不早于它镜头的起点;null / 缺 = 连着排。
 第 k 句用种子 seed + k(同一份任务 JSON 逐字节复现)。
 stdout 最后一行是 JSON:`{"wav_b64", "sr", "sec", "spans": [[起, 止], ...], "gen_sec"}`(spans 是每句在音频里的秒数)。
 失败时退出码非 0、stderr 写原因:2 = 模型目录 / 参考音频不在;3 = 显存不够。
@@ -21,6 +22,17 @@ import json
 import sys
 import time
 from pathlib import Path
+
+
+def layout(lens: list[float], starts: list[float] | None, *, lead: float, gap: float) -> list[float]:
+    """每句的起点:不早于它镜头的起点,也不早于上一句结束 + 句间停顿;第一句不早于开头留白。
+    与 idx_remote.layout 同一算法(两个脚本各自经 stdin 送上云机、只用标准库,不能互相导入)。纯函数,本机单测。"""
+    out, t = [], lead
+    for k, n in enumerate(lens):
+        at = max(t, starts[k]) if starts else t
+        out.append(round(at, 3))
+        t = at + n + gap
+    return out
 
 
 def main(argv: list[str]) -> int:
@@ -48,16 +60,14 @@ def main(argv: list[str]) -> int:
     except torch.cuda.OutOfMemoryError as e:
         print(f"显存不够(ComfyUI 可能正占着卡):{e}", file=sys.stderr)
         return 3
-    silence = lambda sec: np.zeros(int(round(sec * sr)), dtype=np.float32)   # noqa: E731
-    parts, spans, t = [silence(job["lead"])], [], job["lead"]
-    for k, clip in enumerate(clips):
-        if k:
-            parts.append(silence(job["gap"]))
-            t += job["gap"]
-        parts.append(clip)
-        spans.append([round(t, 3), round(t + len(clip) / sr, 3)])
-        t += len(clip) / sr
-    parts.append(silence(job["tail"]))
+    at = layout([len(c) / sr for c in clips], job.get("starts"), lead=job["lead"], gap=job["gap"])
+    parts, spans, n = [], [], 0
+    for a, clip in zip(at, clips):
+        pad = int(round(a * sr)) - n
+        parts += [np.zeros(pad, dtype=np.float32), clip]
+        n += pad + len(clip)
+        spans.append([a, round(a + len(clip) / sr, 3)])
+    parts.append(np.zeros(int(round(job["tail"] * sr)), dtype=np.float32))
     audio = np.concatenate(parts)
     buf = io.BytesIO()
     sf.write(buf, audio, sr, format="WAV")

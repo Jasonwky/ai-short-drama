@@ -152,8 +152,8 @@ def test_tts_tasks_run_through_the_tts_and_align_runners(store, sample, host_id,
     assert repo.get(store, "task", tid)["state"] == "done" and len(tts.lines.calls) == 1 and tts.voice.calls == []
 
 
-def test_new_engine_line_audio_uses_the_indextts_interpreter(store, sample, host_id, tmp_path):
-    """IndexTTS2 港片念法(spec 2026-10-31 §4):新引擎台词任务走 idx_for(indextts venv),不走 qwen-tts 的 tts_for。"""
+def test_line_audio_uses_the_qwen_interpreter(store, sample, host_id, tmp_path):
+    """港片念法 2026-11-06 暂停:新台词任务走 qwen-tts 的 tts_for,不走 idx_for(IndexTTS2 的老任务照旧走 idx_for,按 workflow 选)。"""
     from tests.drama.conftest import give_voice_template
     from tools.gen.tts import plan_tts
     from tools.serve.fakes import FakeAligner, fake_tts_runner
@@ -169,4 +169,4 @@ def test_new_engine_line_audio_uses_the_indextts_interpreter(store, sample, host
     tid = plan_tts(store, sample["seg"], seed=1)
     w.tick()
     assert repo.get(store, "task", tid)["state"] == "done"
-    assert len(idx.lines.calls) == 1 and qwen.lines.calls == [] and qwen.voice.calls == []
+    assert len(qwen.lines.calls) == 1 and idx.lines.calls == [] and idx.voice.calls == []

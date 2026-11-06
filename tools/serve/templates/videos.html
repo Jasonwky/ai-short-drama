@@ -29,7 +29,7 @@
         {% elif s.row.duration_sec %}<p class="hint" data-estimate>{{ est_note }}</p>{% endif %}
         {% set la = s.line_audio %}
         <div data-line-audio>
-          <p><b>台词音频</b> <span class="hint">(IndexTTS2 港片念法:定稿音色 + 念法模板,去停顿、起伏放大;Whisper 按拼音逐句回听,不过自动换种子,最多 3 次)</span>
+          <p><b>台词音频</b> <span class="hint">(Qwen3 克隆定稿音色,逐句按镜头对时;Whisper 按拼音逐句回听,不过自动换种子,最多 3 次。港片念法 2026-11-06 暂停,下面的逐句念法现在不起作用)</span>
             {% if la.engine %}<span class="hint" data-line-engine>· 引擎:{{ la.engine }}</span>{% endif %}</p>
           {% if la.lines %}
           <form method="post" action="/segment/{{ s.row.id }}/line-templates" data-line-templates>

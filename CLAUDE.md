@@ -122,6 +122,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   「资产图审」页底部试听 / 挑版 / 定稿(`asset_approval` slot = voice,回听不过要写理由);新依赖 `pypinyin`;
   **台词音频**:`kind = 'tts'`(`gen/tts.py` 规划,快照说话人的定稿音色;`serve/ttser.py` 执行,云机 `tts_remote.py` 用 Base 逐句克隆拼接),
   `speech.line_hits` 逐句按拼音判,不过换种子(+1000·k)重合成最多 3 次;视频面板每段「台词音频」;`tts.stale` 判台词 / 音色改过;
+  **港片风格暂停(用户 2026-11-06「先不做老香港风格」)**:新台词音频退回 Qwen3 克隆(`tts.ENGINE = qwen3_tts_clone`,保留按镜头对时 `starts`),
+  IndexTTS2 出的台词音频判过期、念法模板不再要求;题甲第 2 部剧画风改回 realistic(hk90 预设与下面的 IndexTTS2 代码都留着,恢复时用)。
+  以下是暂停前的 IndexTTS2 港片念法(11-01 ~ 11-05)——
   **2026-11 起引擎换 IndexTTS2 港片念法**(spec 2026-10-31-IndexTTS2港片配音-design.md,依据 spike 2026-10-31 §12):新任务 `workflow = indextts2_hk`,
   云机 `serve/idx_remote.py`(indextts 独立 venv 借 ComfyUI 的 torch;垫片:`torchaudio.save` → soundfile、HF 走 hf-mirror),
   配方集中在 `capability.INDEX_TTS2`(去句内停顿、剪 >0.06 s 静音、WORLD 音高起伏 ×1.4、句间 0.15 s);worker 按 workflow 选解释器(`idx_for`);
