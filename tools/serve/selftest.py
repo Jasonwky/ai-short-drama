@@ -284,6 +284,14 @@ def _seed_recording(refs, root: Path, work: Path, fetcher, today: str) -> Selfte
     return driver
 
 
+def _check_ref_view(page) -> None:
+    """录屏详情页:关键帧和转写句子都要真渲染出来(不是只有播放器)。"""
+    page.wait_for_selector("[data-ref-player]", timeout=10000)
+    kf, sents = page.locator("[data-kf]").count(), page.locator("[data-sentence]").count()
+    if kf == 0 or sents == 0:
+        raise RuntimeError(f"录屏详情页内容是空的:关键帧 {kf} 张、转写 {sents} 句")
+
+
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -768,6 +776,9 @@ def run(out_dir: Path) -> dict:
                     # 参考库录屏面板:扫码登录(假 login_fn,不开浏览器)→ 登录结论来自「扫码登录」
                     ("refs_record", "打开浏览器扫码 → 已登录", {}, ["[data-ref-login] form button[type=submit]"],
                      '[data-ref-login-state="ok"][data-ref-login-via="扫码登录"]', 20),
+                    ("refs_record", "第 1 集点「查看」→ 播放器、关键帧、转写句子都出来", {},
+                     ["[data-ref-view-link]", _check_ref_view],
+                     "[data-ref-player]", 20),
                     # 放在最后:填了陈设,前面链路的提示词就要按它查
                     ("assets", "场景选用途、填固定陈设 → 保存", {f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]': "石桌、古井"},
                      [lambda pg: pg.locator(f'[data-asset="scene-{ids["yard"]}"] [data-scene-purpose]').select_option("庭院"),

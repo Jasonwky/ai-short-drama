@@ -15,7 +15,7 @@ from tools.drama.readiness import CUT_NOTE, segment_readiness
 from tools.drama.styles import STYLES
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
 from tools.serve import rerun
-from tools.serve.panels import REGISTRY, url_for
+from tools.serve.panels import GROUPS, REGISTRY, url_for
 from tools.serve.runtime import Runtime
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
@@ -53,8 +53,19 @@ def render(request: Request, template: str, panel_key: str, *, drama_id: int | N
     if episode_id is not None and drama_id is None:
         drama_id = repo.get(runtime.store, "episode", episode_id)["drama_id"]
     ep = episode_id if episode_id is not None else first_episode(runtime, drama_id)
-    nav = [{"key": p.key, "title": p.title, "url": url_for(p, drama_id, ep), "active": p.key == panel_key}
-           for p in REGISTRY]
+    nav, group_seen = [], {}
+    for p in REGISTRY:
+        url = url_for(p, drama_id, ep)
+        if p.group:                                   # 同组只出一项:标题 = 组名,链接 = 组内第一个面板,组内任一面板激活即高亮
+            if p.group not in group_seen:
+                group_seen[p.group] = {"key": p.group, "title": GROUPS[p.group], "url": url, "active": False}
+                nav.append(group_seen[p.group])
+            group_seen[p.group]["active"] |= p.key == panel_key
+        else:
+            nav.append({"key": p.key, "title": p.title, "url": url, "active": p.key == panel_key})
+    cur = next((p for p in REGISTRY if p.key == panel_key), None)
+    side_nav = [{"key": p.key, "title": p.title, "url": url_for(p, drama_id, ep), "active": p.key == panel_key}
+                for p in REGISTRY if cur is not None and cur.group and p.group == cur.group]
     drama = repo.get(runtime.store, "drama", drama_id) if drama_id is not None else None
     episodes = (runtime.store.conn.execute("SELECT id, number FROM episode WHERE drama_id = ? ORDER BY number",
                                            (drama_id,)).fetchall() if drama_id is not None else [])
@@ -66,7 +77,7 @@ def render(request: Request, template: str, panel_key: str, *, drama_id: int | N
     return TEMPLATES.TemplateResponse(request, template, {
         "panel_key": panel_key, "nav": nav, "drama": drama, "episodes": episodes, "episode_id": ep,
         "backend": runtime.backend, "styles": {s.key: s.label for s in STYLES},
-        "state_label": STATE_LABEL, "llm_state": LLM_STATE, "refs_todo": refs_todo, **ctx}, status_code=status_code)
+        "state_label": STATE_LABEL, "llm_state": LLM_STATE, "refs_todo": refs_todo, "side_nav": side_nav, **ctx}, status_code=status_code)
 
 
 def confirm_page(request: Request, *, summary: str, action: str, fields: dict, back: str, panel_key: str,

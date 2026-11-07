@@ -410,3 +410,132 @@ def test_purge_work_unknown_is_404_and_failure_goes_to_errors(rc):
     c.post(f"/refs/work/{wid}/purge", data={"confirm": "1"})
     assert "找不到" in c.get("/refs/sources").text
     assert refs.conn.execute("SELECT purged_at FROM ref_content").fetchone()[0] == ""
+
+
+def _viewable(refs, root, *, transcript="ok"):
+    """一集录屏:关键帧故意倒序插入(0/1/2/3/10/30 秒),转写按字时间戳(两句)。"""
+    import json
+    wid = works.upsert(refs, "hongguo", "77", title="掌上珠")
+    d = root / "content/hongguo/77"
+    (d / "ep1-abc123-kf").mkdir(parents=True)
+    (d / "ep1-abc123.webm").write_bytes(b"webm")
+    meta = {"expected_sec": 61.0, "duration": 60.5, "mean_volume_db": -18.3, "luma_mean": 97.4, "luma_sd": 40.2}
+    rec = _content(refs, wid, "recording", 1, "content/hongguo/77/ep1-abc123.webm", meta=meta)
+    kfs = {}
+    for sec in (30, 10, 3, 2, 1, 0):
+        (d / f"ep1-abc123-kf/{sec}.jpg").write_bytes(b"\xff\xd8")
+        kfs[sec] = _content(refs, wid, "keyframe", 1, f"content/hongguo/77/ep1-abc123-kf/{sec}.jpg", origin=f"录屏 #{rec}", meta={"sec": float(sec)})
+    other = _content(refs, wid, "keyframe", 1, "content/hongguo/77/ep1-zzz999-kf/5.jpg", origin="录屏 #99", meta={"sec": 5.0})
+    if transcript == "ok":
+        chars = [[c, i * 0.1, i * 0.1 + 0.1] for i, c in enumerate("你好吗")] + [[c, 5 + i * 0.1, 5.1 + i * 0.1] for i, c in enumerate("我很好")]
+        (d / "ep1-abc123.transcript.json").write_text(json.dumps({"text": "你好吗我很好", "chars": chars}, ensure_ascii=False), encoding="utf-8")
+        _content(refs, wid, "transcript", 1, "content/hongguo/77/ep1-abc123.transcript.json", origin=f"whisper 转写录屏 #{rec}")
+    elif transcript == "bad":
+        (d / "ep1-abc123.transcript.json").write_text("{坏的", encoding="utf-8")
+        _content(refs, wid, "transcript", 1, "content/hongguo/77/ep1-abc123.transcript.json", origin=f"whisper 转写录屏 #{rec}")
+    return wid, rec, kfs, other
+
+
+def test_view_404_for_missing_or_non_recording(rc):
+    c, refs, root = rc
+    wid, rec, kfs, _ = _viewable(refs, root)
+    assert c.get("/refs/record/view?id=9999").status_code == 404
+    assert c.get(f"/refs/record/view?id={kfs[3]}").status_code == 404
+
+
+def test_view_purged_recording_says_deleted_without_player(rc):
+    c, refs, root = rc
+    wid = works.upsert(refs, "hongguo", "78", title="已清理的")
+    rec = _content(refs, wid, "recording", 1, "", purged="2026-11-07T10:00:00+08:00")
+    r = c.get(f"/refs/record/view?id={rec}")
+    assert r.status_code == 200 and "原文已删除(指纹保留)" in r.text and "data-ref-player" not in r.text
+
+
+def test_view_renders_player_sorted_keyframes_and_sentences(rc):
+    c, refs, root = rc
+    wid, rec, kfs, other = _viewable(refs, root)
+    t = c.get(f"/refs/record/view?id={rec}").text
+    assert "data-ref-player" in t and f'src="/refs/file/{rec}"' in t and "掌上珠" in t and "第 1 集" in t
+    assert "60.5" in t and "61.0" in t and "-18.3" in t and "97.4" in t
+    order = [t.index(f'src="/refs/file/{kfs[s]}"') for s in (0, 1, 2, 3, 10, 30)]
+    assert order == sorted(order)
+    assert f'src="/refs/file/{other}"' not in t                        # 别条录屏的关键帧不混进来
+    head, rest = t.split("data-kf-rest")[0], t.split("data-kf-rest")[1]
+    assert "开头 3 秒" in head and f'/refs/file/{kfs[3]}"' in head and f'/refs/file/{kfs[10]}"' not in head
+    assert f'/refs/file/{kfs[10]}"' in rest and f'/refs/file/{kfs[30]}"' in rest
+    assert t.count("data-sentence") == 2 and 'data-sec="5' in t and "你好吗" in t and "我很好" in t
+    assert "0:05" in t
+
+
+def test_view_without_transcript_shows_job_state_and_retranscribe(rc):
+    c, refs, root = rc
+    wid, rec, _, _ = _viewable(refs, root, transcript="none")
+    assert "没排转写" in c.get(f"/refs/record/view?id={rec}").text
+    jobs.enqueue(refs, "hongguo", "transcribe", day="2026-11-07", work_id=wid, params={"recording_id": rec})
+    t = c.get(f"/refs/record/view?id={rec}").text
+    assert "等 GPU 空闲" in t and f'action="/refs/content/{rec}/transcribe"' in t and "data-sentence" not in t
+
+
+def test_view_broken_transcript_file_does_not_500(rc):
+    c, refs, root = rc
+    _, rec, _, _ = _viewable(refs, root, transcript="bad")
+    r = c.get(f"/refs/record/view?id={rec}")
+    assert r.status_code == 200 and "转写文件读不出" in r.text and "data-ref-player" in r.text
+
+
+def test_view_without_keyframes_gives_reason(rc):
+    c, refs, root = rc
+    wid = works.upsert(refs, "hongguo", "79", title="无帧")
+    rec = _content(refs, wid, "recording", 1, "content/hongguo/79/ep1-q.webm", meta={"keyframe_error": "ffmpeg 挂了"})
+    assert "ffmpeg 挂了" in c.get(f"/refs/record/view?id={rec}").text
+    rec2 = _content(refs, wid, "recording", 2, "content/hongguo/79/ep2-q.webm")
+    assert "没有关键帧" in c.get(f"/refs/record/view?id={rec2}").text
+
+
+def test_record_panel_links_to_view(rc):
+    c, refs, root = rc
+    _, rec, _, _ = _viewable(refs, root)
+    assert f'href="/refs/record/view?id={rec}"' in c.get("/refs/record").text
+
+
+def _top_nav(t):
+    return t.split('<nav class="steps">')[1].split("</nav>")[0]
+
+
+def test_top_nav_has_one_refs_item_and_side_nav_lists_four(rc):
+    c, refs, root = rc
+    for url, cur in (("/refs/sources", "refs_sources"), ("/refs/ranks", "refs_ranks"), ("/refs/work", "refs_work"), ("/refs/record", "refs_record")):
+        t = c.get(url).text
+        top = _top_nav(t)
+        assert top.count('data-nav="refs"') == 1 and "参考库" in top and 'data-nav="refs_' not in top
+        assert 'class="step active" href="/refs/sources" data-nav="refs"' in top
+        side = t.split("data-side-nav")[1].split("</nav>")[0]
+        assert side.count("data-side=") == 4
+        for k, title in (("refs_sources", "来源设置"), ("refs_ranks", "榜单与趋势"), ("refs_work", "作品详情"), ("refs_record", "录屏")):
+            assert f'data-side="{k}"' in side and title in side
+        cur_tag = side.split(f'data-side="{cur}"')[0].rsplit("<a", 1)[1]
+        assert "active" in cur_tag and side.count("active") == 1
+
+
+def test_record_view_highlights_record_in_side_nav(rc):
+    c, refs, root = rc
+    _, rec, _, _ = _viewable(refs, root)
+    t = c.get(f"/refs/record/view?id={rec}").text
+    assert 'data-nav="refs"' in _top_nav(t) and "step active" in _top_nav(t).split('data-nav="refs"')[0].rsplit("<a", 1)[1]
+    side = t.split("data-side-nav")[1].split("</nav>")[0]
+    cur = side.split('data-side="refs_record"')[0].rsplit("<a", 1)[1] + 'data-side="refs_record"'
+    assert "active" in cur and side.count("active") == 1
+
+
+def test_non_refs_pages_have_no_side_nav(rc):
+    c, _, _ = rc
+    t = c.get("/hosts").text
+    assert "data-side-nav" not in t and 'data-nav="refs"' in t and 'data-nav="refs_sources"' not in t
+
+
+def test_todo_badge_sits_on_refs_group_item(rc):
+    c, refs, root = rc
+    from tools.refs import clock
+    settings.trip(refs, root, "k17", "被挡住", clock.today())
+    top = _top_nav(c.get("/hosts").text)
+    assert top.split('data-nav="refs"')[1].split("</a>")[0].count("data-nav-todo") == 1

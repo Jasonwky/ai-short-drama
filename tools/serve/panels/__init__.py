@@ -16,6 +16,10 @@ class Panel:
     title: str
     scope: str      # global / drama / episode
     path: str       # 可含 {drama_id} / {episode_id}
+    group: str = ""  # 同组面板在顶部导航合成一项,组内切换走页面左侧竖排
+
+
+GROUPS = {"refs": "参考库"}
 
 
 REGISTRY: tuple[Panel, ...] = (
@@ -32,11 +36,11 @@ REGISTRY: tuple[Panel, ...] = (
     Panel("workflows", "工作流", "global", "/workflows"),
     Panel("hosts", "主机", "global", "/hosts"),
     Panel("trace", "留痕", "global", "/trace"),
-    # 参考库(spec 2026-11-07-参考库):导航只放得下两三个字,页面大标题是「参考 · 来源」等全称
-    Panel("refs_sources", "来源", "global", "/refs/sources"),
-    Panel("refs_ranks", "热榜", "global", "/refs/ranks"),
-    Panel("refs_work", "作品", "global", "/refs/work"),
-    Panel("refs_record", "录屏", "global", "/refs/record"),
+    # 参考库(spec 2026-11-07-参考库):顶部合成一个「参考库」标签,四个面板在左侧竖排
+    Panel("refs_sources", "来源设置", "global", "/refs/sources", group="refs"),
+    Panel("refs_ranks", "榜单与趋势", "global", "/refs/ranks", group="refs"),
+    Panel("refs_work", "作品详情", "global", "/refs/work", group="refs"),
+    Panel("refs_record", "录屏", "global", "/refs/record", group="refs"),
 )
 
 

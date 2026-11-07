@@ -29,13 +29,18 @@
   <nav class="steps">
     {% for n in nav %}
       {% if n.url %}
-        <a class="step {% if n.active %}active{% endif %}" href="{{ n.url }}" data-nav="{{ n.key }}"><span class="n">{{ "%02d" | format(loop.index) }}</span><b>{{ n.title }}</b>{% if n.key == "refs_sources" and refs_todo %}<span class="nav-todo" title="参考库待办" style="flex: none; min-width: 18px; padding: 0 5px; border-radius: 9px; background: #d33; color: #fff; font-size: 11px; font-weight: 700; text-align: center; line-height: 18px" data-nav-todo>{{ refs_todo }}</span>{% endif %}</a>
+        <a class="step {% if n.active %}active{% endif %}" href="{{ n.url }}" data-nav="{{ n.key }}"><span class="n">{{ "%02d" | format(loop.index) }}</span><b>{{ n.title }}</b>{% if n.key == "refs" and refs_todo %}<span class="nav-todo" title="参考库待办" style="flex: none; min-width: 18px; padding: 0 5px; border-radius: 9px; background: #d33; color: #fff; font-size: 11px; font-weight: 700; text-align: center; line-height: 18px" data-nav-todo>{{ refs_todo }}</span>{% endif %}</a>
       {% else %}
         <span class="step disabled" data-nav="{{ n.key }}" title="先选剧 / 先建一集"><span class="n">{{ "%02d" | format(loop.index) }}</span><b>{{ n.title }}</b></span>
       {% endif %}
     {% endfor %}
   </nav>
-  <main class="wrap" data-panel="{{ panel_key }}">
+  <main class="wrap{% if side_nav %} has-side{% endif %}" data-panel="{{ panel_key }}">
+    {% if side_nav %}
+    <nav class="side-steps" data-side-nav>
+      {% for s in side_nav %}<a class="{% if s.active %}active{% endif %}" href="{{ s.url }}" data-side="{{ s.key }}">{{ s.title }}</a>{% endfor %}
+    </nav>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
   <footer class="foot">Powered by MiniMax H3</footer>

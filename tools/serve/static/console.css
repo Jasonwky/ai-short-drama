@@ -197,6 +197,7 @@ pre.log { background: var(--ink); color: var(--paper); padding: 10px 12px; font-
 .step { flex: 1 1 0; min-width: 0; gap: 7px; padding: 11px 10px; }
 .step b { overflow: hidden; text-overflow: ellipsis; }
 .steps { scrollbar-width: thin; }
+.step[data-nav="refs"] { flex: 1 0 auto; }   /* 参考库组标签带待办角标:不许被压窄(等分时会被挤成「参…」),别的标签跟着缩 */
 
 /* 版心与卡片:更松的内边距和统一的竖向节奏 */
 main.wrap { padding-top: 28px; }
@@ -284,3 +285,15 @@ main > section.card:has(> form[data-fill]) form.row input[type=number] { min-wid
 form:not(.row) > input[type=number], form:not(.row) > select, form:not(.row) > input[type=text]:not([name=reason]) { max-width: 420px; }
 .history { align-items: flex-start; }
 .ver .btn { margin-left: 0; }
+
+/* ── 参考库左侧竖排导航:内容仍是 main 的直接子元素,只是整体让出左栏 ── */
+main.has-side { display: grid; grid-template-columns: 160px minmax(0, 1fr); column-gap: 24px; align-content: start; }
+main.has-side > * { grid-column: 2; }
+main.has-side > .side-steps { grid-column: 1; grid-row: 1 / span 60; align-self: start; display: flex; flex-direction: column;
+                              border: 1px solid var(--line); background: var(--paper); }
+.side-steps a { padding: 10px 14px; color: var(--ink); text-decoration: none; font-size: 13px; font-weight: 700;
+                border-bottom: 1px solid var(--line); }
+.side-steps a:last-child { border-bottom: 0; }
+.side-steps a:hover { background: var(--bg); }
+.side-steps a.active { background: var(--ink); color: var(--paper); }
+@media (max-width: 980px) { main.has-side { display: block; } main.has-side > .side-steps { flex-direction: row; margin-bottom: 16px; } }

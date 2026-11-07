@@ -44,7 +44,7 @@
       <tr><th>集</th><th>时长(录到 / 片长)</th><th>音量</th><th>亮度(起伏)</th><th>判定</th><th>第 3 秒</th><th>转写</th><th></th></tr>
       {% for e in g.eps %}
         <tr data-ref-record>
-          <td>第 {{ e.rec.unit }} 集</td>
+          <td>第 {{ e.rec.unit }} 集<br><a href="/refs/record/view?id={{ e.rec.id }}" data-ref-view-link>查看</a></td>
           <td>{% if e.meta.get("duration") is not none %}{{ "%.1f" | format(e.meta.get("duration")) }} / {{ "%.1f" | format(e.meta.get("expected_sec")) }} 秒{% endif %}</td>
           <td>{% if "mean_volume_db" in e.meta %}{{ e.meta.get("mean_volume_db") if e.meta.get("mean_volume_db") is not none else "-inf" }} dB{% endif %}</td>
           <td>{% if e.meta.get("luma_mean") is not none %}{{ e.meta.get("luma_mean") }}({{ e.meta.get("luma_sd") }}){% endif %}</td>

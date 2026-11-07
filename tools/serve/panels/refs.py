@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import FileResponse, RedirectResponse
 
-from tools.refs import clock, heat, jobs, loginstate, manual, retention, rjournal, settings, works
+from tools.refs import clock, heat, jobs, loginstate, manual, retention, rjournal, settings, transcript, works
 from tools.refs.sources import ADAPTERS
 from tools.refs.sources.hongguo import WEB_EPISODES
 from tools.serve.panels.common import confirm_page, render, rt
@@ -268,6 +268,15 @@ def work_action(request: Request, wid: int, action: str):
 TRANSCRIBE_STATE = {"waiting": "等 GPU 空闲", "running": "转写中", "done": "已转写", "failed": "失败"}
 
 
+def _job_tstate(refs, rec: dict) -> str:
+    """还没有转写行时:转写任务的状态(排队 / 失败原因 / 没排)。"""
+    j = refs.conn.execute("SELECT state, error FROM ref_job WHERE kind = 'transcribe' AND params_json = ? ORDER BY id DESC LIMIT 1",
+                          (json.dumps({"recording_id": rec["id"]}, ensure_ascii=False, sort_keys=True),)).fetchone()
+    if j is not None:
+        return TRANSCRIBE_STATE[j["state"]] + (f":{j['error']}" if j["error"] else "")
+    return "录屏不收,不转写" if rec["verdict"] != "ok" else "没排转写"
+
+
 def _episode_row(refs, root: Path, rec: dict) -> dict:
     """录屏面板一集一行:录屏行 + 第 3 秒关键帧 + 转写(结果或任务状态)。"""
     kf = refs.conn.execute("SELECT id FROM ref_content WHERE kind = 'keyframe' AND origin = ? AND purged_at = ''"
@@ -281,12 +290,7 @@ def _episode_row(refs, root: Path, rec: dict) -> dict:
             head = json.loads(p.read_text(encoding="utf-8"))["text"][:60]
         tstate = ("已转写" if tr["verdict"] == "ok" else f"不收:{tr['reason']}") + ("(已到期清理)" if tr["purged_at"] else "")
     else:
-        j = refs.conn.execute("SELECT state, error FROM ref_job WHERE kind = 'transcribe' AND params_json = ? ORDER BY id DESC LIMIT 1",
-                              (json.dumps({"recording_id": rec["id"]}, ensure_ascii=False, sort_keys=True),)).fetchone()
-        if j is not None:
-            tstate = TRANSCRIBE_STATE[j["state"]] + (f":{j['error']}" if j["error"] else "")
-        else:
-            tstate = "录屏不收,不转写" if rec["verdict"] != "ok" else "没排转写"
+        tstate = _job_tstate(refs, rec)
     return {"rec": rec, "meta": json.loads(rec["meta_json"] or "{}"), "kf": kf[0] if kf else None,
             "tstate": tstate, "head": head}
 
@@ -307,6 +311,42 @@ def record(request: Request):
              for x in r.refs.conn.execute("SELECT * FROM ref_job WHERE kind = 'record' ORDER BY id DESC LIMIT 20")]
     return render(request, "refs_record.html", "refs_record", shelf=shelf, queue=queue, login=login_status(r),
                   login_run=r.refs_login, browser=r.refs_browser, web_episodes=WEB_EPISODES)
+
+
+@router.get("/refs/record/view")
+def record_view(request: Request, id: int):
+    """每集详情:播放器 + 关键帧整排 + 完整转写(逐句可点跳转)。只认录屏行。"""
+    r = rt(request)
+    if r.refs is None:
+        return _off(request, "refs_record")
+    row = r.refs.conn.execute("SELECT * FROM ref_content WHERE id = ?", (id,)).fetchone()
+    if row is None or row["kind"] != "recording":
+        raise KeyError(f"没有这条录屏:{id}")
+    rec = dict(row)
+    meta = json.loads(rec["meta_json"] or "{}")
+    w = works.get(r.refs, rec["work_id"])
+    ctx = {"rec": rec, "meta": meta, "w": w, "kf_head": [], "kf_rest": [], "sentences": [], "tr_error": None, "tstate": None}
+    if not rec["purged_at"] and rec["path"]:
+        prefix = rec["path"].removesuffix(".webm") + "-kf/"
+        kfs = sorted(({"id": k["id"], "sec": json.loads(k["meta_json"] or "{}").get("sec", 0)}
+                      for k in r.refs.conn.execute("SELECT id, meta_json FROM ref_content WHERE kind = 'keyframe' AND purged_at = ''"
+                                                   " AND substr(path, 1, ?) = ?", (len(prefix), prefix))),
+                     key=lambda k: k["sec"])
+        ctx["kf_head"] = [k for k in kfs if k["sec"] <= 3]
+        ctx["kf_rest"] = [k for k in kfs if k["sec"] > 3]
+        tr = r.refs.conn.execute("SELECT * FROM ref_content WHERE kind = 'transcript' AND path = ? ORDER BY id DESC LIMIT 1",
+                                 (Path(rec["path"]).with_suffix(".transcript.json").as_posix(),)).fetchone()
+        if tr is None:
+            ctx["tstate"] = _job_tstate(r.refs, rec)
+        elif tr["purged_at"]:
+            ctx["tr_error"] = "转写文件已到期清理"
+        else:
+            try:
+                data = json.loads((Path(r.refs_root) / tr["path"]).read_text(encoding="utf-8"))
+                ctx["sentences"] = transcript.sentences(data["chars"])
+            except Exception as e:
+                ctx["tr_error"] = f"{type(e).__name__}: {e}"
+    return render(request, "refs_record_view.html", "refs_record", **ctx)
 
 
 @router.post("/refs/content/{cid}/transcribe")

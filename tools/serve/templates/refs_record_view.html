@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>参考 · 录屏详情</h1>
+<p><a href="/refs/record">← 回录屏面板</a></p>
+<section class="card" data-ref-view>
+  <h2><a href="/refs/work?id={{ w.id }}">{{ w.title or w.external_id }}</a> · 第 {{ rec.unit }} 集</h2>
+  <p>判定:{% if rec.verdict == "ok" %}收{% else %}<b class="status-bad">不收:{{ rec.reason }}</b>{% endif %}
+    {% if meta.get("duration") is not none %} · 时长 {{ "%.1f" | format(meta.get("duration")) }} / 片长 {{ "%.1f" | format(meta.get("expected_sec")) }} 秒{% endif %}
+    {% if "mean_volume_db" in meta %} · 音量 {{ meta.get("mean_volume_db") if meta.get("mean_volume_db") is not none else "-inf" }} dB{% endif %}
+    {% if meta.get("luma_mean") is not none %} · 亮度 {{ meta.get("luma_mean") }}(起伏 {{ meta.get("luma_sd") }}){% endif %}</p>
+</section>
+
+{% if rec.purged_at %}
+  <section class="card empty" data-ref-purged>原文已删除(指纹保留)—— 播放器、关键帧、转写都不在了;要再看只能重录。</section>
+{% else %}
+  <section class="card">
+    <video controls preload="metadata" src="/refs/file/{{ rec.id }}" data-ref-player style="max-width: 360px; max-height: 70vh"></video>
+  </section>
+
+  <section class="card">
+    <h2>关键帧</h2>
+    {% if kf_head or kf_rest %}
+      {% if kf_head %}
+      <p class="hint">开头 3 秒</p>
+      <div data-kf-head style="display: flex; gap: 8px; flex-wrap: wrap">
+        {% for k in kf_head %}<a href="#" class="kf" data-kf data-sec="{{ k.sec }}"><img src="/refs/file/{{ k.id }}" alt="{{ k.sec }} 秒" style="height: 96px; display: block"><span>{{ "%g" | format(k.sec) }} 秒</span></a>{% endfor %}
+      </div>
+      {% endif %}
+      {% if kf_rest %}
+      <p class="hint">其余</p>
+      <div data-kf-rest style="display: flex; gap: 8px; flex-wrap: wrap">
+        {% for k in kf_rest %}<a href="#" class="kf" data-kf data-sec="{{ k.sec }}"><img src="/refs/file/{{ k.id }}" alt="{{ k.sec }} 秒" style="height: 96px; display: block"><span>{{ "%g" | format(k.sec) }} 秒</span></a>{% endfor %}
+      </div>
+      {% endif %}
+    {% else %}
+      <p class="empty" data-kf-none>{{ meta.get("keyframe_error") and ("关键帧没抽成:" ~ meta.get("keyframe_error")) or "没有关键帧" }}</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>完整转写</h2>
+    {% if tr_error %}
+      <p class="status-bad" data-tr-error>转写文件读不出:{{ tr_error }}</p>
+    {% elif sentences %}
+      <div data-transcript>
+        {% for s in sentences %}
+          <p class="sent" data-sentence data-sec="{{ s.start }}" data-end="{{ s.end }}" style="cursor: pointer; margin: 2px 0"><code>{{ "%d:%02d" | format(s.start // 60, s.start % 60) }}</code> {{ s.text }}</p>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty" data-tr-state>{{ tstate or "转写里没有逐字时间戳" }}</p>
+    {% endif %}
+    {% if rec.verdict == "ok" %}
+      <form method="post" action="/refs/content/{{ rec.id }}/transcribe"><button class="btn" type="submit" data-ref-retranscribe>重新转写</button></form>
+    {% endif %}
+  </section>
+  <style>.sent.now { background: #ffe9a8; color: #000 }</style>
+  <script>
+  (function () {
+    var v = document.querySelector("[data-ref-player]");
+    var rows = Array.prototype.slice.call(document.querySelectorAll(".sent"));
+    document.querySelectorAll(".kf, .sent").forEach(function (el) {
+      el.addEventListener("click", function (e) { e.preventDefault(); v.currentTime = parseFloat(el.dataset.sec); });
+    });
+    v.addEventListener("timeupdate", function () {
+      var t = v.currentTime;
+      rows.forEach(function (r) {
+        r.classList.toggle("now", parseFloat(r.dataset.sec) <= t && t < parseFloat(r.dataset.end));
+      });
+    });
+  })();
+  </script>
+{% endif %}
+{% endblock %}
