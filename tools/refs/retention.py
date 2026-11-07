@@ -13,16 +13,10 @@ def has_breakdown(store, work_id: int) -> bool:
     return False          # 1c:查 ref_card 里这部作品有没有已批准 / 待审的卡
 
 
-def purge(store, root: Path, *, now: str | None = None) -> tuple[list[int], list[str]]:
-    now = now or clock.now_iso()
+def _delete_files(store, root: Path, rows, now: str) -> tuple[list[int], list[str]]:
+    """删这些内容行的文件、置 purged_at;到期清理与「删除这部的原文」共用。文件找不到不标已清理、报错。"""
     done, errors = [], []
-    rows = store.conn.execute(
-        "SELECT c.id, c.path, c.work_id, c.due_at, c.hard_due_at, w.blocked FROM ref_content c JOIN ref_work w ON w.id = c.work_id"
-        " WHERE c.purged_at = ''").fetchall()
     for r in rows:
-        due = r["due_at"] if has_breakdown(store, r["work_id"]) else r["hard_due_at"]
-        if not (r["blocked"] or due <= now):
-            continue
         p = Path(root) / r["path"]
         try:
             p.unlink()
@@ -37,8 +31,32 @@ def purge(store, root: Path, *, now: str | None = None) -> tuple[list[int], list
         with store.write() as c:
             c.execute("UPDATE ref_content SET purged_at = ? WHERE id = ?", (now, r["id"]))
         done.append(r["id"])
+    return done, errors
+
+
+def purge(store, root: Path, *, now: str | None = None) -> tuple[list[int], list[str]]:
+    now = now or clock.now_iso()
+    rows = [r for r in store.conn.execute(
+        "SELECT c.id, c.path, c.work_id, c.due_at, c.hard_due_at, w.blocked FROM ref_content c JOIN ref_work w ON w.id = c.work_id"
+        " WHERE c.purged_at = ''")
+        if r["blocked"] or (r["due_at"] if has_breakdown(store, r["work_id"]) else r["hard_due_at"]) <= now]
+    done, errors = _delete_files(store, root, rows, now)
     if done or errors:
         rjournal.append(root, "purge", purged=done, errors=errors)
+    return done, errors
+
+
+def live_content(store, work_id: int) -> list[dict]:
+    """这部作品还没清理的内容行(「删除这部的原文」要删的就是它们)。"""
+    return [dict(r) for r in store.conn.execute(
+        "SELECT id, kind, path FROM ref_content WHERE work_id = ? AND purged_at = '' ORDER BY id", (work_id,))]
+
+
+def purge_work(store, root: Path, work_id: int, *, now: str | None = None) -> tuple[list[int], list[str]]:
+    """人手动删一部作品的全部原文:不看到期、不拉黑、不改关注;指纹与内容行留着。"""
+    done, errors = _delete_files(store, root, live_content(store, work_id), now or clock.now_iso())
+    if done or errors:
+        rjournal.append(root, "purge", work_id=work_id, manual=True, purged=done, errors=errors)
     return done, errors
 
 

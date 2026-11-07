@@ -1,16 +1,22 @@
 # -*- coding: utf-8 -*-
-"""参考库面板(spec 2026-11-07-参考库-design.md 第 3 节,1a 的三个):来源设置 / 榜单与趋势 / 作品详情。
-面板只排任务、改设置;抓取由 Runtime 的 refs-fetch 线程跑。没配参考库就如实显示「未配置」,不偷偷建库。"""
+"""参考库面板(spec 2026-11-07-参考库-design.md 第 3 节):来源设置 / 榜单与趋势 / 作品详情(1a)、录屏(1b)。
+面板只排任务、改设置;抓取由 Runtime 的 refs-fetch 线程跑,录屏由 refs-record 线程跑(永远人点才排)。
+没配参考库就如实显示「未配置」,不偷偷建库。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Form, Request
-from fastapi.responses import RedirectResponse
+import json
+from pathlib import Path
 
-from tools.refs import clock, heat, jobs, manual, retention, rjournal, settings, works
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import FileResponse, RedirectResponse
+
+from tools.refs import clock, heat, jobs, loginstate, manual, retention, rjournal, settings, works
 from tools.refs.sources import ADAPTERS
-from tools.serve.panels.common import render, rt
+from tools.refs.sources.hongguo import WEB_EPISODES
+from tools.serve.panels.common import confirm_page, render, rt
 
 router = APIRouter()
+LIVE = ("waiting", "running")     # 人点的录屏 / 重新转写只和还没跑完的去重:跑完(成功或失败)同一天还能再排
 
 
 def _off(request: Request, key: str):
@@ -35,15 +41,31 @@ def _fetch_refusal(source: str) -> str | None:
     return None
 
 
-def todo(refs, today: str, errors: int = 0) -> list[str]:
-    """待办:后台错误条数、被挡住的来源、B 模式今天的候选数(1b / 1c 再加登录过期、待审的卡)。"""
+def login_status(r) -> dict | None:
+    """红果最近一次登录结论(录屏前检查 / 扫码登录写进 refs.db 的 meta);扫码中不算结论。从没查过 → None。"""
+    return loginstate.latest(r.refs)
+
+
+def todo(refs, today: str, errors: int = 0, *, login: dict | None = None) -> list[str]:
+    """待办:后台错误条数、被挡住的来源、B 模式今天的候选数、红果没登录(1c 再加待审的卡)。"""
     out = [f"参考库后台有 {errors} 条错误(含清理失败),见上方"] if errors else []
+    if login is not None and not login["ok"]:
+        out.append(f"红果没登录 / 登录过期({login['at'][:16]} {login['text']})—— 在「录屏」面板点「打开浏览器扫码」")
     out += [f"{settings.SOURCES[s['key']]}:{why}" for s in settings.all_sources(refs)
            if (why := settings.blocked_reason(s, today))]
-    n = refs.conn.execute("SELECT COUNT(*) FROM ref_work WHERE candidate_day = ? AND candidate_reason != ''", (today,)).fetchone()[0]
+    n = refs.conn.execute("SELECT COUNT(*) FROM ref_work WHERE candidate_day = ? AND candidate_reason != ''"
+                          " AND candidate_reason NOT LIKE '建议录屏%'", (today,)).fetchone()[0]      # 建议录屏只标不挑,不算候选
     if n:
         out.append(f"今天有 {n} 部候选等你挑")
     return out
+
+
+def todo_of(r) -> tuple[list[str], str | None]:
+    """(待办, 读不出的原因)。读不出不许冒成整站 400,也不悄悄当成 0:导航角标显示「!」,来源设置页写原因。"""
+    try:
+        return todo(r.refs, clock.today(), len(r.refs_errors), login=login_status(r)), None
+    except Exception as e:
+        return [], f"{type(e).__name__}: {e}"
 
 
 @router.get("/refs/sources")
@@ -61,8 +83,9 @@ def sources(request: Request):
                      "boards": ADAPTERS[s["key"]].boards if s["key"] in ADAPTERS else {},
                      "robots": robots[0] if robots else None,
                      "log": rjournal.read(r.refs_root, source=s["key"], limit=20)})
+    items, todo_error = todo_of(r)
     return render(request, "refs_sources.html", "refs_sources", rows=rows, fields=settings.INT_FIELDS,
-                  todo=todo(r.refs, today, len(r.refs_errors)), refs_errors=r.refs_errors)
+                  todo=items, todo_error=todo_error, refs_errors=r.refs_errors)
 
 
 @router.post("/refs/errors/clear")
@@ -172,7 +195,8 @@ def work(request: Request, id: int | None = None):
     contents = [dict(x) for x in r.refs.conn.execute("SELECT * FROM ref_content WHERE work_id = ? ORDER BY kind, unit, id", (id,))]
     return render(request, "refs_work.html", "refs_work", w=w, tags=works.tags(w), contents=contents, curves=curves,
                   jobs=jobs.recent(r.refs, work_id=id), log=rjournal.read(r.refs_root, work_id=id, limit=30),
-                  label=settings.SOURCES[w["source"]], fetch_refusal=_fetch_refusal(w["source"]))
+                  label=settings.SOURCES[w["source"]], fetch_refusal=_fetch_refusal(w["source"]), web_episodes=WEB_EPISODES,
+                  today=clock.today(), live_n=len(retention.live_content(r.refs, id)))
 
 
 @router.post("/refs/work/{wid}/manual")      # 要在 /refs/work/{wid}/{action} 之前注册,否则被通配吃掉
@@ -180,6 +204,43 @@ def manual_text(request: Request, wid: int, title: str = Form(...), text: str = 
     r = _refs(request)
     manual.add_text(r.refs, r.refs_root, title=title, text=text, origin=origin, work_id=wid)
     return RedirectResponse(f"/refs/work?id={wid}", status_code=303)
+
+
+@router.post("/refs/work/{wid}/record")      # 同上,要在通配之前
+def record_work(request: Request, wid: int, episode: int | None = Form(None)):
+    """「录这部」(前 WEB_EPISODES 集)/ 单集「重录」:只排任务,录屏线程去录。录屏永远人点(spec 3.2),所以失败后可以再排。"""
+    r = _refs(request)
+    w = works.get(r.refs, wid)
+    if w["source"] != "hongguo":
+        raise ValueError(f"只有红果能录屏 —— 这部是{settings.SOURCES[w['source']]}的")
+    if episode is not None and not 1 <= episode <= WEB_EPISODES:
+        raise ValueError(f"网页只能看前 {WEB_EPISODES} 集(收到第 {episode} 集)")
+    jobs.enqueue(r.refs, "hongguo", "record", day=clock.today(), work_id=wid,
+                 params={"episodes": [episode]} if episode is not None else None, dedupe_states=LIVE)
+    return RedirectResponse("/refs/record", status_code=303)
+
+
+@router.post("/refs/work/{wid}/purge")       # 同上,要在通配之前
+async def purge_work(request: Request, wid: int):
+    """「删除这部的原文」两态:没带 confirm=1 先给确认页(不删任何东西),带了才删。指纹保留、不拉黑、不改关注。"""
+    r = _refs(request)
+    w = works.get(r.refs, wid)
+    back = f"/refs/work?id={wid}"
+    if (await request.form()).get("confirm") != "1":
+        live = retention.live_content(r.refs, wid)
+        if not live:
+            raise ValueError("这部作品没有可删的原文")
+        kinds: dict[str, int] = {}
+        for x in live:
+            kinds[x["kind"]] = kinds.get(x["kind"], 0) + 1
+        return confirm_page(request, panel_key="refs_work", action=f"/refs/work/{wid}/purge", fields={}, back=back,
+                            summary=f"删除《{w['title'] or w['external_id']}》的原文:共 {len(live)} 个文件("
+                                    + "、".join(f"{k} {n} 个" for k, n in kinds.items()) + ")。指纹保留(查重照样认),"
+                                    "作品不拉黑、不改关注。删除后不可撤销。",
+                            hint="删掉的是原文文件(章节、剧评、录屏、转写、关键帧等),内容行与指纹留着。要再看只能重新抓取 / 重录。")
+    for e in retention.purge_work(r.refs, r.refs_root, wid)[1]:
+        r.refs_fail(f"删除原文:{e}")
+    return RedirectResponse(back, status_code=303)
 
 
 @router.post("/refs/work/{wid}/{action}")
@@ -202,3 +263,90 @@ def work_action(request: Request, wid: int, action: str):
     else:
         raise KeyError(action)
     return RedirectResponse(request.headers.get("referer") or f"/refs/work?id={wid}", status_code=303)
+
+
+TRANSCRIBE_STATE = {"waiting": "等 GPU 空闲", "running": "转写中", "done": "已转写", "failed": "失败"}
+
+
+def _episode_row(refs, root: Path, rec: dict) -> dict:
+    """录屏面板一集一行:录屏行 + 第 3 秒关键帧 + 转写(结果或任务状态)。"""
+    kf = refs.conn.execute("SELECT id FROM ref_content WHERE kind = 'keyframe' AND origin = ? AND purged_at = ''"
+                           " AND json_extract(meta_json, '$.sec') = 3 ORDER BY id DESC LIMIT 1", (f"录屏 #{rec['id']}",)).fetchone()
+    tr = refs.conn.execute("SELECT * FROM ref_content WHERE kind = 'transcript' AND origin = ? ORDER BY id DESC LIMIT 1",
+                           (f"whisper 转写录屏 #{rec['id']}",)).fetchone()
+    head = ""
+    if tr is not None:
+        p = Path(root) / tr["path"]
+        if not tr["purged_at"] and p.is_file():
+            head = json.loads(p.read_text(encoding="utf-8"))["text"][:60]
+        tstate = ("已转写" if tr["verdict"] == "ok" else f"不收:{tr['reason']}") + ("(已到期清理)" if tr["purged_at"] else "")
+    else:
+        j = refs.conn.execute("SELECT state, error FROM ref_job WHERE kind = 'transcribe' AND params_json = ? ORDER BY id DESC LIMIT 1",
+                              (json.dumps({"recording_id": rec["id"]}, ensure_ascii=False, sort_keys=True),)).fetchone()
+        if j is not None:
+            tstate = TRANSCRIBE_STATE[j["state"]] + (f":{j['error']}" if j["error"] else "")
+        else:
+            tstate = "录屏不收,不转写" if rec["verdict"] != "ok" else "没排转写"
+    return {"rec": rec, "meta": json.loads(rec["meta_json"] or "{}"), "kf": kf[0] if kf else None,
+            "tstate": tstate, "head": head}
+
+
+@router.get("/refs/record")
+def record(request: Request):
+    r = rt(request)
+    if r.refs is None:
+        return _off(request, "refs_record")
+    latest: dict[tuple[int, int], dict] = {}          # 每部每集只看最新一次录屏(重录前的留在作品详情里)
+    for x in r.refs.conn.execute("SELECT * FROM ref_content WHERE kind = 'recording' ORDER BY id"):
+        latest[(x["work_id"], x["unit"])] = dict(x)
+    groups: dict[int, list[dict]] = {}
+    for (wid, _), rec in sorted(latest.items()):
+        groups.setdefault(wid, []).append(_episode_row(r.refs, r.refs_root, rec))
+    shelf = [{"w": works.get(r.refs, wid), "eps": eps} for wid, eps in groups.items()]
+    queue = [{"j": dict(x), "w": works.get(r.refs, x["work_id"])}
+             for x in r.refs.conn.execute("SELECT * FROM ref_job WHERE kind = 'record' ORDER BY id DESC LIMIT 20")]
+    return render(request, "refs_record.html", "refs_record", shelf=shelf, queue=queue, login=login_status(r),
+                  login_run=r.refs_login, browser=r.refs_browser, web_episodes=WEB_EPISODES)
+
+
+@router.post("/refs/content/{cid}/transcribe")
+def retranscribe(request: Request, cid: int):
+    """录屏面板「重新转写」:只给收了、还没清理的录屏排;等着 / 在跑的不重复排,跑完(成功或失败)可以再排。"""
+    r = _refs(request)
+    row = r.refs.conn.execute("SELECT * FROM ref_content WHERE id = ?", (cid,)).fetchone()
+    if row is None:
+        raise KeyError(f"没有这条参考库内容:{cid}")
+    if row["kind"] != "recording":
+        raise ValueError(f"#{cid} 不是录屏,不能转写")
+    if row["verdict"] != "ok":
+        raise ValueError(f"#{cid} 这集录屏不收({row['reason']}),不转写")
+    if row["purged_at"]:
+        raise ValueError(f"#{cid} 这集录屏已到期清理,转不了 —— 先重录")
+    w = works.get(r.refs, row["work_id"])
+    jobs.enqueue(r.refs, w["source"], "transcribe", day=clock.today(), work_id=w["id"], params={"recording_id": cid},
+                 dedupe_states=LIVE)
+    return RedirectResponse("/refs/record", status_code=303)
+
+
+@router.post("/refs/login")
+def login(request: Request):
+    r = _refs(request)
+    r.start_login()
+    return RedirectResponse("/refs/record", status_code=303)
+
+
+MEDIA = {".jpg": "image/jpeg", ".webm": "video/webm"}
+
+
+@router.get("/refs/file/{cid}")
+def ref_file(request: Request, cid: int):
+    """参考库文件只读:只给没清理的关键帧 / 录屏,解析后的路径必须在 refs_root 里;其他一律 404(参考库文件不经 /media)。"""
+    r = rt(request)
+    row = r.refs.conn.execute("SELECT kind, path, purged_at FROM ref_content WHERE id = ?", (cid,)).fetchone() if r.refs else None
+    if row is None or row["kind"] not in ("keyframe", "recording") or row["purged_at"] or not row["path"]:
+        raise KeyError(f"没有这个参考库文件:{cid}")
+    root = Path(r.refs_root).resolve()
+    p = (root / row["path"]).resolve()
+    if root not in p.parents or not p.is_file() or p.suffix.lower() not in MEDIA:
+        raise KeyError(f"没有这个参考库文件:{cid}")
+    return FileResponse(p, media_type=MEDIA[p.suffix.lower()])

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>参考 · 录屏</h1>
+<section class="card" data-ref-login>
+  <h2>红果登录</h2>
+  <p{% if login is not none %} data-ref-login-state="{{ 'ok' if login.ok else 'failed' }}" data-ref-login-via="{{ login.text }}"{% endif %}>
+    {% if login is none %}还没查过登录 —— 录屏前会先查一次;没登录就点下面扫码
+    {% elif login.ok %}已登录({{ login.at[:16] }} {{ login.text }})
+    {% else %}<b class="status-bad">没登录 / 登录过期</b>({{ login.at[:16] }} {{ login.text }})
+    {% endif %}
+  </p>
+  {% if login_run and login_run.state == "running" %}<p class="hint">扫码中:{{ login_run.message }}(开始于 {{ login_run.at[:16] }})</p>
+  {% elif login_run and login_run.state == "failed" %}<p class="status-bad" data-ref-login-run>上次扫码:{{ login_run.message }}({{ login_run.at[:16] }})</p>{% endif %}
+  <form method="post" action="/refs/login">
+    <button class="btn primary" type="submit" {% if browser %}disabled{% endif %}>打开浏览器扫码</button>
+    {% if browser == "record" %}<span class="hint">正在录屏,录完再扫码</span>
+    {% elif browser == "login" %}<span class="hint">扫码登录的浏览器已经开着</span>{% endif %}
+  </form>
+  <p class="hint">弹出有头浏览器打开一部红果剧的播放页,用红果 App 扫码;登录信息存在参考库专门的配置目录里,录屏和扫码同时只开一个</p>
+</section>
+
+<section class="card">
+  <h2>录屏队列</h2>
+  {% if queue %}
+    <table>
+      <tr><th>编号</th><th>作品</th><th>集</th><th>状态</th><th>进度</th><th>错误</th><th>排于</th></tr>
+      {% for q in queue %}
+        <tr data-ref-recjob>
+          <td>{{ q.j.id }}</td><td><a href="/refs/work?id={{ q.w.id }}">{{ q.w.title or q.w.external_id }}</a></td>
+          <td>{{ (q.j.params_json|fromjson).get("episodes") or ("前 %d 集" % web_episodes) }}</td>
+          <td>{{ q.j.state }}</td><td>{{ q.j.progress }}</td><td>{{ q.j.error }}</td><td>{{ q.j.created_at[:16] }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="empty">还没有录屏任务 —— 在「参考 · 作品」里打开一部红果作品点「录这部」</p>
+  {% endif %}
+</section>
+
+{% for g in shelf %}
+  <section class="card">
+    <h2><a href="/refs/work?id={{ g.w.id }}">{{ g.w.title or g.w.external_id }}</a></h2>
+    <table>
+      <tr><th>集</th><th>时长(录到 / 片长)</th><th>音量</th><th>亮度(起伏)</th><th>判定</th><th>第 3 秒</th><th>转写</th><th></th></tr>
+      {% for e in g.eps %}
+        <tr data-ref-record>
+          <td>第 {{ e.rec.unit }} 集</td>
+          <td>{% if e.meta.get("duration") is not none %}{{ "%.1f" | format(e.meta.get("duration")) }} / {{ "%.1f" | format(e.meta.get("expected_sec")) }} 秒{% endif %}</td>
+          <td>{% if "mean_volume_db" in e.meta %}{{ e.meta.get("mean_volume_db") if e.meta.get("mean_volume_db") is not none else "-inf" }} dB{% endif %}</td>
+          <td>{% if e.meta.get("luma_mean") is not none %}{{ e.meta.get("luma_mean") }}({{ e.meta.get("luma_sd") }}){% endif %}</td>
+          <td>{% if e.rec.verdict == "ok" %}收{% else %}<b class="status-bad">不收:{{ e.rec.reason }}</b>{% endif %}</td>
+          <td>{% if e.kf %}<a href="/refs/file/{{ e.kf }}" target="_blank"><img src="/refs/file/{{ e.kf }}" alt="第 {{ e.rec.unit }} 集第 3 秒" style="height: 96px; display: block"></a>{% endif %}
+            {% if e.meta.get("keyframe_error") %}<p class="status-bad" data-ref-keyframe-error>关键帧没抽成:{{ e.meta.get("keyframe_error") }}(录屏照收)</p>{% endif %}</td>
+          <td>{{ e.tstate }}{% if e.head %}<p class="hint">{{ e.head }}</p>{% endif %}</td>
+          <td><form method="post" action="/refs/work/{{ g.w.id }}/record"><input type="hidden" name="episode" value="{{ e.rec.unit }}"><button class="btn" type="submit">重录</button></form>
+            {% if e.rec.verdict == "ok" and not e.rec.purged_at %}<form method="post" action="/refs/content/{{ e.rec.id }}/transcribe"><button class="btn" type="submit" data-ref-retranscribe>重新转写</button></form>{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  </section>
+{% else %}
+  <section class="card empty">还没有录屏 —— 录完的每一集会在这里列出时长、音量、画面三项检查与关键帧</section>
+{% endfor %}
+{% endblock %}

@@ -80,7 +80,8 @@ def parse_detail(page: str) -> tuple[WorkMeta, list[Review]]:
         heat=num((ss.get("hot_score_data") or {}).get("score")),
         stats={"episodes": sd.get("episode_cnt"), "likes": num(ss.get("series_like_count")),
                "favorites": num(ss.get("series_favorite_count")), "reviews_total": num(rv.get("total_count")),
-               "rank_label": ss.get("rank_label", "")},
+               "rank_label": ss.get("rank_label", ""),
+               "vids": [str(v) for v in sd.get("vid_list") or []]},  # 各集的集号(1b 录屏在「选集」里按它点);缺了不算解析失败,录屏时 recorder 判
         units=[UnitRef(n, f"第 {n} 集", f"{BASE}/player/{sid}", True)
                for n in range(1, min(WEB_EPISODES, sd.get("episode_cnt") or 0) + 1)],
         roles=[c["sub_title"].removeprefix("饰").strip() for c in sd.get("celebrities") or []

@@ -165,6 +165,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   红果榜单页有两种交付形态(`data-fn-args` 直给 / mergeLoaderData 包字符串),两种都要认。
   ★ 必填:保留天数、小说拆前 N 章、A 模式的两个每日上限与前 K 名,都没有默认值。热度、指纹、设置改动只许追加(触发器)。原文到期删文件、指纹永久留;1a 没有拆解,一律顺延到保留天数 × 2。
   「新上榜」只在这个榜单以前有过数据时才算(刚开始盯的第一天不算)。验收里有一步「来源冒烟」:解析坏 = 失败,外部不可用 = 不算失败,全都不可用 = SKIP。
+  **1b 录屏与转写**(plan 2026-11-07-参考库-1b.md,结构 v2):红果前 5 集由人点「录这部」,`Runtime` 的 `refs-record` 线程跑 `recorder.run_job`,
+  浏览器操作在 `Driver` 接口后面(真实现 `hgdriver.PlaywrightDriver`,**有头**,标签页录制带声音,独占 `outputs/refs/profile/`;单测与自测注入假 driver / 假 login_fn,不开真红果)。
+  **robots 口径**:程序只 goto `/player/<剧号>`(允许);`/player/<剧>/<集>` 是禁止爬虫访问的,只能像人一样点「选集」切集。每集录完代码查时长 ±2 秒 / 音量 / 画面亮度,不过标「不收」。
+  转写是 `ref_job(kind='transcribe')`,GPU worker 的 `idle_hook` 在机器没有我们的在途、也没有待派生产任务时才跑一条;音频转 16 kHz PCM **嵌进脚本经 ssh stdin 送云机,只在内存里识别,云机不落盘**
+  (`asr_remote.py` 每 25 秒一块);连不上 / 显存被抢最多 3 次。登录结论存 refs.db 的 meta(`loginstate`),不靠扫 journal;`rjournal.read` 遇坏行跳过并返回 `corrupt` 记录,不抛。
 - `tools/cut/`:成片与合规。只调本机 ffmpeg(找不到就 400 报原因,ffmpeg 失败抛 `CutError`,不吞)。
   导出两态:`export.begin` 当场核对(★服务提供者编码、每段有视频、溯源成立)→ `run` 后台出带 / 不带显式标识两版 +
   溯源报告 + **8 项读回自检(含字幕),不过 = 导出失败**。元数据按 GB 45438-2025 **附录 E**(不是附录 F 的示例,它拼错了键名)。

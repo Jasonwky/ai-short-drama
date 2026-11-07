@@ -103,3 +103,32 @@ def test_auto_count_ignores_auto_jobs_failed_before_they_started(a_mode):
     settings.update(r, root, "jjwxc", {"cap_fetch": "0"})
     jobs.next_waiting(r, DAY)
     assert jobs.auto_content_today(r, "jjwxc", DAY) == 0                  # 没打过网站的不算用量,调高上限能接着跑
+
+
+def test_fetch_thread_does_not_pick_record_jobs(r):
+    w = works.upsert(r, "hongguo", "7561390625552092222")
+    rec = jobs.enqueue(r, "hongguo", "record", work_id=w, day=DAY)
+    assert jobs.next_waiting(r, DAY) is None                              # 抓取线程(默认种类)不碰录屏
+    assert jobs.get(r, rec)["state"] == "waiting"
+    assert jobs.next_waiting(r, DAY, kinds=("record",))["id"] == rec
+    fetch = jobs.enqueue(r, "hongguo", "ranks", day=DAY, params={"board": "hot-drama"})
+    assert jobs.next_waiting(r, DAY)["id"] == fetch
+    assert jobs.next_waiting(r, DAY, kinds=("record",))["id"] == rec
+
+
+def test_set_progress_is_writable(r):
+    w = works.upsert(r, "hongguo", "1")
+    rec = jobs.enqueue(r, "hongguo", "record", work_id=w, day=DAY)
+    jobs.set_progress(r, rec, "第 2/5 集")
+    assert jobs.get(r, rec)["progress"] == "第 2/5 集"
+
+
+def test_dedupe_states_only_dedupes_against_those_states(r):
+    a = jobs.enqueue(r, "hongguo", "record", day="d", dedupe_states=("waiting", "running"))
+    assert jobs.enqueue(r, "hongguo", "record", day="d", dedupe_states=("waiting", "running")) == a
+    jobs.start(r, a)
+    assert jobs.enqueue(r, "hongguo", "record", day="d", dedupe_states=("waiting", "running")) == a
+    jobs.finish(r, a)
+    b = jobs.enqueue(r, "hongguo", "record", day="d", dedupe_states=("waiting", "running"))
+    assert b != a                                     # done 之后同一天再排:新排一条(重录)
+    assert jobs.enqueue(r, "hongguo", "record", day="d") == b

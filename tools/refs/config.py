@@ -6,3 +6,4 @@ NEW_TOP = 10        # 第一次上榜就进前几名
 SITEMAP_DAYS = 7    # 红果 sitemap 多久增量看一次
 FETCH_RETRIES = 2   # 连不上 / 超时的重试次数(之后判失败)
 TRIP_AFTER = 3      # 连续几次解析失败熔断
+TRANSCRIBE_RETRIES = 3   # 转写 ssh 连不上 / 显存被抢,连续几次就判失败(参考库 1b 审查 I3:不设上限会每个 GPU 空档重试一次、永远停在 waiting)

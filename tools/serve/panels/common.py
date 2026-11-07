@@ -58,17 +58,22 @@ def render(request: Request, template: str, panel_key: str, *, drama_id: int | N
     drama = repo.get(runtime.store, "drama", drama_id) if drama_id is not None else None
     episodes = (runtime.store.conn.execute("SELECT id, number FROM episode WHERE drama_id = ? ORDER BY number",
                                            (drama_id,)).fetchall() if drama_id is not None else [])
+    refs_todo = 0                                    # 导航「参考 · 来源」的待办角标;没配参考库不算;读不出显示「!」
+    if runtime.refs is not None:
+        from tools.serve.panels import refs as refs_panel     # refs 面板 import 本模块:在函数里取
+        items, err = refs_panel.todo_of(runtime)
+        refs_todo = "!" if err else len(items)
     return TEMPLATES.TemplateResponse(request, template, {
         "panel_key": panel_key, "nav": nav, "drama": drama, "episodes": episodes, "episode_id": ep,
         "backend": runtime.backend, "styles": {s.key: s.label for s in STYLES},
-        "state_label": STATE_LABEL, "llm_state": LLM_STATE, **ctx}, status_code=status_code)
+        "state_label": STATE_LABEL, "llm_state": LLM_STATE, "refs_todo": refs_todo, **ctx}, status_code=status_code)
 
 
 def confirm_page(request: Request, *, summary: str, action: str, fields: dict, back: str, panel_key: str,
-                 drama_id: int | None = None, episode_id: int | None = None):
+                 drama_id: int | None = None, episode_id: int | None = None, hint: str | None = None):
     """plan/confirm 的确认页:把原表单字段原样带回去,多加一个 confirm=1。"""
     return render(request, "confirm.html", panel_key, drama_id=drama_id, episode_id=episode_id,
-                  summary=summary, action=action, fields=fields, back=back)
+                  summary=summary, action=action, fields=fields, back=back, hint=hint)
 
 
 def needs_confirm(imp: Impact, form) -> bool:

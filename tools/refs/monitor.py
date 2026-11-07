@@ -6,6 +6,7 @@
 - A / B:每天拉一次各榜单 + 已关注作品的详情;红果 sitemap 每周一次;控制台关过的日子不补,只拉今天(曲线上标缺口);
 - 今天榜单齐了以后:A 按「前 K 名或涨得快」自动排抓正文,到每日上限就停(不补跑;上限改了马上生效);
   B 只标候选与理由,人勾选。人手动点的不算上限。
+  红果 A 模式自动选中的作品另标「建议录屏:<理由>」—— 只标,不排录屏(录屏永远人点)。
 """
 from __future__ import annotations
 
@@ -54,6 +55,7 @@ def plan(store, today: str | None = None, now: str | None = None) -> list[str]:
             jobs.enqueue(store, key, "sitemap", day=today, auto=True, again_after_failure=False)
         if src["last_ranks_day"] != today or a.content == "none":      # 今天所有榜单都成功了才选作品(见 runner._ranks)
             continue
+        capped = False
         for row in _today_ranked(store, key, today):
             if row["blocked"]:
                 continue
@@ -63,9 +65,16 @@ def plan(store, today: str | None = None, now: str | None = None) -> list[str]:
             if src["mode"] == "B":
                 works.set_candidate(store, row["id"], why, today)
                 continue
+            if key == "hongguo":            # 正片要录屏,录屏永远人点(spec 3.2):只标「建议录屏」,不排 record;抓取满了也照标
+                works.set_candidate(store, row["id"], f"建议录屏:{why}", today)
+            if capped:
+                continue
             if jobs.auto_content_today(store, key, today) >= src["cap_fetch"]:
                 did.append(f"{key}:今日自动抓取已满 {src['cap_fetch']}/{src['cap_fetch']}")
-                break
+                capped = True
+                if key != "hongguo":
+                    break
+                continue
             if not _has_content(store, row["id"]):
                 jobs.enqueue(store, key, "content", work_id=row["id"], day=today, auto=True, again_after_failure=False)
                 did.append(f"{key}:自动抓 {row['id']}({why})")

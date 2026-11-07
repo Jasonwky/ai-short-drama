@@ -209,3 +209,10 @@ def test_events_carry_the_work_id(tmp_path):
     plain = fetcher(tmp_path / "b", {"https://a.cn/robots.txt": ALLOW, "https://a.cn/x": (200, "正文")})
     plain.get("https://a.cn/x")
     assert all("work_id" not in e for e in rjournal.read(tmp_path / "b"))
+
+
+def test_allowed_asks_robots_once_without_fetching_the_page(tmp_path):
+    f = fetcher(tmp_path, {"https://a.cn/robots.txt": (200, "User-agent: *\nDisallow: /player/*/*\n")})
+    assert f.allowed("https://a.cn/player/1") is True
+    assert f.allowed("https://a.cn/player/1/2") is False
+    assert f.opener.calls == ["https://a.cn/robots.txt"]

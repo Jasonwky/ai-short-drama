@@ -207,3 +207,14 @@ def test_fetcher_factory_gets_the_job_work_id(env):
     for _ in range(2):
         runner.run_one(refs, root, adapters={"jjwxc": fake_adapter()}, fetcher=lambda s, w: seen.append((s, w)), today=DAY)
     assert seen == [("jjwxc", wid), ("jjwxc", None)]
+
+
+def test_detail_heat_raw_leaves_out_episode_ids(env):
+    """红果详情的 stats 带 vids(各集集号,录屏用):每天每部多 2 KB 没用,不进热度 raw。"""
+    import dataclasses
+    refs, _ = env
+    wid = works.upsert(refs, "jjwxc", "9")
+    meta = dataclasses.replace(fake_adapter().fetch_meta(None, "9"), stats={"vids": ["1", "2"], "plays": 3})
+    assert run(env, fake_adapter(fetch_meta=lambda f, ext: meta), "meta", work_id=wid)["state"] == "done"
+    raw = refs.conn.execute("SELECT raw_json FROM ref_heat WHERE work_id = ? AND board = 'detail'", (wid,)).fetchone()[0]
+    assert json.loads(raw) == {"plays": 3}

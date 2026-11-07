@@ -6,16 +6,22 @@ import json
 
 from tools.refs import clock, settings
 
+FETCH_KINDS = ("ranks", "meta", "content", "sitemap")     # 抓取线程只取这些;录屏 / 转写各有自己的线程
+
 
 def enqueue(store, source: str, kind: str, *, day: str, work_id: int | None = None, params: dict | None = None,
-            auto: bool = False, again_after_failure: bool = True) -> int:
+            auto: bool = False, again_after_failure: bool = True, dedupe_states: tuple[str, ...] | None = None) -> int:
     """同日同键已有任务就返回它。人点的(again_after_failure=True)失败后可以再排一条;
-    调度排的传 False:失败了今天就不再排(否则每轮都重排、每 5 秒打一次网站)。"""
+    调度排的传 False:失败了今天就不再排(否则每轮都重排、每 5 秒打一次网站)。
+    dedupe_states 给了就只和这些状态的旧任务去重(录屏「重录」、重新转写:done 之后同一天还能再排)。"""
     pj = json.dumps(params or {}, ensure_ascii=False, sort_keys=True)
+    if dedupe_states is not None:
+        cond, extra = f" AND state IN ({', '.join('?' * len(dedupe_states))})", tuple(dedupe_states)
+    else:
+        cond, extra = (" AND state != 'failed'" if again_after_failure else ""), ()
     with store.write() as c:
         row = c.execute("SELECT id FROM ref_job WHERE source = ? AND kind = ? AND work_id IS ? AND params_json = ? AND day = ?"
-                        + (" AND state != 'failed'" if again_after_failure else "") + " ORDER BY id DESC",
-                        (source, kind, work_id, pj, day)).fetchone()
+                        + cond + " ORDER BY id DESC", (source, kind, work_id, pj, day, *extra)).fetchone()
         if row:
             return row[0]
         return c.execute("INSERT INTO ref_job (source, kind, work_id, params_json, auto, day, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -46,9 +52,11 @@ def _auto_refusal(store, job: dict, src: dict, today: str) -> str | None:
     return None
 
 
-def next_waiting(store, today: str) -> dict | None:
-    """下一条能跑的。来源被挡住的留着等;调度排的任务前提已不成立就标失败(原因写进 error)再接着找。"""
-    for row in store.conn.execute("SELECT * FROM ref_job WHERE state = 'waiting' ORDER BY id").fetchall():
+def next_waiting(store, today: str, kinds: tuple[str, ...] = FETCH_KINDS) -> dict | None:
+    """kinds 里下一条能跑的。来源被挡住的留着等;调度排的任务前提已不成立就标失败(原因写进 error)再接着找。"""
+    marks = ", ".join("?" * len(kinds))
+    for row in store.conn.execute(f"SELECT * FROM ref_job WHERE state = 'waiting' AND kind IN ({marks}) ORDER BY id",
+                                  kinds).fetchall():
         job = dict(row)
         src = settings.get(store, job["source"])
         if settings.blocked_reason(src, today) is not None:
@@ -64,6 +72,12 @@ def next_waiting(store, today: str) -> dict | None:
 def start(store, jid: int) -> None:
     with store.write() as c:
         c.execute("UPDATE ref_job SET state = 'running', started_at = ? WHERE id = ?", (clock.now_iso(), jid))
+
+
+def set_progress(store, jid: int, text: str) -> None:
+    """录屏进度(可变列,参数触发器不含它)。"""
+    with store.write() as c:
+        c.execute("UPDATE ref_job SET progress = ? WHERE id = ?", (text, jid))
 
 
 def finish(store, jid: int, *, error: str = "") -> None:

@@ -30,12 +30,12 @@ def _content_row(store, root, src, wid, kind, unit, title, base, ext, text, orig
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(text, encoding="utf-8")
     at = clock.now_iso()
-    days = src["retention_days"]
+    due, hard_due = settings.due_dates(src, at)
     with store.write() as c:
         cid = c.execute(
             "INSERT INTO ref_content (work_id, kind, unit, title, path, sha256, origin, verdict, reason, fetched_at, due_at, hard_due_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (wid, kind, unit, title, rel, sha, origin, verdict, reason, at, clock.add_days(at, days), clock.add_days(at, 2 * days))).lastrowid
+            (wid, kind, unit, title, rel, sha, origin, verdict, reason, at, due, hard_due)).lastrowid
     if verdict == "ok":
         fingerprint.add(store, cid, text)
     return cid
@@ -60,7 +60,7 @@ def _meta(store, root, adapter, f, job, today):
     w = works.get(store, job["work_id"])
     m = adapter.fetch_meta(f, w["external_id"])
     works.apply_meta(store, w["id"], m)
-    heat.record(store, w["id"], "detail", today, None, m.heat, m.stats)
+    heat.record(store, w["id"], "detail", today, None, m.heat, {k: v for k, v in m.stats.items() if k != "vids"})
     return f"详情:{m.title}"
 
 

@@ -10,6 +10,7 @@
       {% if w.url %} · <a href="{{ w.url }}" target="_blank" rel="noreferrer">原页</a>{% endif %}
       · 首次见到 {{ w.first_seen[:10] }}
       {% if w.followed %} · 已关注{% endif %}{% if w.blocked %} · <b class="status-bad">已拉黑</b>{% endif %}</p>
+    {% if w.candidate_reason.startswith("建议录屏") and w.candidate_day == today %}<p class="hint" data-ref-suggest><b>{{ w.candidate_reason }}</b>(只标,不自动录 —— 要录点下面「录这部」)</p>{% endif %}
     {% if tags %}<p class="hint">标签:{{ tags|join("、") }}</p>{% endif %}
     {% if w.intro %}<p>{{ w.intro }}</p>{% endif %}
     <div class="row">
@@ -22,6 +23,13 @@
         <form method="post" action="/refs/work/{{ w.id }}/block"><button class="btn" type="submit">拉黑(立刻清掉已存原文)</button></form>
         {% if fetch_refusal %}<span class="hint">{{ fetch_refusal }}</span>
         {% else %}<form method="post" action="/refs/work/{{ w.id }}/fetch"><button class="btn primary" type="submit">抓正文</button></form>{% endif %}
+        {% if w.source == "hongguo" %}
+          <form method="post" action="/refs/work/{{ w.id }}/record"><button class="btn primary" type="submit" data-ref-recwork>录这部(前 {{ web_episodes }} 集)</button></form>
+          <span class="hint">有头浏览器实时播放录制,一次一部;进度在「参考 · 录屏」</span>
+        {% endif %}
+      {% endif %}
+      {% if live_n %}
+        <form method="post" action="/refs/work/{{ w.id }}/purge"><button class="btn danger" type="submit" data-ref-purge>删除这部的原文(保留指纹)</button></form>
       {% endif %}
     </div>
   </section>
@@ -52,7 +60,7 @@
             <td>{{ x.kind }}</td><td>{{ x.unit if x.unit is not none else '' }}</td><td>{{ x.title }}</td>
             <td>{% if x.verdict == 'ok' %}收{% else %}<b class="status-bad">不收:{{ x.reason }}</b>{% endif %}</td>
             <td>{{ x.origin }}</td>
-            <td>{{ x.due_at[:10] }}(还没拆解,顺延到 {{ x.hard_due_at[:10] }})</td>
+            <td>{% if x.due_at.startswith('9999') %}永久(手动删){% else %}{{ x.due_at[:10] }}(还没拆解,顺延到 {{ x.hard_due_at[:10] }}){% endif %}</td>
             <td>{{ x.purged_at[:10] if x.purged_at else '' }}</td>
           </tr>
         {% endfor %}
@@ -90,8 +98,8 @@
   <table>
     <tr><th>时间</th><th>事件</th><th>URL</th><th>状态码</th><th>错误 / 结果</th></tr>
     {% for e in log %}
-      <tr><td>{{ e.at }}</td><td>{{ e.event }}</td><td>{{ e.get('url', '') }}</td><td>{{ e.get('status', '') }}</td>
-        <td>{{ e.get('error') or e.get('done') or '' }}</td></tr>
+      <tr><td>{{ e.get('at', '') }}</td><td>{{ e.event }}</td><td>{{ e.get('url', '') }}</td><td>{{ e.get('status', '') }}</td>
+        <td>{% if e.event == 'corrupt' %}<b class="status-bad">日志坏行(跳过):{{ e.file }} 第 {{ e.line }} 行</b>{% else %}{{ e.get('error') or e.get('done') or '' }}{% endif %}</td></tr>
     {% else %}
       <tr><td colspan="5" class="empty">还没有记录</td></tr>
     {% endfor %}

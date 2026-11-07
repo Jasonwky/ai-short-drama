@@ -22,19 +22,28 @@ def append(root: Path, event: str, **fields) -> dict:
 
 def read(root: Path, *, source: str | None = None, work_id: int | None = None, event: str | None = None,
          limit: int = 100) -> list[dict]:
-    """新的在前。逐文件从新到旧读,够 limit 条就停。"""
+    """新的在前。逐文件从新到旧读,够 limit 条就停。
+    坏行(不是 UTF-8 / 不是 JSON 对象)跳过,换成一条 `{"event": "corrupt", "file", "line"}`(不受 source / work_id 筛选,
+    面板上看得见);只有最新文件的最后一行坏了不报 —— 那是后台线程正在写一半。"""
     d = Path(root) / DIR
     if not d.is_dir():
         return []
     out: list[dict] = []
     for fi, path in enumerate(sorted(d.glob("*.jsonl"), reverse=True)):
-        for li, line in enumerate(reversed(path.read_text(encoding="utf-8").splitlines())):
+        lines = path.read_bytes().splitlines()
+        for li, raw in enumerate(reversed(lines)):
             try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                if fi == 0 and li == 0:       # 最新文件的最后一行:后台线程正在写一半,跳过;别处的坏行照样抛
+                rec = json.loads(raw.decode("utf-8"))
+                if not isinstance(rec, dict):
+                    raise ValueError("不是对象")
+            except ValueError:                # JSONDecodeError / UnicodeDecodeError 都是 ValueError
+                if fi == 0 and li == 0:
                     continue
-                raise
+                if event in (None, "corrupt"):
+                    out.append({"event": "corrupt", "file": path.name, "line": len(lines) - li})
+                    if len(out) >= limit:
+                        return out
+                continue
             if source and rec.get("source") != source:
                 continue
             if work_id is not None and rec.get("work_id") != work_id:

@@ -10,6 +10,7 @@
 - 没有单独的「恢复」流程:重启后库里的在途任务带着 external_id,照常推进就是接管。
 - 字幕对齐(kind = align)不进 ComfyUI 队列:空闲时轮到它,就在本轮里经 ssh 同步跑完(`aligner`,约 30 秒)。
   试听音(kind = voice)、台词音频(kind = tts)同理(`voicer` / `ttser`:qwen-tts venv 合成 + whisper 回听,约一分钟)。
+- 机器上没有我们的在途任务、这一轮也没有待派的,才调 `idle_hook`(控制台接参考库转写,只捡空档)。
 - 视频完成后在本轮里量口型(`lipgate`,本机 CPU 约 20 秒),不过就自动换种子重出(每份台词音频最多 2 次)。
 
 用法:
@@ -73,7 +74,8 @@ class Worker:
                  align_for: Callable[[Host], preflight.Runner] = _ssh_align,
                  tts_for: Callable[[Host], preflight.Runner] = _ssh_tts,
                  idx_for: Callable[[Host], preflight.Runner] = _ssh_idx,
-                 collector: Collector | None = None):
+                 collector: Collector | None = None,
+                 idle_hook: Callable[[Host, object], list[str]] | None = None):
         self.store = store
         self.host_id = host_id
         self.data_root = Path(data_root)
@@ -84,6 +86,7 @@ class Worker:
         self.tts_for = tts_for
         self.idx_for = idx_for
         self.collector = collector or Collector(self.data_root)
+        self.idle_hook = idle_hook      # 机器空闲且没有待派任务时调一次(参考库转写捡空档)
         self._last_host: Host | None = None
 
     def _speech_runner(self, task, host: Host) -> preflight.Runner:
@@ -120,9 +123,11 @@ class Worker:
         busy = self.store.conn.execute(
             f"SELECT COUNT(*) FROM task WHERE host_id = ? AND state IN ({','.join('?' * len(IN_FLIGHT))})",
             (host.id, *IN_FLIGHT)).fetchone()[0]
+        drained = False
         while busy < host.queue_depth:
             task = pick_next(self.store, host.id, allow_align=busy == 0)
             if task is None:
+                drained = True
                 break
             if task["kind"] == "align":
                 out = aligner.run(self.store, client, host, task, data_root=self.data_root,
@@ -140,6 +145,8 @@ class Worker:
             if out.state not in IN_FLIGHT:       # 当场失败 / 同步跑完(对齐、试听音、台词音频):不占位,但这一轮不再连着交,下一轮再看
                 break
             busy += 1
+        if self.idle_hook is not None and busy == 0 and drained:    # 生产任务优先:没有在途、也没有待派,才捡空档
+            log += self.idle_hook(host, client)
         return log
 
 

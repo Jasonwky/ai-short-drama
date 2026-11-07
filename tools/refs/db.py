@@ -3,15 +3,17 @@
 
 连接、写锁、`cached_statements=0` 沿用 `tools.drama.db.Store`(网页线程与抓取线程共用连接,见那里的说明);
 只换结构与迁移。不可改的规矩由触发器强制:设置改动记录、热度、指纹只许追加;任务参数不可改;内容行不许删(清理只置 purged_at)。
-1c 加 ref_unit / ref_card 时走 REFS_MIGRATIONS[1]。
+v2(1b):录屏 / 转写任务、录屏 / 转写 / 关键帧内容;改 CHECK 只能重建表,见 REFS_MIGRATIONS[1]。
+v3(1b):ref_source.retention_forever(原文永久保留、人手动删),见 REFS_MIGRATIONS[2]。
+1c 加 ref_unit / ref_card 时走 REFS_MIGRATIONS[3]。
 """
 from __future__ import annotations
 
 from tools.drama.db import Store
 
-REFS_VERSION = 1
+REFS_VERSION = 3
 
-REFS_SCHEMA = """
+_BASE_SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 CREATE TABLE ref_source (
@@ -20,6 +22,7 @@ CREATE TABLE ref_source (
   cap_fetch INTEGER CHECK (cap_fetch IS NULL OR cap_fetch >= 0),
   cap_breakdown INTEGER CHECK (cap_breakdown IS NULL OR cap_breakdown >= 0),
   retention_days INTEGER CHECK (retention_days IS NULL OR retention_days >= 1),
+  retention_forever INTEGER NOT NULL DEFAULT 0,
   chapters_n INTEGER CHECK (chapters_n IS NULL OR chapters_n >= 1),
   top_k INTEGER CHECK (top_k IS NULL OR top_k >= 1),
   state TEXT NOT NULL DEFAULT 'ok' CHECK (state IN ('ok', 'tripped', 'paused')),
@@ -77,10 +80,13 @@ BEGIN SELECT RAISE(ABORT, '热度写入后不改'); END;
 CREATE TRIGGER ref_heat_no_delete BEFORE DELETE ON ref_heat
 BEGIN SELECT RAISE(ABORT, '热度写入后不删'); END;
 
-CREATE TABLE ref_job (
+"""
+
+# 三张会被 v2 重建的表:表与触发器 / 索引分开放,fresh 库与迁移共用同一份定义(免得两份漂移)。
+JOB_TABLE = """CREATE TABLE ref_job (
   id INTEGER PRIMARY KEY,
   source TEXT NOT NULL REFERENCES ref_source(key),
-  kind TEXT NOT NULL CHECK (kind IN ('ranks', 'meta', 'content', 'sitemap')),
+  kind TEXT NOT NULL CHECK (kind IN ('ranks', 'meta', 'content', 'sitemap', 'record', 'transcribe')),
   work_id INTEGER REFERENCES ref_work(id),
   params_json TEXT NOT NULL DEFAULT '{}',
   auto INTEGER NOT NULL DEFAULT 0,
@@ -90,15 +96,18 @@ CREATE TABLE ref_job (
   error TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   started_at TEXT NOT NULL DEFAULT '',
-  finished_at TEXT NOT NULL DEFAULT ''
-);
-CREATE TRIGGER ref_job_params_immutable BEFORE UPDATE OF source, kind, work_id, params_json, auto, day ON ref_job
-BEGIN SELECT RAISE(ABORT, '抓取任务的参数不可改 —— 要改就新排一条'); END;
+  finished_at TEXT NOT NULL DEFAULT '',
+  progress TEXT NOT NULL DEFAULT ''
+)"""
+JOB_TRIGGERS = [
+    """CREATE TRIGGER ref_job_params_immutable BEFORE UPDATE OF source, kind, work_id, params_json, auto, day ON ref_job
+BEGIN SELECT RAISE(ABORT, '抓取任务的参数不可改 —— 要改就新排一条'); END""",
+]
 
-CREATE TABLE ref_content (
+CONTENT_TABLE = """CREATE TABLE ref_content (
   id INTEGER PRIMARY KEY,
   work_id INTEGER NOT NULL REFERENCES ref_work(id),
-  kind TEXT NOT NULL CHECK (kind IN ('chapter', 'review', 'manual')),
+  kind TEXT NOT NULL CHECK (kind IN ('chapter', 'review', 'manual', 'recording', 'transcript', 'keyframe')),
   unit INTEGER,
   title TEXT NOT NULL DEFAULT '',
   path TEXT NOT NULL,
@@ -109,25 +118,50 @@ CREATE TABLE ref_content (
   fetched_at TEXT NOT NULL,
   due_at TEXT NOT NULL,
   hard_due_at TEXT NOT NULL,
-  purged_at TEXT NOT NULL DEFAULT ''
-);
-CREATE TRIGGER ref_content_no_delete BEFORE DELETE ON ref_content
-BEGIN SELECT RAISE(ABORT, '内容行不删 —— 到期清理只删文件、置 purged_at(指纹还引用它)'); END;
+  purged_at TEXT NOT NULL DEFAULT '',
+  meta_json TEXT NOT NULL DEFAULT '{}'
+)"""
+CONTENT_TRIGGERS = [
+    """CREATE TRIGGER ref_content_no_delete BEFORE DELETE ON ref_content
+BEGIN SELECT RAISE(ABORT, '内容行不删 —— 到期清理只删文件、置 purged_at(指纹还引用它)'); END""",
+]
 
-CREATE TABLE ref_fingerprint (
+FINGERPRINT_TABLE = """CREATE TABLE ref_fingerprint (
   content_id INTEGER NOT NULL REFERENCES ref_content(id),
   pos INTEGER NOT NULL,
   h INTEGER NOT NULL,
   PRIMARY KEY (content_id, pos)
-);
-CREATE INDEX ref_fingerprint_h ON ref_fingerprint(h);
-CREATE TRIGGER ref_fingerprint_no_update BEFORE UPDATE ON ref_fingerprint
-BEGIN SELECT RAISE(ABORT, '指纹永久保留、不可改'); END;
-CREATE TRIGGER ref_fingerprint_no_delete BEFORE DELETE ON ref_fingerprint
-BEGIN SELECT RAISE(ABORT, '指纹永久保留、不可删'); END;
-"""
+)"""
+FINGERPRINT_INDEX_AND_TRIGGERS = [
+    "CREATE INDEX ref_fingerprint_h ON ref_fingerprint(h)",
+    """CREATE TRIGGER ref_fingerprint_no_update BEFORE UPDATE ON ref_fingerprint
+BEGIN SELECT RAISE(ABORT, '指纹永久保留、不可改'); END""",
+    """CREATE TRIGGER ref_fingerprint_no_delete BEFORE DELETE ON ref_fingerprint
+BEGIN SELECT RAISE(ABORT, '指纹永久保留、不可删'); END""",
+]
 
-REFS_MIGRATIONS: dict[int, list[str]] = {}
+_REBUILT = [JOB_TABLE, *JOB_TRIGGERS, CONTENT_TABLE, *CONTENT_TRIGGERS, FINGERPRINT_TABLE, *FINGERPRINT_INDEX_AND_TRIGGERS]
+REFS_SCHEMA = _BASE_SCHEMA + "".join(stmt + ";\n" for stmt in _REBUILT)
+
+# v1 -> v2:SQLite 改不了 CHECK,只能重建。顺序是关键 ——
+# 现代 SQLite(legacy_alter_table 关)改名时会把别的表里指向它的外键一起改到新名字上:
+# 指纹表先改名,内容表再改名(旧指纹表的外键随之指向 ref_content_v1,新指纹表的外键指向新 ref_content);
+# 触发器 / 索引名全库唯一、跟着旧表走,所以先删旧表再建它们。DROP TABLE 的隐式 DELETE 不触发触发器。
+REFS_MIGRATIONS: dict[int, list[str]] = {1: [
+    "ALTER TABLE ref_job RENAME TO ref_job_v1",
+    "ALTER TABLE ref_fingerprint RENAME TO ref_fingerprint_v1",
+    "ALTER TABLE ref_content RENAME TO ref_content_v1",
+    JOB_TABLE, CONTENT_TABLE, FINGERPRINT_TABLE,
+    "INSERT INTO ref_job (id, source, kind, work_id, params_json, auto, day, state, attempts, error, created_at, started_at, finished_at)"
+    " SELECT id, source, kind, work_id, params_json, auto, day, state, attempts, error, created_at, started_at, finished_at FROM ref_job_v1",
+    "INSERT INTO ref_content (id, work_id, kind, unit, title, path, sha256, origin, verdict, reason, fetched_at, due_at, hard_due_at, purged_at)"
+    " SELECT id, work_id, kind, unit, title, path, sha256, origin, verdict, reason, fetched_at, due_at, hard_due_at, purged_at FROM ref_content_v1",
+    "INSERT INTO ref_fingerprint (content_id, pos, h) SELECT content_id, pos, h FROM ref_fingerprint_v1",
+    "DROP TABLE ref_job_v1", "DROP TABLE ref_fingerprint_v1", "DROP TABLE ref_content_v1",
+    *JOB_TRIGGERS, *CONTENT_TRIGGERS, *FINGERPRINT_INDEX_AND_TRIGGERS,
+],
+    2: ["ALTER TABLE ref_source ADD COLUMN retention_forever INTEGER NOT NULL DEFAULT 0"],
+}
 
 
 class RefStore(Store):

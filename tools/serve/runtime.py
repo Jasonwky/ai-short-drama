@@ -47,6 +47,16 @@ class Backend:
     idx_for: Callable[[Host], preflight.Runner] = _ssh_idx       # 台词音频(IndexTTS2 港片念法):云机上跑 indextts 的 ssh
 
 
+def _playwright_driver(profile: Path):
+    from tools.refs import hgdriver
+    return hgdriver.PlaywrightDriver(profile)
+
+
+def _fetcher(root: Path, src: str, wid: int | None):
+    from tools.refs.net import Fetcher
+    return Fetcher(root, src, work_id=wid)
+
+
 def real_llm() -> LLMBackend:
     return LLMBackend(ClaudeCLIClient(), service.DEFAULT_MODEL, "real")
 
@@ -79,7 +89,8 @@ def probe(host: Host, backend: Backend) -> HostStatus:
 
 class Runtime:
     def __init__(self, store: Store, data_root: Path, backend: Backend, poll_sec: float = POLL_SEC,
-                 refs=None, refs_root: Path | None = None, refs_poll_sec: float = 5.0):
+                 refs=None, refs_root: Path | None = None, refs_poll_sec: float = 5.0, record_driver=None,
+                 refs_fetcher=None, login_fn=None):
         self.store = store
         self.data_root = Path(data_root)
         self.backend = backend
@@ -103,6 +114,19 @@ class Runtime:
         self.refs_poll_sec = refs_poll_sec
         self.refs_errors: list[str] = []       # refs-fetch 线程最近 REFS_ERRORS_KEEP 条异常 / 清理错误(带时间),来源设置页显示,人点「清掉」才清
         self._refs_thread: threading.Thread | None = None
+        # 红果录屏(有头浏览器,refs-record 线程)与扫码登录共用一个配置目录 `<refs_root>/profile`:同时只许一个用
+        self.record_driver = record_driver or (lambda: _playwright_driver(self.refs_root / "profile"))
+        # 录屏 / 扫码前问 robots 用的取页器(来源, 作品) -> Fetcher;测试与自测注入假网络
+        self.refs_fetcher = refs_fetcher or (lambda src, wid: _fetcher(self.refs_root, src, wid))
+        # 扫码登录 (配置目录, 剧号) -> 是否登录成功;默认真的有头浏览器,自测注入假的(不开浏览器)
+        if login_fn is None:
+            from tools.refs import hgdriver
+            login_fn = hgdriver.login
+        self.login_fn = login_fn
+        self.refs_browser: str | None = None   # 谁占着配置目录:None / "record" / "login"
+        self._browser_lock = threading.Lock()
+        self.refs_login: dict | None = None    # 最近一次扫码登录:{"state": running / ok / failed, "at", "message"}
+        self._record_thread: threading.Thread | None = None
 
     REFS_ERRORS_KEEP = 5
 
@@ -120,6 +144,84 @@ class Runtime:
         for e in (res[1] if res else []):                # 删除失败要有人看见(来源设置页 + 待办)
             self.refs_fail(f"清理:{e}")
 
+    def _claim_browser(self, who: str) -> str | None:
+        """占配置目录;已被占就返回占着的那个,不占。"""
+        with self._browser_lock:
+            if self.refs_browser is not None:
+                return self.refs_browser
+            self.refs_browser = who
+            return None
+
+    def _release_browser(self) -> None:
+        with self._browser_lock:
+            self.refs_browser = None
+
+    def refs_record_tick(self) -> None:
+        """录屏一轮:取一条 record 任务录完(实时播放,一部剧几分钟)。正在扫码登录就先不录,下一轮再来。"""
+        if self.refs is None:
+            return
+        from tools.refs import clock, jobs as ref_jobs, recorder
+        job = ref_jobs.next_waiting(self.refs, clock.today(), kinds=("record",))
+        if job is None or self._claim_browser("record") is not None:
+            return
+        try:
+            recorder.run_job(self.refs, self.refs_root, job, self.record_driver, fetcher=self.refs_fetcher,
+                             should_stop=self._stop.is_set)
+        finally:
+            self._release_browser()
+
+    def start_login(self) -> None:
+        """「打开浏览器扫码」:另起线程有头打开一部红果剧的播放页等人扫码(最多 5 分钟)。
+        正在录屏 / 已经开着扫码浏览器 → ValueError(400)。登录框只在播放页弹,所以要库里已有一部红果作品。"""
+        if self.refs is None:
+            raise ValueError("没配参考库")
+        row = self.refs.conn.execute("SELECT external_id FROM ref_work WHERE source = 'hongguo' AND blocked = 0"
+                                     " ORDER BY id DESC LIMIT 1").fetchone()
+        if row is None:
+            raise ValueError("参考库里还没有红果作品 —— 先拉一次红果榜单或贴一个作品链接,再扫码(登录框在播放页上才弹)")
+        busy = self._claim_browser("login")
+        if busy is not None:
+            raise ValueError("正在录屏,录完再扫码" if busy == "record" else "扫码登录的浏览器已经开着,扫完再点")
+        from tools.refs import clock
+        self.refs_login = {"state": "running", "at": clock.now_iso(), "message": "等扫码(最多 5 分钟)"}
+
+        def job():
+            try:
+                from tools.refs import hgdriver, loginstate, settings as ref_settings
+                from tools.refs.net import FetchError
+                url = hgdriver.player_url(row[0])
+                try:                                        # 打开前问 robots(与录屏同一口径;读不到 robots 也当不让)
+                    if not self.refs_fetcher("hongguo", None).allowed(url):
+                        raise FetchError("disallowed", f"robots 禁止打开播放页 {url}")
+                except FetchError as e:
+                    if e.kind == "disallowed":
+                        ref_settings.pause(self.refs, self.refs_root, "hongguo", str(e))
+                    self.refs_login = {"state": "failed", "at": clock.now_iso(), "message": f"没打开浏览器:{e}"}
+                    return
+                ok = self.login_fn(self.refs_root / "profile", row[0])
+                loginstate.record(self.refs, self.refs_root, ok, "扫码登录")
+                self.refs_login = {"state": "ok" if ok else "failed", "at": clock.now_iso(),
+                                   "message": "已登录" if ok else "5 分钟内没扫码登录,再点一次"}
+            except Exception as e:     # 不吞:挂到参考库错误上、进 journal
+                self.refs_login = {"state": "failed", "at": clock.now_iso(), "message": f"{type(e).__name__}: {e}"}
+                self.refs_fail(f"扫码登录:{type(e).__name__}: {e}")
+                journal.append(self.data_root, [f"参考库扫码登录异常:{type(e).__name__}: {e}"], prefix="runtime ")
+            finally:
+                self._release_browser()
+        threading.Thread(target=job, name="refs-login", daemon=True).start()
+
+    def _refs_idle(self, host, client) -> list[str]:
+        """GPU worker 的空闲钩子:机器空着就跑一条参考库转写(spec 1.1 第 4 条,生产任务优先)。"""
+        from tools.refs import transcribe
+        try:
+            line = transcribe.run_one(self.refs, self.refs_root, client, self.backend.align_for(host))
+        except Exception as e:          # 不吞(任务已标失败、进参考库错误与 journal),也不让它冒出 worker.tick 拖垮这一轮
+            msg = f"{type(e).__name__}: {e}"
+            self.refs_fail(f"转写:{msg}")
+            journal.append(self.data_root, [f"参考库转写异常:{msg}"], prefix="runtime ")
+            return [f"参考库转写异常:{msg}"]
+        return [line] if line else []
+
     def host_ids(self) -> list[int]:
         return [r[0] for r in self.store.conn.execute("SELECT id FROM host ORDER BY id")]
 
@@ -132,7 +234,8 @@ class Runtime:
                 b = self.backend
                 w = self._workers[hid] = Worker(self.store, hid, data_root=self.data_root,
                                                 client_for=b.client_for, tunnel=b.tunnel, run_for=b.run_for,
-                                                align_for=b.align_for, tts_for=b.tts_for, idx_for=b.idx_for)
+                                                align_for=b.align_for, tts_for=b.tts_for, idx_for=b.idx_for,
+                                                idle_hook=self._refs_idle if self.refs is not None else None)
             lines = journal.append(self.data_root, w.tick(), prefix=f"host={hid} ")
             host = get_host(self.store, hid)
             st = probe(host, self.backend)
@@ -311,7 +414,7 @@ class Runtime:
             ref_settings.ensure(self.refs)
             n = ref_jobs.fail_stale(self.refs)
             if n:
-                journal.append(self.data_root, [f"参考库:上次有 {n} 条抓取没跑完,已标失败"], prefix="runtime ")
+                journal.append(self.data_root, [f"参考库:上次有 {n} 条任务(抓取 / 录屏 / 转写)没跑完,已标失败"], prefix="runtime ")
 
             def refs_loop():
                 while not self._stop.is_set():
@@ -324,11 +427,24 @@ class Runtime:
             self._refs_thread = threading.Thread(target=refs_loop, name="refs-fetch", daemon=True)
             self._refs_thread.start()
 
+            def record_loop():
+                while not self._stop.is_set():
+                    try:
+                        self.refs_record_tick()
+                    except Exception as e:     # 不吞:recorder 已把任务标失败;这里挂到参考库错误上、进 journal
+                        self.refs_fail(f"录屏:{type(e).__name__}: {e}")
+                        journal.append(self.data_root, [f"参考库录屏异常:{type(e).__name__}: {e}"], prefix="runtime ")
+                    self._stop.wait(self.refs_poll_sec)
+            self._record_thread = threading.Thread(target=record_loop, name="refs-record", daemon=True)
+            self._record_thread.start()
+
     def stop(self) -> None:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=30)
         if self._refs_thread is not None:
             self._refs_thread.join(timeout=30)
+        if self._record_thread is not None:      # 正在录的一集要播完才停;等不到就不等(守护线程)
+            self._record_thread.join(timeout=30)
         self._llm_pool.shutdown(wait=False, cancel_futures=True)
         self._cut_pool.shutdown(wait=False, cancel_futures=True)

@@ -120,3 +120,25 @@ def test_failed_ranks_job_is_not_replanned_every_tick(r):
     boards = ADAPTERS["jjwxc"].boards
     assert len(boards) < 10 and sorted(calls) == sorted(boards)          # 每个榜单只打了一次网站
     assert sorted(jobs.params(j)["board"] for j in ranks) == sorted(boards)
+
+
+def test_a_mode_hongguo_suggests_recording_but_never_queues_it(r):
+    refs, root = r
+    settings.update(refs, root, "hongguo", {"mode": "A", "retention_days": "30", "cap_fetch": "5", "cap_breakdown": "0", "top_k": "2"})
+    ids = _ranked(refs, 3, source="hongguo", board="hot-drama")
+    monitor.plan(refs, DAY)
+    assert works.get(refs, ids[0])["candidate_reason"] == "建议录屏:今天第 1 名(前 2 名)"
+    assert works.get(refs, ids[2])["candidate_reason"] == ""
+    assert not [j for j in jobs.recent(refs, limit=99) if j["kind"] == "record"]
+
+
+def test_a_mode_hongguo_keeps_suggesting_recordings_after_the_cap(r):
+    refs, root = r
+    settings.update(refs, root, "hongguo", {"mode": "A", "retention_days": "30", "cap_fetch": "1", "cap_breakdown": "0", "top_k": "3"})
+    ids = _ranked(refs, 4, source="hongguo", board="hot-drama")
+    monitor.plan(refs, DAY)
+    assert [works.get(refs, i)["candidate_reason"] for i in ids] == [
+        "建议录屏:今天第 1 名(前 3 名)", "建议录屏:今天第 2 名(前 3 名)", "建议录屏:今天第 3 名(前 3 名)", ""]
+    content = [j for j in jobs.recent(refs, limit=99) if j["kind"] == "content"]
+    assert [j["work_id"] for j in content] == [ids[0]]                 # 抓取照样只到上限
+    assert not [j for j in jobs.recent(refs, limit=99) if j["kind"] == "record"]

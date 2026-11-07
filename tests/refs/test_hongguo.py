@@ -23,6 +23,7 @@ def test_detail_gives_meta_reviews_without_nicknames():
     meta, reviews = hongguo.parse_detail((FX / "hongguo_detail.html").read_text(encoding="utf-8"))
     assert meta.external_id == "7561390625552092222" and meta.heat == 46804547
     assert meta.stats["episodes"] == 84 and meta.stats["reviews_total"] == 142
+    assert len(meta.stats["vids"]) == 84 and meta.stats["vids"][0] == "7561394907001130046"   # 录屏按集号点选集
     assert len(meta.units) == 5 and all(u.free for u in meta.units)       # 网页登录后前 5 集(1b 录屏用)
     assert meta.roles and all(not r.startswith("饰") for r in meta.roles)
     assert reviews and all(r.text for r in reviews)
@@ -69,3 +70,9 @@ def test_rank_block_with_missing_fields_is_an_adapter_error(args):
 def test_detail_block_with_missing_fields_is_an_adapter_error(data):
     with pytest.raises(AdapterError):
         hongguo.parse_detail(f"<script>window._ROUTER_DATA = {data};</script>")
+
+
+def test_detail_without_vid_list_still_parses_with_no_vids():
+    meta, _ = hongguo.parse_detail('<script>window._ROUTER_DATA = {"loaderData":{"detail_page":{"seriesDetail":'
+                                   '{"series_id":"1","series_name":"a"}}}};</script>')
+    assert meta.external_id == "1" and meta.stats["vids"] == []        # 集号只有录屏要,缺了由 recorder 判失败

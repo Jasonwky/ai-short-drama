@@ -79,3 +79,46 @@ def test_manual_text_for_a_missing_work_writes_nothing(r):
     with pytest.raises(KeyError):
         manual.add_text(refs, root, title="t", text=BODY, origin="o", work_id=999)
     assert not (root / "content").exists() and _rows(refs) == []
+
+
+def test_forever_content_is_never_purged_by_time(r):
+    refs, root = r
+    settings.update(refs, root, "manual", {"retention_kind": "forever"})
+    manual.add_text(refs, root, title="t", text=BODY, origin="o")
+    row = _rows(refs)[0]
+    assert row["due_at"] == row["hard_due_at"] == "9999-12-31T00:00:00+00:00"
+    assert retention.purge(refs, root, now="9998-01-01T00:00:00+00:00") == ([], [])
+    assert (root / row["path"]).exists()
+
+
+def _two_files(refs, root):
+    manual.add_text(refs, root, title="a", text=BODY, origin="o")
+    manual.add_text(refs, root, title="b", text=BODY + "补", origin="o", work_id=_rows(refs)[0]["work_id"])
+    return _rows(refs)
+
+
+def test_purge_work_deletes_files_keeps_fingerprints_and_does_not_block(r):
+    from tools.refs import rjournal
+    refs, root = r
+    rows = _two_files(refs, root)
+    wid = rows[0]["work_id"]
+    fp = refs.conn.execute("SELECT COUNT(*) FROM ref_fingerprint").fetchone()[0]
+    done, errors = retention.purge_work(refs, root, wid)
+    assert sorted(done) == [x["id"] for x in rows] and errors == []
+    assert not any((root / x["path"]).exists() for x in rows)
+    assert all(x["purged_at"] for x in _rows(refs))
+    assert refs.conn.execute("SELECT COUNT(*) FROM ref_fingerprint").fetchone()[0] == fp > 0
+    w = works.get(refs, wid)
+    assert not w["blocked"]
+    ev = rjournal.read(root, event="purge", limit=1)[0]
+    assert ev["work_id"] == wid and ev["manual"] is True
+    assert retention.purge_work(refs, root, wid) == ([], [])          # 没有可删的了
+
+
+def test_purge_work_reports_missing_file_and_does_not_mark_it(r):
+    refs, root = r
+    rows = _two_files(refs, root)
+    (root / rows[0]["path"]).unlink()
+    done, errors = retention.purge_work(refs, root, rows[0]["work_id"])
+    assert done == [rows[1]["id"]] and "找不到" in errors[0]
+    assert not _rows(refs)[0]["purged_at"]

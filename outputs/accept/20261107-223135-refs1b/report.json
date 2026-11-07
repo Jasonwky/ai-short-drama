@@ -1,0 +1,203 @@
+{
+  "work": "掌上珠 7561390625552092222",
+  "login": {
+    "state": "ok",
+    "at": "2026-11-07T14:20:05+00:00",
+    "text": "录屏前检查"
+  },
+  "episodes": [
+    {
+      "episode": 1,
+      "verdict": "ok",
+      "reason": "",
+      "duration": 61.85,
+      "expected_sec": 61.6,
+      "mean_volume_db": -18.0,
+      "luma_mean": 121.6,
+      "luma_sd": 31.9,
+      "keyframes": 26,
+      "transcript": {
+        "verdict": "ok",
+        "chars": 95,
+        "head": "把他开好了充着姓周的赶紧过来办事幸好我一直撞下是谁把我小姐你就跑不跑啊好大的男子谁派你来的我是不小心闯进来的那我也只能不",
+        "chunks": 3,
+        "asr_sec": 21.3
+      }
+    },
+    {
+      "episode": 2,
+      "verdict": "ok",
+      "reason": "",
+      "duration": 77.27,
+      "expected_sec": 76.84,
+      "mean_volume_db": -23.5,
+      "luma_mean": 97.5,
+      "luma_sd": 52.9,
+      "keyframes": 14,
+      "transcript": {
+        "verdict": "ok",
+        "chars": 150,
+        "head": "你死了来找找找一个瞎子跑不了多远找你的?明珠你还以为你自己是将军高高在场的大小姐呢?你现在只不过是个瞎了瘟的废物磕死全家",
+        "chunks": 4,
+        "asr_sec": 33.5
+      }
+    },
+    {
+      "episode": 3,
+      "verdict": "ok",
+      "reason": "",
+      "duration": 96.54,
+      "expected_sec": 96.36,
+      "mean_volume_db": -20.7,
+      "luma_mean": 108.4,
+      "luma_sd": 44.6,
+      "keyframes": 16,
+      "transcript": {
+        "verdict": "ok",
+        "chars": 185,
+        "head": "李文强你小小行与四竟敢对本尚书来有死刑只不过是给了你几分严面你还真拿自己当王爷了啊王爷,怎么处理?把他丢去喂狼,这肚虫再",
+        "chunks": 4,
+        "asr_sec": 29.6
+      }
+    },
+    {
+      "episode": 4,
+      "verdict": "ok",
+      "reason": "",
+      "duration": 137.56,
+      "expected_sec": 137.32,
+      "mean_volume_db": -21.8,
+      "luma_mean": 107.2,
+      "luma_sd": 59.2,
+      "keyframes": 20,
+      "transcript": "排队中(共用云机忙)"
+    },
+    {
+      "episode": 5,
+      "verdict": "ok",
+      "reason": "",
+      "duration": 107.1,
+      "expected_sec": 106.68,
+      "mean_volume_db": -22.8,
+      "luma_mean": 106.6,
+      "luma_sd": 62.6,
+      "keyframes": 17,
+      "transcript": "排队中(共用云机忙)"
+    }
+  ],
+  "jobs": [
+    {
+      "id": 2,
+      "kind": "record",
+      "state": "failed",
+      "params_json": "{}",
+      "error": "第 1 集:Page.evaluate: Target page, context or browser has been closed"
+    },
+    {
+      "id": 3,
+      "kind": "record",
+      "state": "failed",
+      "params_json": "{}",
+      "error": "第 2 集:Page.click: Timeout 10000ms exceeded.\nCall log:\n  - waiting for locator(\"[data-refs-ep]\")\n    - locator resolved to <div data-refs-ep=\"2\" class=\"pc-episode-text-YGm8lD \">2</div>\n  - attempting click action\n    - waiting for element to be visible, enabled and stable\n    - element is visible, enabled and stable\n    - scrolling into view if needed\n    - done scrolling\n    - performing click action\n    - click action done\n    - waiting for scheduled navigations to finish\n"
+    },
+    {
+      "id": 4,
+      "kind": "transcribe",
+      "state": "done",
+      "params_json": "{\"recording_id\": 1}",
+      "error": ""
+    },
+    {
+      "id": 5,
+      "kind": "record",
+      "state": "failed",
+      "params_json": "{}",
+      "error": "第 2 集:Page.wait_for_timeout: Target page, context or browser has been closed"
+    },
+    {
+      "id": 6,
+      "kind": "record",
+      "state": "failed",
+      "params_json": "{}",
+      "error": "控制台重启时没跑完"
+    },
+    {
+      "id": 7,
+      "kind": "transcribe",
+      "state": "failed",
+      "params_json": "{\"recording_id\": 17}",
+      "error": "控制台重启时没跑完"
+    },
+    {
+      "id": 8,
+      "kind": "record",
+      "state": "done",
+      "params_json": "{\"episodes\": [2]}",
+      "error": ""
+    },
+    {
+      "id": 9,
+      "kind": "record",
+      "state": "done",
+      "params_json": "{\"episodes\": [3]}",
+      "error": ""
+    },
+    {
+      "id": 10,
+      "kind": "record",
+      "state": "done",
+      "params_json": "{\"episodes\": [4]}",
+      "error": ""
+    },
+    {
+      "id": 11,
+      "kind": "record",
+      "state": "done",
+      "params_json": "{\"episodes\": [5]}",
+      "error": ""
+    },
+    {
+      "id": 12,
+      "kind": "transcribe",
+      "state": "done",
+      "params_json": "{\"recording_id\": 17}",
+      "error": ""
+    },
+    {
+      "id": 13,
+      "kind": "transcribe",
+      "state": "done",
+      "params_json": "{\"recording_id\": 32}",
+      "error": ""
+    },
+    {
+      "id": 14,
+      "kind": "transcribe",
+      "state": "done",
+      "params_json": "{\"recording_id\": 48}",
+      "error": ""
+    },
+    {
+      "id": 15,
+      "kind": "transcribe",
+      "state": "waiting",
+      "params_json": "{\"recording_id\": 66}",
+      "error": ""
+    },
+    {
+      "id": 16,
+      "kind": "transcribe",
+      "state": "waiting",
+      "params_json": "{\"recording_id\": 87}",
+      "error": ""
+    }
+  ],
+  "verdict": "录屏 5/5 收;转写 3/5 完成、2/5 排队(共用云机 ComfyUI 队列忙,按规则等待)",
+  "real_machine_bugs_fixed": [
+    "登录判定:浮层 ~24 秒才弹 → 改看 sessionid cookie,并直接点「登录」叫出二维码",
+    "停掉录当前标签页的轨道 Chrome 会关掉浏览器 → 不停轨道",
+    "点集号后 Playwright 等整页跳转超时 → no_wait_after + 自己按地址等",
+    "跨集跳转让录制流结束、浏览器被关 → 每集重开浏览器",
+    "缓冲卡顿把第 1 集录成 80.6 秒(被检查拦下)→ 缓冲时暂停录制"
+  ]
+}

@@ -26,12 +26,12 @@ def add_text(store, root: Path, *, title: str, text: str, origin: str, work_id: 
     rel = f"content/manual/{work_id}/{hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]}.txt"
     (Path(root) / rel).parent.mkdir(parents=True, exist_ok=True)
     (Path(root) / rel).write_text(text, encoding="utf-8")
-    days = src["retention_days"]
+    due, hard_due = settings.due_dates(src, at)
     with store.write() as c:
         cid = c.execute("INSERT INTO ref_content (work_id, kind, title, path, sha256, origin, verdict, reason, fetched_at, due_at, hard_due_at)"
                         " VALUES (?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (work_id, title, rel, hashlib.sha256(text.encode("utf-8")).hexdigest(), origin.strip(), verdict, reason,
-                         at, clock.add_days(at, days), clock.add_days(at, 2 * days))).lastrowid
+                         at, due, hard_due)).lastrowid
     if verdict == "ok":
         fingerprint.add(store, cid, text)
     return cid

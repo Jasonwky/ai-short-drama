@@ -76,6 +76,7 @@ KEY_SELECTOR = {
     "refs_sources": "[data-ref-source]",
     "refs_ranks": "[data-ref-rank-row]",
     "refs_work": "[data-ref-content]",
+    "refs_record": "[data-ref-record]",
 }
 
 
@@ -165,6 +166,57 @@ FAKE_PAGES = {
     "https://www.jjwxc.net/onebook.php?novelid=6771725&chapterid=1": "jjwxc_chapter.html",
 }
 REFS_BOOK = "6771725"
+REFS_SERIES = "7561390625552092222"       # 红果详情快照里的那部(有 vid_list)
+
+
+class SelftestDriver:
+    """自测的假录屏浏览器(Driver 接口):不开真浏览器、不联网,每集「录」出一份 ffmpeg 造的 10 秒带声音的 webm。
+    控制台的 Runtime 也注入它 —— 自测里谁点了「录这部」都不会弹真红果页面。"""
+    def __init__(self, clip: Path):
+        self.clip = clip
+
+    def open(self, series_id):
+        pass
+
+    def logged_in(self):
+        return True
+
+    def go_episode(self, n, vid):
+        pass
+
+    def locked(self):
+        return None
+
+    def record_current(self, out, on_tick=None):
+        shutil.copyfile(self.clip, out)
+        return {"duration": 10.0, "box": (0, 0, 320, 240), "viewport": (320, 240)}
+
+    def close(self):
+        pass
+
+
+class _AsrClient:
+    """假 ComfyUI 客户端:队列空、显存够(transcribe 经 gpu_ready 问它)。"""
+    def queue_ids(self):
+        return [], []
+
+    def vram_free_gb(self):
+        return 24.0
+
+    def free_models(self):
+        pass
+
+
+def _fake_asr(args, script):
+    text = "你怎么还在这里我不是让你走了吗今天这件事没完我们走着瞧这块玉佩是我母亲留给我的我会一直带着它谁也别想拿走"
+    chars = [[c, round(i * 0.12, 2), round(i * 0.12 + 0.12, 2)] for i, c in enumerate(text)]
+    return 0, json.dumps({"text": text, "chars": chars, "chunks": 1, "asr_sec": 0.1}, ensure_ascii=False)
+
+
+def _fake_login(profile, series_id) -> bool:
+    """自测的「打开浏览器扫码」:不开真浏览器、不碰红果,停一秒当扫上了。"""
+    time.sleep(1)
+    return True
 
 
 def _fake_opener(url: str, headers: dict, timeout: float):
@@ -205,7 +257,31 @@ def seed_refs(work: Path):
     yesterday = clock.add_days(f"{today}T12:00:00+08:00", -1)[:10]
     heat.record(refs, book, "detail", yesterday, None, 1.0e9, {"note": "自测造的前一天热度"})
     settings.trip(refs, root, "k17", "自测:演示熔断(假装被风控挡住)", today)
-    return refs, {"refs_book": book}
+    driver = _seed_recording(refs, root, work, fetcher, today)
+    return refs, {"refs_book": book, "record_driver": driver, "refs_fetcher": fetcher}
+
+
+def _seed_recording(refs, root: Path, work: Path, fetcher, today: str) -> SelftestDriver:
+    """录屏面板的演示数据:真 recorder.run_job(假 driver、快照详情)录 5 集 → 检查、关键帧、排转写;
+    再用假云机把转写跑完(真 transcribe.run_one,假 ssh runner)—— 不跑完的话 worker 空闲钩子会拿假对齐脚本去转、全失败。"""
+    from tools.refs import jobs, recorder, transcribe, works
+    clip = work / "selftest_recording.webm"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x240:d=10", "-f", "lavfi", "-i", "sine=f=440:d=10",
+                    "-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8", "-c:a", "libopus", "-shortest", str(clip)], check=True)
+    driver = SelftestDriver(clip)
+    wid = works.upsert(refs, "hongguo", REFS_SERIES)
+    jid = jobs.enqueue(refs, "hongguo", "record", day=today, work_id=wid)
+    recorder.run_job(refs, root, jobs.get(refs, jid), lambda: driver, fetcher=fetcher, today=today)
+    j = jobs.get(refs, jid)
+    if j["state"] != "done":
+        raise RuntimeError(f"录屏演示数据没灌进去:{j['error']}")
+    for _ in range(10):                    # 一集一条转写;有限轮,卡住(等显存之类)不在这里死循环
+        if transcribe.run_one(refs, root, _AsrClient(), _fake_asr) is None:
+            break
+    left = refs.conn.execute("SELECT COUNT(*) FROM ref_job WHERE kind = 'transcribe' AND state != 'done'").fetchone()[0]
+    if left:
+        raise RuntimeError(f"转写演示数据没灌完:还有 {left} 条没跑成")
+    return driver
 
 
 def _free_port() -> int:
@@ -461,7 +537,9 @@ def run(out_dir: Path) -> dict:
     tpl_wav = _silent_wav(work / "selftest_template.wav")
     backend.align_for(None).heard = "这块玉佩是我母亲留给我的我会一直带着它"     # 两段的台词
     refs, ref_ids = seed_refs(work)
-    runtime = Runtime(store, work, backend, poll_sec=1, refs=refs, refs_root=work / "refs", refs_poll_sec=3600)
+    rec_driver = ref_ids["record_driver"]
+    runtime = Runtime(store, work, backend, poll_sec=1, refs=refs, refs_root=work / "refs", refs_poll_sec=3600,
+                      record_driver=lambda: rec_driver, refs_fetcher=ref_ids["refs_fetcher"], login_fn=_fake_login)
     # 自测期间参考库后台线程不许自己联网(monitor.plan 会按设置排真抓取、runner 会走真 Fetcher):
     # 一轮只做到期清理,演示数据已由 seed_refs 用快照灌好
     from tools.refs import retention
@@ -687,6 +765,9 @@ def run(out_dir: Path) -> dict:
                           lambda pg: pg.locator("[data-llm-skeleton] input[name=total]").fill("12"),
                           "[data-llm-skeleton] button[type=submit]"],
                      "[data-llm-preview] [data-skeleton-candidate]", 40),
+                    # 参考库录屏面板:扫码登录(假 login_fn,不开浏览器)→ 登录结论来自「扫码登录」
+                    ("refs_record", "打开浏览器扫码 → 已登录", {}, ["[data-ref-login] form button[type=submit]"],
+                     '[data-ref-login-state="ok"][data-ref-login-via="扫码登录"]', 20),
                     # 放在最后:填了陈设,前面链路的提示词就要按它查
                     ("assets", "场景选用途、填固定陈设 → 保存", {f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]': "石桌、古井"},
                      [lambda pg: pg.locator(f'[data-asset="scene-{ids["yard"]}"] [data-scene-purpose]').select_option("庭院"),

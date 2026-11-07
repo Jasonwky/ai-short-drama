@@ -159,7 +159,7 @@ class Fetcher:
             self._log("fetch", url=url, status=None, error=str(e))
             raise FetchError("unreachable", f"连不上 {url}:{e}") from e
 
-    def _check_robots(self, url: str) -> None:
+    def _robots_for(self, url: str) -> Robots:
         host = self._host(url)
         rp = self._robots.get(host)
         if rp is None:
@@ -174,7 +174,15 @@ class Fetcher:
             else:
                 raise FetchError("disallowed", f"robots.txt 读不到(HTTP {status})—— 不知道让不让抓,先不抓", status)
             self._robots[host] = rp
-        if not rp.allowed(url):
+        return rp
+
+    def allowed(self, url: str) -> bool:
+        """只问 robots 让不让(这一轮读一次、原文进 journal),不取页:录屏打开播放页前用(recorder.run_job)。
+        robots 读不到照样抛 FetchError(disallowed)—— 不知道让不让,就当不让。"""
+        return self._robots_for(url).allowed(url)
+
+    def _check_robots(self, url: str) -> None:
+        if not self.allowed(url):
             raise FetchError("disallowed", f"robots.txt 禁止抓 {url}")
 
     def get(self, url: str, *, encoding: str = "utf-8") -> str:

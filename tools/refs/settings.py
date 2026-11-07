@@ -41,7 +41,7 @@ def all_sources(store) -> list[dict]:
 
 def fetch_problems(src: dict) -> list[str]:
     p = []
-    if src["retention_days"] is None:
+    if src["retention_days"] is None and not src["retention_forever"]:
         p.append("保留天数没填(★ 必填)—— 不填不让抓")
     if src["key"] in NOVELS and src["chapters_n"] is None:
         p.append("小说拆前 N 章没填(★ 必填)—— 不填不抓正文")
@@ -54,6 +54,32 @@ def auto_problems(src: dict) -> list[str]:
         if src[f] is None:
             p.append(f"{INT_FIELDS[f][0]}没填(★ 必填)—— 切不到 A 全自动")
     return p
+
+
+FOREVER = "9999-12-31T00:00:00+00:00"
+
+
+def due_dates(src: dict, at: str) -> tuple[str, str]:
+    """(到期, 硬到期)。永久 = 两个都是 9999 年,到期清理永远碰不到;删要人手动(作品详情「删除这部的原文」)。"""
+    if src["retention_forever"]:
+        return FOREVER, FOREVER
+    days = src["retention_days"]
+    return clock.add_days(at, days), clock.add_days(at, 2 * days)
+
+
+def retention_text(src: dict) -> str | None:
+    """保留设置的显示值:永久 / 天数 / 没填(None)。"""
+    return "永久" if src["retention_forever"] else (None if src["retention_days"] is None else str(src["retention_days"]))
+
+
+def _parse_retention(form: dict[str, str], cur: dict) -> tuple[int | None, int]:
+    kind = form.get("retention_kind", "")
+    if kind not in ("", "days", "forever"):
+        raise ValueError(f"保留方式只能是 days / forever(收到「{kind}」)")
+    raw = form.get("retention_days", "" if cur["retention_days"] is None else str(cur["retention_days"])).strip()
+    if kind == "forever" or (kind == "" and raw == "永久"):
+        return None, 1
+    return _parse("retention_days", raw), 0
 
 
 def _parse(field: str, raw: str):
@@ -77,27 +103,35 @@ def _parse(field: str, raw: str):
 def update(store, root: Path, key: str, form: dict[str, str]) -> list[str]:
     """改设置;返回真正改了的字段。不合法整组拒绝(ValueError),一个字段也不写。"""
     cur = get(store, key)
-    parsed = {f: _parse(f, v) for f, v in form.items() if f in INT_FIELDS or f == "mode"}
-    new = {**cur, **parsed}
+    parsed = {f: _parse(f, v) for f, v in form.items() if (f in INT_FIELDS and f != "retention_days") or f == "mode"}
+    if "retention_days" in form or "retention_kind" in form:
+        parsed["retention_days"], forever = _parse_retention(form, cur)
+        parsed = {f: parsed[f] for f in [*form, "retention_days"] if f in parsed}            # 保持表单里的先后(改动日志按它)
+    else:
+        forever = cur["retention_forever"]
+    new = {**cur, **parsed, "retention_forever": forever}
     if key == "manual" and new["mode"] != "C":
         raise ValueError("人工投递只能是 C(全手动)")
     if new["mode"] == "A":
         p = auto_problems(new)
         if p:
             raise ValueError(";".join(p))
-    changed = [f for f in parsed if parsed[f] != cur[f]]
+    def shown(d: dict, f: str):
+        v = retention_text(d) if f == "retention_days" else d[f]       # 保留天数一栏显示「永久」/ 天数
+        return None if v is None else str(v)
+    changed = [f for f in parsed if shown(new, f) != shown(cur, f)]
     if not changed:
         return []
     at = clock.now_iso()
     with store.write() as c:
         for f in changed:
             c.execute(f"UPDATE ref_source SET {f} = ? WHERE key = ?", (parsed[f], key))
-            old, nv = cur[f], parsed[f]
+            if f == "retention_days":
+                c.execute("UPDATE ref_source SET retention_forever = ? WHERE key = ?", (forever, key))
             c.execute("INSERT INTO ref_setting_log (source, field, old, new, at) VALUES (?, ?, ?, ?, ?)",
-                      (key, f, None if old is None else str(old), None if nv is None else str(nv), at))
+                      (key, f, shown(cur, f), shown(new, f), at))
     for f in changed:
-        rjournal.append(root, "setting", source=key, field=f,
-                        old=None if cur[f] is None else str(cur[f]), new=None if parsed[f] is None else str(parsed[f]))
+        rjournal.append(root, "setting", source=key, field=f, old=shown(cur, f), new=shown(new, f))
     return changed
 
 

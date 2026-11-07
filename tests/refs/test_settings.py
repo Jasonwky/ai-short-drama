@@ -66,3 +66,31 @@ def test_pause_needs_a_human_reset(src, tmp_path):
     assert settings.blocked_reason(settings.get(src, "qimao"), "2099-01-01") == "已暂停:robots 改成禁止"
     settings.reset_state(src, tmp_path, "qimao")
     assert settings.blocked_reason(settings.get(src, "qimao"), "2099-01-01") is None
+
+
+def test_retention_forever_is_set_logged_and_satisfies_the_star(tmp_path):
+    from tools.refs.db import RefStore
+    src = RefStore(":memory:")
+    settings.ensure(src)
+    assert settings.fetch_problems(settings.get(src, "hongguo"))
+    changed = settings.update(src, tmp_path, "hongguo", {"retention_kind": "forever", "retention_days": "30"})
+    s = settings.get(src, "hongguo")
+    assert changed == ["retention_days"] and s["retention_forever"] == 1 and s["retention_days"] is None
+    assert settings.fetch_problems(s) == []
+    assert settings.update(src, tmp_path, "hongguo", {"retention_kind": "forever"}) == []
+    log = [tuple(r) for r in src.conn.execute("SELECT field, old, new FROM ref_setting_log")]
+    assert log == [("retention_days", None, "永久")]
+    settings.update(src, tmp_path, "hongguo", {"retention_kind": "days", "retention_days": "30"})
+    s = settings.get(src, "hongguo")
+    assert s["retention_forever"] == 0 and s["retention_days"] == 30
+    assert [tuple(r) for r in src.conn.execute("SELECT old, new FROM ref_setting_log ORDER BY id")][-1] == ("永久", "30")
+    settings.update(src, tmp_path, "hongguo", {"retention_kind": "days", "retention_days": ""})
+    s = settings.get(src, "hongguo")
+    assert s["retention_forever"] == 0 and s["retention_days"] is None and settings.fetch_problems(s)
+
+
+def test_due_dates():
+    at = "2026-11-07T00:00:00+00:00"
+    assert settings.due_dates({"retention_days": 10, "retention_forever": 0}, at) == (
+        "2026-11-17T00:00:00+00:00", "2026-11-27T00:00:00+00:00")
+    assert settings.due_dates({"retention_days": None, "retention_forever": 1}, at) == ("9999-12-31T00:00:00+00:00",) * 2

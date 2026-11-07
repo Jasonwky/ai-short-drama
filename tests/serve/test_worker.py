@@ -170,3 +170,42 @@ def test_line_audio_uses_the_qwen_interpreter(store, sample, host_id, tmp_path):
     w.tick()
     assert repo.get(store, "task", tid)["state"] == "done"
     assert len(qwen.lines.calls) == 1 and idx.lines.calls == [] and idx.voice.calls == []
+
+
+def _hooked(store, host_id, tmp_path, comfy):
+    calls = []
+    def hook(host, client):
+        calls.append((host.id, client))
+        return ["参考库转写 1:27 个汉字"]
+    w = Worker(store, host_id, data_root=tmp_path, client_for=lambda h: comfy, tunnel=FakeTunnel(), run_for=_no_ssh,
+               idle_hook=hook)
+    return w, calls
+
+
+def test_idle_hook_runs_once_when_the_machine_has_nothing_to_do(store, host_id, tmp_path):
+    """生产任务优先,参考库转写只捡空档(参考库 spec 1.1 第 4 条)。"""
+    comfy = FakeComfy()
+    w, calls = _hooked(store, host_id, tmp_path, comfy)
+    log = w.tick()
+    assert calls == [(host_id, comfy)] and "参考库转写 1:27 个汉字" in log
+
+
+def test_idle_hook_is_skipped_when_a_production_task_is_pending(store, sample, host_id, world):
+    comfy = FakeComfy()
+    w, calls = _hooked(store, host_id, world[0].data_root, comfy)
+    plan_first_frame(store, sample["seg"], seed=1)
+    w.tick()
+    assert calls == []
+
+
+def test_idle_hook_is_skipped_while_our_task_is_in_flight(store, sample, host_id, world):
+    comfy = FakeComfy()
+    w, calls = _hooked(store, host_id, world[0].data_root, comfy)
+    tid = plan_first_frame(store, sample["seg"], seed=1)
+    w.tick()
+    assert _state(store, tid) == "queued" and calls == []
+    w.tick()                       # 还在途、没有新任务:busy > 0,不调
+    assert calls == []
+    comfy.finish("p1", "a.png")
+    w.tick()                       # 这一轮收完、机器空了、没有待派:调
+    assert len(calls) == 1

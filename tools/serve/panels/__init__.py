@@ -32,9 +32,11 @@ REGISTRY: tuple[Panel, ...] = (
     Panel("workflows", "工作流", "global", "/workflows"),
     Panel("hosts", "主机", "global", "/hosts"),
     Panel("trace", "留痕", "global", "/trace"),
-    Panel("refs_sources", "参考 · 来源", "global", "/refs/sources"),
-    Panel("refs_ranks", "参考 · 榜单", "global", "/refs/ranks"),
-    Panel("refs_work", "参考 · 作品", "global", "/refs/work"),
+    # 参考库(spec 2026-11-07-参考库):导航只放得下两三个字,页面大标题是「参考 · 来源」等全称
+    Panel("refs_sources", "来源", "global", "/refs/sources"),
+    Panel("refs_ranks", "热榜", "global", "/refs/ranks"),
+    Panel("refs_work", "作品", "global", "/refs/work"),
+    Panel("refs_record", "录屏", "global", "/refs/record"),
 )
 
 
