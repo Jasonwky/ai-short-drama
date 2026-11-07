@@ -1,8 +1,9 @@
 ﻿# 启动(或重启)控制台。端口上已有本项目的控制台就先停掉再起;端口被别的程序占着则报错退出,不乱杀。
-# 用法:.\start.ps1  [-Db <库>] [-DataRoot <素材根>] [-Port 8700]
+# 用法:.\start.ps1  [-Db <库>] [-DataRoot <素材根>] [-RefsDb <参考库>] [-Port 8700]
 param(
     [string]$Db = "outputs/drama/tijia/drama.db",
     [string]$DataRoot = "outputs/drama/tijia",
+    [string]$RefsDb = "outputs/refs/refs.db",
     [int]$Port = 8700
 )
 $ErrorActionPreference = "Stop"
@@ -26,6 +27,6 @@ if ($listen) {
     }
 }
 
-Write-Host "启动控制台:http://127.0.0.1:$Port/  (库 $Db,素材根 $DataRoot)"
-python -X utf8 -m tools.serve.console --db $Db --data-root $DataRoot --port $Port
+Write-Host "启动控制台:http://127.0.0.1:$Port/  (库 $Db,素材根 $DataRoot,参考库 $RefsDb)"
+python -X utf8 -m tools.serve.console --db $Db --data-root $DataRoot --refs-db $RefsDb --port $Port
 exit $LASTEXITCODE

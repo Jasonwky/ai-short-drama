@@ -10,3 +10,6 @@ outputs/**
 # LLM key: read at runtime, never committed (CLAUDE.md)
 llm.txt
 secrets/
+
+# reference library: copyrighted text, login profile — never committed (spec 2026-11-07-参考库)
+outputs/refs/**

@@ -32,6 +32,9 @@ REGISTRY: tuple[Panel, ...] = (
     Panel("workflows", "工作流", "global", "/workflows"),
     Panel("hosts", "主机", "global", "/hosts"),
     Panel("trace", "留痕", "global", "/trace"),
+    Panel("refs_sources", "参考 · 来源", "global", "/refs/sources"),
+    Panel("refs_ranks", "参考 · 榜单", "global", "/refs/ranks"),
+    Panel("refs_work", "参考 · 作品", "global", "/refs/work"),
 )
 
 

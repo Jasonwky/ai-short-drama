@@ -4,6 +4,7 @@
     1 单测                 python -m pytest -q
     2 真 LLM 契约           python -m pytest -m real_llm -q(黄金样本打真 LLM;没有 key 就 SKIP)
     3 Playwright 有头自测   遍历注册表每个面板 + 点按钮链路,逐个截图存档
+    3b 参考库来源冒烟       每个来源真联网拉一个榜单过解析(解析坏 = FAIL,外部不可用不算失败,全不可用 = SKIP;不写参考库)
     4 功能整链(真云机)     一个段落出首帧(非内置模板预设)+ 四视图 + 视频(首帧锚定)+ 字幕,溯源齐全(标识 / 拼接走本机 ffmpeg,由单测与自测覆盖)
 
 判决四态 PASS / FAIL / PARTIAL / SKIP —— **SKIP 永不计为 PASS**(M-6)。任一层没跑,总判决就不是 PASS。
@@ -84,6 +85,12 @@ def main(argv: list[str] | None = None) -> int:
     rc = _run([*py, "-m", "tools.serve.selftest", "--out", str(out / "selftest")], out / "3_selftest.log")
     layers.append({"layer": "Playwright 有头自测", "state": "PASS" if rc == 0 else "FAIL",
                    "log": str(out / "3_selftest.log"), "screenshots": str(out / "selftest")})
+
+    print("来源冒烟(参考库,真联网拉一次榜单)…", flush=True)
+    rc = _run([*py, "-m", "tools.refs.smoke", "--out", str(out / "refs_smoke")], out / "3b_refs_smoke.log")
+    state = {0: "PASS", 1: "FAIL", 2: "SKIP"}.get(rc, "FAIL")
+    layers.append({"layer": "参考库来源冒烟", "state": state, "log": str(out / "3b_refs_smoke.log"),
+                   **({"reason": "所有来源都外部不可用(断网?)—— 这一步没验到,不算通过"} if state == "SKIP" else {})})
 
     given = [k for k in REAL_ARGS if getattr(a, k)]
     if not given:

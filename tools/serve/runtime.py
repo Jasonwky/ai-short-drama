@@ -78,7 +78,8 @@ def probe(host: Host, backend: Backend) -> HostStatus:
 
 
 class Runtime:
-    def __init__(self, store: Store, data_root: Path, backend: Backend, poll_sec: float = POLL_SEC):
+    def __init__(self, store: Store, data_root: Path, backend: Backend, poll_sec: float = POLL_SEC,
+                 refs=None, refs_root: Path | None = None, refs_poll_sec: float = 5.0):
         self.store = store
         self.data_root = Path(data_root)
         self.backend = backend
@@ -97,6 +98,27 @@ class Runtime:
         self.frontend_job: dict | None = None    # 「下载前端」的后台任务状态(工作流面板上显示)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self.refs = refs                       # 参考库(spec 2026-11-07-参考库-design.md);None = 没配,参考库面板显示「未配置」
+        self.refs_root = Path(refs_root) if refs_root else None
+        self.refs_poll_sec = refs_poll_sec
+        self.refs_errors: list[str] = []       # refs-fetch 线程最近 REFS_ERRORS_KEEP 条异常 / 清理错误(带时间),来源设置页显示,人点「清掉」才清
+        self._refs_thread: threading.Thread | None = None
+
+    REFS_ERRORS_KEEP = 5
+
+    def refs_fail(self, msg: str) -> None:
+        self.refs_errors = (self.refs_errors + [f"{time.strftime('%m-%d %H:%M:%S')} {msg}"])[-self.REFS_ERRORS_KEEP:]
+
+    def refs_tick(self) -> None:
+        """参考库一轮:排任务 → 跑一条 → 到期清理(一天一次)。独立线程,不碰 GPU worker(spec 1.1 第 2 条)。"""
+        if self.refs is None:
+            return
+        from tools.refs import monitor, retention, runner
+        monitor.plan(self.refs)
+        runner.run_one(self.refs, self.refs_root)
+        res = retention.daily(self.refs, self.refs_root)
+        for e in (res[1] if res else []):                # 删除失败要有人看见(来源设置页 + 待办)
+            self.refs_fail(f"清理:{e}")
 
     def host_ids(self) -> list[int]:
         return [r[0] for r in self.store.conn.execute("SELECT id FROM host ORDER BY id")]
@@ -284,9 +306,29 @@ class Runtime:
         self._thread = threading.Thread(target=loop, name="drama-worker", daemon=True)
         self._thread.start()
 
+        if self.refs is not None:
+            from tools.refs import jobs as ref_jobs, settings as ref_settings
+            ref_settings.ensure(self.refs)
+            n = ref_jobs.fail_stale(self.refs)
+            if n:
+                journal.append(self.data_root, [f"参考库:上次有 {n} 条抓取没跑完,已标失败"], prefix="runtime ")
+
+            def refs_loop():
+                while not self._stop.is_set():
+                    try:
+                        self.refs_tick()
+                    except Exception as e:     # 不吞:进 journal、挂到来源设置面板上(成功一轮也不清);线程不能悄悄死掉
+                        self.refs_fail(f"{type(e).__name__}: {e}")
+                        journal.append(self.data_root, [f"参考库本轮异常:{type(e).__name__}: {e}"], prefix="runtime ")
+                    self._stop.wait(self.refs_poll_sec)
+            self._refs_thread = threading.Thread(target=refs_loop, name="refs-fetch", daemon=True)
+            self._refs_thread.start()
+
     def stop(self) -> None:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=30)
+        if self._refs_thread is not None:
+            self._refs_thread.join(timeout=30)
         self._llm_pool.shutdown(wait=False, cancel_futures=True)
         self._cut_pool.shutdown(wait=False, cancel_futures=True)

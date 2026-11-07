@@ -157,6 +157,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   ⚠️ 模板里拿不到的变量 Jinja 会悄悄渲染成空串(P17b 自测抓到过表单地址缺剧号):`render()` 把 `drama_id` 留给导航,模板里用 `drama.id` / 自己传的对象
 - 增量补全 `tools/gen/fill.py` 与单条生成共用规划器的纯检查函数(`*_problems`);**一律两态**,确认时只认确认页列出的目标。
   工程包 `tools/drama/bundle.py`:导入永远新建一部剧(id 重映射、路径加 `imports/<编号>/` 前缀、逐文件校验 sha256)
+- `tools/refs/`:**参考库**(spec 2026-11-07-参考库-design.md,1a 期已做:库、来源设置、6 个适配器、调度 A/B/C、榜单与趋势、作品详情、到期清理、指纹)。
+  单独的库 `refs.db`(`RefStore`,结构版本从 v1 起,与剧库无关);控制台 `--refs-db`,`start.ps1` 默认 `outputs/refs/refs.db`,整个 `outputs/refs/` gitignored。
+  抓取在 `Runtime` 的 `refs-fetch` 线程,一次一条 `ref_job`,**不进 GPU worker**;`net.Fetcher` 每轮重读 robots(**自写 RFC 9309 匹配** —— 标准库 robotparser 不认 `*` 且按先出现生效,实测会放过红果的 `/player/*/*`)、
+  同域名间隔 3 秒、错误分类(robots 禁止 → 暂停 / 风控、验证码、被跳到登录页 → 当天熔断 / 连不上 → 重试 / 解析坏 `AdapterError` 连续 3 次 → 熔断)。验证码字样只查**可见文字**开头(番茄页面的安全 SDK 脚本路径带 captcha,实测误报过)。
+  适配器解析是纯函数,单测吃 `tests/refs/fixtures/` 的**脱敏快照**(`refs/snapshot.py`:正文换假字、去昵称 / 头像 / 用户编号;`test_fixtures_have_no_personal_info` 守着);
+  红果榜单页有两种交付形态(`data-fn-args` 直给 / mergeLoaderData 包字符串),两种都要认。
+  ★ 必填:保留天数、小说拆前 N 章、A 模式的两个每日上限与前 K 名,都没有默认值。热度、指纹、设置改动只许追加(触发器)。原文到期删文件、指纹永久留;1a 没有拆解,一律顺延到保留天数 × 2。
+  「新上榜」只在这个榜单以前有过数据时才算(刚开始盯的第一天不算)。验收里有一步「来源冒烟」:解析坏 = 失败,外部不可用 = 不算失败,全都不可用 = SKIP。
 - `tools/cut/`:成片与合规。只调本机 ffmpeg(找不到就 400 报原因,ffmpeg 失败抛 `CutError`,不吞)。
   导出两态:`export.begin` 当场核对(★服务提供者编码、每段有视频、溯源成立)→ `run` 后台出带 / 不带显式标识两版 +
   溯源报告 + **8 项读回自检(含字幕),不过 = 导出失败**。元数据按 GB 45438-2025 **附录 E**(不是附录 F 的示例,它拼错了键名)。

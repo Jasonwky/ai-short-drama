@@ -1,0 +1,99 @@
+# -*- coding: utf-8 -*-
+"""本机抓取队列(spec 1.1 第 2 条):单独的后台线程一次跑一条,不进 GPU worker。参数写下不可改(触发器)。"""
+from __future__ import annotations
+
+import json
+
+from tools.refs import clock, settings
+
+
+def enqueue(store, source: str, kind: str, *, day: str, work_id: int | None = None, params: dict | None = None,
+            auto: bool = False, again_after_failure: bool = True) -> int:
+    """同日同键已有任务就返回它。人点的(again_after_failure=True)失败后可以再排一条;
+    调度排的传 False:失败了今天就不再排(否则每轮都重排、每 5 秒打一次网站)。"""
+    pj = json.dumps(params or {}, ensure_ascii=False, sort_keys=True)
+    with store.write() as c:
+        row = c.execute("SELECT id FROM ref_job WHERE source = ? AND kind = ? AND work_id IS ? AND params_json = ? AND day = ?"
+                        + (" AND state != 'failed'" if again_after_failure else "") + " ORDER BY id DESC",
+                        (source, kind, work_id, pj, day)).fetchone()
+        if row:
+            return row[0]
+        return c.execute("INSERT INTO ref_job (source, kind, work_id, params_json, auto, day, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                         (source, kind, work_id, pj, int(auto), day, clock.now_iso())).lastrowid
+
+
+def get(store, jid: int) -> dict:
+    return dict(store.conn.execute("SELECT * FROM ref_job WHERE id = ?", (jid,)).fetchone())
+
+
+def params(job: dict) -> dict:
+    return json.loads(job["params_json"])
+
+
+def _auto_refusal(store, job: dict, src: dict, today: str) -> str | None:
+    """调度排的任务(auto = 1)到跑的时候再核一遍(spec 3.2:改了马上生效、不补跑)。人点的不核。"""
+    if job["day"] != today:
+        return f"自动任务不补跑(排于 {job['day']} 日)"
+    if job["kind"] == "content":
+        if src["mode"] != "A":
+            return "来源已不是 A 模式"
+        used = store.conn.execute("SELECT COUNT(*) FROM ref_job WHERE source = ? AND kind = 'content' AND auto = 1 AND day = ?"
+                                  " AND state IN ('running', 'done')", (job["source"], today)).fetchone()[0]
+        if src["cap_fetch"] is None or used >= src["cap_fetch"]:
+            return f"今日自动抓取已满 {used}/{src['cap_fetch'] if src['cap_fetch'] is not None else '未填'}"
+    elif src["mode"] == "C":
+        return "来源已切到 C 全手动"
+    return None
+
+
+def next_waiting(store, today: str) -> dict | None:
+    """下一条能跑的。来源被挡住的留着等;调度排的任务前提已不成立就标失败(原因写进 error)再接着找。"""
+    for row in store.conn.execute("SELECT * FROM ref_job WHERE state = 'waiting' ORDER BY id").fetchall():
+        job = dict(row)
+        src = settings.get(store, job["source"])
+        if settings.blocked_reason(src, today) is not None:
+            continue
+        why = _auto_refusal(store, job, src, today) if job["auto"] else None
+        if why:
+            finish(store, job["id"], error=why)
+            continue
+        return job
+    return None
+
+
+def start(store, jid: int) -> None:
+    with store.write() as c:
+        c.execute("UPDATE ref_job SET state = 'running', started_at = ? WHERE id = ?", (clock.now_iso(), jid))
+
+
+def finish(store, jid: int, *, error: str = "") -> None:
+    with store.write() as c:
+        c.execute("UPDATE ref_job SET state = ?, error = ?, finished_at = ? WHERE id = ?",
+                  ("failed" if error else "done", error, clock.now_iso(), jid))
+
+
+def retry(store, jid: int, error: str) -> None:
+    with store.write() as c:
+        c.execute("UPDATE ref_job SET state = 'waiting', attempts = attempts + 1, error = ? WHERE id = ?", (error, jid))
+
+
+def fail_stale(store) -> int:
+    """控制台重启:上次停在 running 的标失败(不重跑,人可以手动再点)。"""
+    with store.write() as c:
+        return c.execute("UPDATE ref_job SET state = 'failed', error = '控制台重启时没跑完', finished_at = ? WHERE state = 'running'",
+                         (clock.now_iso(),)).rowcount
+
+
+def auto_content_today(store, source: str, day: str) -> int:
+    """今天自动抓取的用量:排着的 + 跑过的(含跑了失败的);没开跑就被标失败的(上限调低、切模式)不算。"""
+    return store.conn.execute("SELECT COUNT(*) FROM ref_job WHERE source = ? AND kind = 'content' AND auto = 1 AND day = ?"
+                              " AND (state != 'failed' OR started_at != '')", (source, day)).fetchone()[0]
+
+
+def recent(store, *, source: str | None = None, work_id: int | None = None, limit: int = 30) -> list[dict]:
+    q, a = "SELECT * FROM ref_job WHERE 1 = 1", []
+    if source:
+        q += " AND source = ?"; a.append(source)
+    if work_id is not None:
+        q += " AND work_id = ?"; a.append(work_id)
+    return [dict(r) for r in store.conn.execute(q + " ORDER BY id DESC LIMIT ?", (*a, limit))]

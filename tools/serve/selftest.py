@@ -73,6 +73,9 @@ KEY_SELECTOR = {
     "workflows": "[data-preset-category]",
     "hosts": "[data-host-status]",
     "trace": "[data-trace-filters]",
+    "refs_sources": "[data-ref-source]",
+    "refs_ranks": "[data-ref-rank-row]",
+    "refs_work": "[data-ref-content]",
 }
 
 
@@ -150,6 +153,59 @@ def seed_demo(store: Store, data_root: Path) -> dict:
              local_port=8188, vram_gb=24.0, models_dir="/fake/models", gpu="RTX 4090")
     return {"drama": d, "episode": ep, "segment": seg, "segment2": seg2, "photo": photo, "lin": lin,
             "episode2": ep2, "episode3": ep3, "segment3": seg3, "segment4": seg4, "zhou": zhou, "yard": yard}
+
+
+# 参考库自测:真解析器 + 假网络。URL 与各适配器拼的地址一致,页面是 tests/refs/fixtures/ 里的脱敏快照
+REFS_FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "refs" / "fixtures"
+FAKE_PAGES = {
+    "https://hongguoduanju.com/rank/hot-real-drama": "hongguo_rank.html",
+    "https://hongguoduanju.com/detail?series_id=7561390625552092222": "hongguo_detail.html",
+    "https://www.jjwxc.net/topten.php?orderstr=7": "jjwxc_rank.html",
+    "https://www.jjwxc.net/onebook.php?novelid=6771725": "jjwxc_book.html",
+    "https://www.jjwxc.net/onebook.php?novelid=6771725&chapterid=1": "jjwxc_chapter.html",
+}
+REFS_BOOK = "6771725"
+
+
+def _fake_opener(url: str, headers: dict, timeout: float):
+    """假网络:robots 一律放行;快照里有的页返回快照(晋江按 gb18030 编码,让解码路径和真网一样),其他 404。
+    最终地址就是请求地址(net.Fetcher 会判跳转到别的主机 / 登录页)。"""
+    if url.endswith("/robots.txt"):
+        return 200, b"User-agent: *\nAllow: /\n", url
+    name = FAKE_PAGES.get(url)
+    if name is None:
+        return 404, b"", url
+    text = (REFS_FIXTURES / name).read_text(encoding="utf-8")
+    return 200, text.encode("gb18030" if "jjwxc" in url else "utf-8"), url
+
+
+def seed_refs(work: Path):
+    """参考库演示数据:红果真人剧榜、晋江总分榜 + 一部作品的详情与第 1 章,都由真解析器从快照解析;
+    再补一条前一天的热度(曲线两点)、手工熔断 k17(来源设置页看得到熔断)。"""
+    from tools.refs import clock, heat, jobs, runner, settings, works
+    from tools.refs.db import RefStore
+    from tools.refs.net import Fetcher
+    root = work / "refs"
+    root.mkdir(parents=True, exist_ok=True)
+    refs = RefStore(root / "refs.db")
+    settings.ensure(refs)
+    for key, form in (("jjwxc", {"retention_days": "30", "chapters_n": "1"}), ("hongguo", {"retention_days": "30"}),
+                      ("manual", {"retention_days": "30"})):
+        settings.update(refs, root, key, form)
+    today = clock.today()
+    fetcher = lambda src, wid: Fetcher(root, src, opener=_fake_opener, sleep=lambda s: None, work_id=wid)  # noqa: E731
+    jobs.enqueue(refs, "hongguo", "ranks", day=today, params={"board": "hot-real-drama"})
+    jobs.enqueue(refs, "jjwxc", "ranks", day=today, params={"board": "topten7"})
+    book = works.upsert(refs, "jjwxc", REFS_BOOK)
+    jobs.enqueue(refs, "jjwxc", "meta", work_id=book, day=today)
+    jobs.enqueue(refs, "jjwxc", "content", work_id=book, day=today)
+    while (j := runner.run_one(refs, root, fetcher=fetcher, today=today)) is not None:
+        if j["state"] != "done":
+            raise RuntimeError(f"参考库演示数据没灌进去:任务 {j['id']}({j['source']} {j['kind']}){j['error']}")
+    yesterday = clock.add_days(f"{today}T12:00:00+08:00", -1)[:10]
+    heat.record(refs, book, "detail", yesterday, None, 1.0e9, {"note": "自测造的前一天热度"})
+    settings.trip(refs, root, "k17", "自测:演示熔断(假装被风控挡住)", today)
+    return refs, {"refs_book": book}
 
 
 def _free_port() -> int:
@@ -404,7 +460,12 @@ def run(out_dir: Path) -> dict:
     prosody.template_problems = lambda x, sr: []      # 自测导入的念法模板是静音 wav;韵律门槛由单测覆盖(tests/cut/test_prosody.py)
     tpl_wav = _silent_wav(work / "selftest_template.wav")
     backend.align_for(None).heard = "这块玉佩是我母亲留给我的我会一直带着它"     # 两段的台词
-    runtime = Runtime(store, work, backend, poll_sec=1)
+    refs, ref_ids = seed_refs(work)
+    runtime = Runtime(store, work, backend, poll_sec=1, refs=refs, refs_root=work / "refs", refs_poll_sec=3600)
+    # 自测期间参考库后台线程不许自己联网(monitor.plan 会按设置排真抓取、runner 会走真 Fetcher):
+    # 一轮只做到期清理,演示数据已由 seed_refs 用快照灌好
+    from tools.refs import retention
+    runtime.refs_tick = lambda: retention.purge(refs, work / "refs")
     runtime.start()
     server, base = _serve(runtime)
     report = {"base": base, "work_dir": str(work), "headed": True, "panels": [], "flows": []}
@@ -423,6 +484,10 @@ def run(out_dir: Path) -> dict:
             for i, p in enumerate(REGISTRY, 1):
                 errors.clear()
                 url = base + url_for(p, ids["drama"], ids["episode"])
+                if p.key == "refs_ranks":                   # 红果默认榜是热播榜,快照灌的是真人剧榜
+                    url += "&source=hongguo&board=hot-real-drama"
+                elif p.key == "refs_work":                  # 有详情、有正文、有两天热度的那部
+                    url += f"&id={ref_ids['refs_book']}"
                 page.goto(url)
                 key = page.locator(KEY_SELECTOR[p.key])
                 rendered = key.count() > 0 and key.first.is_visible()
@@ -666,6 +731,7 @@ def run(out_dir: Path) -> dict:
         server.should_exit = True
         runtime.stop()
         store.close()
+        refs.close()
     report["ok"] = all(x["ok"] for x in report["panels"] + report["flows"])
     (out_dir / "selftest.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return report

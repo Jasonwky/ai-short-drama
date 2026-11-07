@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>参考 · 来源设置</h1>
+<p class="hint">抓取由后台 refs-fetch 线程一次跑一条;这里只改设置、排任务。改了马上生效,每个改动都留痕。★ 项没有默认值,不填对应的抓取不开。</p>
+{% if refs_errors %}
+  <section class="card refused" data-ref-errors>
+    <h2>参考库后台最近的错误({{ refs_errors|length }} 条,最多留 5 条)</h2>
+    <ul>{% for e in refs_errors %}<li class="reason">{{ e }}</li>{% endfor %}</ul>
+    <form method="post" action="/refs/errors/clear"><button class="btn" type="submit">看过了,清掉</button></form>
+  </section>
+{% endif %}
+{% if todo %}
+  <section class="card refused" data-ref-todo>
+    <h2>待办 {{ todo|length }} 项</h2>
+    <ul>{% for t in todo %}<li>{{ t }}</li>{% endfor %}</ul>
+  </section>
+{% endif %}
+{% for x in rows %}
+  <section class="card" data-ref-source="{{ x.s.key }}">
+    <h2>{{ x.label }} · 模式 {{ x.s.mode }}</h2>
+    {% if x.blocked %}
+      <p class="status-bad" data-ref-blocked>{{ x.blocked }}</p>
+      <form method="post" action="/refs/source/{{ x.s.key }}/reset"><button class="btn" type="submit">解除</button></form>
+    {% endif %}
+    {% for p in x.fetch_problems %}<p class="status-bad">{{ p }}</p>{% endfor %}
+    <form method="post" action="/refs/source/{{ x.s.key }}">
+      <div class="row">
+        <div><label>模式(A 全自动 / B 半自动出候选 / C 全手动)</label>
+          <select name="mode">
+            {% for m in (["C"] if x.s.key == "manual" else ["A", "B", "C"]) %}
+              <option value="{{ m }}"{% if m == x.s.mode %} selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select></div>
+        {% for f, spec in fields.items() %}
+          <div><label>{{ spec[0] }}({{ f }}){% if x.s[f] is none %} <b class="status-bad">★ 必填</b>{% endif %}</label>
+            <input type="number" name="{{ f }}" min="{{ spec[1] }}" value="{{ '' if x.s[f] is none else x.s[f] }}"></div>
+        {% endfor %}
+      </div>
+      <button class="btn primary" type="submit">保存</button>
+    </form>
+    {% if x.s.mode != "A" and x.auto_problems %}<p class="hint">要切 A 全自动还差:{{ x.auto_problems|join(";") }}</p>{% endif %}
+    <p class="hint" data-ref-usage>今日自动抓取 {{ x.used }}/{{ x.s.cap_fetch if x.s.cap_fetch is not none else '未填' }}
+      {% if x.s.cap_fetch is not none and x.used >= x.s.cap_fetch %} <b class="status-bad">今日已满</b>{% endif %}
+      · 最近一次拉榜单 {{ x.s.last_ranks_day or '还没拉过' }}</p>
+    <p class="hint">robots 最近一次:{% if x.robots %}{{ x.robots.at }} · {{ x.robots.get('url', '') }} · HTTP {{ x.robots.get('status') }}{% else %}还没读过{% endif %}</p>
+    {% if x.boards %}
+      <form method="post" action="/refs/source/{{ x.s.key }}/ranks">
+        <button class="btn" type="submit" data-ref-pull-ranks>现在拉榜单</button>
+        <span class="hint">({{ x.boards.values()|join("、") }};不受模式限制)</span>
+      </form>
+    {% endif %}
+    <details>
+      <summary>最近抓取记录({{ x.log|length }} 条)</summary>
+      <table>
+        <tr><th>时间</th><th>事件</th><th>URL</th><th>状态码</th><th>错误 / 结果</th></tr>
+        {% for e in x.log %}
+          <tr><td>{{ e.at }}</td><td>{{ e.event }}</td><td>{{ e.get('url', '') }}</td><td>{{ e.get('status', '') }}</td>
+            <td>{{ e.get('error') or e.get('done') or e.get('reason') or '' }}</td></tr>
+        {% else %}
+          <tr><td colspan="5" class="empty">还没有记录</td></tr>
+        {% endfor %}
+      </table>
+    </details>
+  </section>
+{% endfor %}
+{% endblock %}

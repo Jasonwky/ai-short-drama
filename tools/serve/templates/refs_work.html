@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>参考 · 作品详情</h1>
+{% if w is none %}
+  <section class="card empty">还没有作品 —— 在「参考 · 榜单」按链接加一部,或等榜单拉下来</section>
+{% else %}
+  <section class="card" data-ref-work="{{ w.id }}">
+    <h2>{{ w.title or w.external_id }}</h2>
+    <p class="hint">{{ label }} · 编号 {{ w.external_id }} · 作者 {{ w.author or '未知' }}
+      {% if w.url %} · <a href="{{ w.url }}" target="_blank" rel="noreferrer">原页</a>{% endif %}
+      · 首次见到 {{ w.first_seen[:10] }}
+      {% if w.followed %} · 已关注{% endif %}{% if w.blocked %} · <b class="status-bad">已拉黑</b>{% endif %}</p>
+    {% if tags %}<p class="hint">标签:{{ tags|join("、") }}</p>{% endif %}
+    {% if w.intro %}<p>{{ w.intro }}</p>{% endif %}
+    <div class="row">
+      {% if w.followed %}
+        <form method="post" action="/refs/work/{{ w.id }}/unfollow"><button class="btn" type="submit">取消关注</button></form>
+      {% else %}
+        <form method="post" action="/refs/work/{{ w.id }}/follow"><button class="btn" type="submit">关注</button></form>
+      {% endif %}
+      {% if not w.blocked %}
+        <form method="post" action="/refs/work/{{ w.id }}/block"><button class="btn" type="submit">拉黑(立刻清掉已存原文)</button></form>
+        {% if fetch_refusal %}<span class="hint">{{ fetch_refusal }}</span>
+        {% else %}<form method="post" action="/refs/work/{{ w.id }}/fetch"><button class="btn primary" type="submit">抓正文</button></form>{% endif %}
+      {% endif %}
+    </div>
+  </section>
+  <section class="card">
+    <h2>热度曲线</h2>
+    {% for c in curves %}
+      <div data-ref-curve="{{ c.board }}">
+        <p class="hint">{{ c.board }} · {{ c.points[0].day }} ~ {{ c.points[-1].day }}</p>
+        <svg viewBox="0 0 320 60" width="320" height="60" style="overflow: visible">
+          {% for seg in c.segs %}
+            {% if seg|length == 1 %}<circle cx="{{ seg[0][0] }}" cy="{{ seg[0][1] }}" r="2" fill="currentColor"/>
+            {% else %}<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="{% for p in seg %}{{ p[0] }},{{ p[1] }} {% endfor %}"/>{% endif %}
+          {% endfor %}
+        </svg>
+        {% if c.gaps %}<p class="hint">缺 {{ c.gaps }} 天(控制台没开)</p>{% endif %}
+      </div>
+    {% else %}
+      <p class="empty">还没有热度记录</p>
+    {% endfor %}
+  </section>
+  <section class="card">
+    <h2>内容({{ contents|length }} 条)</h2>
+    {% if contents %}
+      <table>
+        <tr><th>种类</th><th>单元</th><th>标题</th><th>判定</th><th>来源说明</th><th>到期</th><th>已清理</th></tr>
+        {% for x in contents %}
+          <tr data-ref-content>
+            <td>{{ x.kind }}</td><td>{{ x.unit if x.unit is not none else '' }}</td><td>{{ x.title }}</td>
+            <td>{% if x.verdict == 'ok' %}收{% else %}<b class="status-bad">不收:{{ x.reason }}</b>{% endif %}</td>
+            <td>{{ x.origin }}</td>
+            <td>{{ x.due_at[:10] }}(还没拆解,顺延到 {{ x.hard_due_at[:10] }})</td>
+            <td>{{ x.purged_at[:10] if x.purged_at else '' }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="empty">还没有内容</p>
+    {% endif %}
+  </section>
+  <section class="card" data-ref-manual>
+    <h2>人工投递(文本)</h2>
+    <form method="post" action="/refs/work/{{ w.id }}/manual">
+      <label>标题</label><input type="text" name="title" required>
+      <label>文本</label><textarea name="text" rows="8" required></textarea>
+      <label>来源说明(★ 必填:这段文字是怎么来的,例如「自己看完第 1–5 集整理」)</label><input type="text" name="origin" required>
+      <button class="btn primary" type="submit">投递</button>
+    </form>
+  </section>
+{% endif %}
+<section class="card">
+  <h2>任务记录</h2>
+  {% if jobs %}
+    <table>
+      <tr><th>编号</th><th>种类</th><th>日期</th><th>状态</th><th>尝试</th><th>错误</th></tr>
+      {% for j in jobs %}
+        <tr><td>{{ j.id }}</td><td>{{ j.kind }}{% if j.auto %}(自动){% endif %}</td><td>{{ j.day }}</td><td>{{ j.state }}</td>
+          <td>{{ j.attempts }}</td><td>{{ j.error }}</td></tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="empty">还没有任务</p>
+  {% endif %}
+</section>
+<section class="card">
+  <h2>抓取记录</h2>
+  <table>
+    <tr><th>时间</th><th>事件</th><th>URL</th><th>状态码</th><th>错误 / 结果</th></tr>
+    {% for e in log %}
+      <tr><td>{{ e.at }}</td><td>{{ e.event }}</td><td>{{ e.get('url', '') }}</td><td>{{ e.get('status', '') }}</td>
+        <td>{{ e.get('error') or e.get('done') or '' }}</td></tr>
+    {% else %}
+      <tr><td colspan="5" class="empty">还没有记录</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

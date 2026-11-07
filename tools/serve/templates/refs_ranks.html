@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>参考 · 榜单与趋势</h1>
+<section class="card">
+  <form method="get" action="/refs/ranks" class="row">
+    <div><label>来源</label><select name="source">
+      {% for k, a in adapters.items() %}<option value="{{ k }}"{% if k == source %} selected{% endif %}>{{ labels[k] }}</option>{% endfor %}
+    </select></div>
+    <div><label>榜单</label><select name="board">
+      {% if source in adapters %}{% for b, name in adapters[source].boards.items() %}
+        <option value="{{ b }}"{% if b == board %} selected{% endif %}>{{ name }}</option>{% endfor %}{% endif %}
+    </select></div>
+    <div><button class="btn" type="submit">看榜单</button></div>
+  </form>
+  <form method="get" action="/refs/ranks" class="row">
+    <div style="flex: 1"><label>检索(标题 / 作者 / 简介 / 标签)</label><input type="text" name="q" value="{{ q }}"></div>
+    <div><button class="btn" type="submit">检索</button></div>
+  </form>
+  <form method="post" action="/refs/add" class="row" data-ref-add>
+    <div style="flex: 1"><label>按链接加作品(红果、晋江、17K、纵横、七猫、番茄的作品页;加了自动关注并排一条取元数据)</label>
+      <input type="text" name="url" required></div>
+    <div><button class="btn primary" type="submit">加进参考库</button></div>
+  </form>
+</section>
+<section class="card">
+  {% if q.strip() %}
+    <p class="hint">只覆盖已见过的作品(已收进参考库的),不是全网搜索</p>
+    <h2>检索「{{ q }}」:{{ rows|length }} 部</h2>
+  {% else %}
+    <h2>{{ labels[source] if source in labels else source }} · {{ adapters[source].boards[board] if source in adapters and board in adapters[source].boards else board }} · 今天</h2>
+  {% endif %}
+  {% if rows %}
+    <table>
+      <tr><th>名次</th><th>标题</th><th>热度</th><th>涨得快</th><th>候选理由</th><th>操作</th></tr>
+      {% for x in rows %}
+        <tr data-ref-rank-row>
+          <td>{{ x.rank if x.rank is not none else '—' }}</td>
+          <td><a href="/refs/work?id={{ x.w.id }}">{{ x.w.title or x.w.external_id }}</a>
+            {% if x.w.followed %} <span class="hint">已关注</span>{% endif %}{% if x.w.blocked %} <b class="status-bad">已拉黑</b>{% endif %}</td>
+          <td>{{ x.heat if x.heat is not none else '—' }}</td>
+          <td>{{ x.rising or '' }}</td>
+          <td>{{ x.w.candidate_reason if x.w.candidate_day == today else '' }}</td>
+          <td>
+            {% if x.w.followed %}
+              <form method="post" action="/refs/work/{{ x.w.id }}/unfollow" style="display:inline"><button class="btn" type="submit">取消关注</button></form>
+            {% else %}
+              <form method="post" action="/refs/work/{{ x.w.id }}/follow" style="display:inline"><button class="btn" type="submit">关注</button></form>
+            {% endif %}
+            {% if not x.w.blocked %}
+              <form method="post" action="/refs/work/{{ x.w.id }}/block" style="display:inline"><button class="btn" type="submit">拉黑</button></form>
+            {% endif %}
+            {% if mode == "B" and not q.strip() %}
+              <form method="post" action="/refs/work/{{ x.w.id }}/fetch" style="display:inline"><button class="btn primary" type="submit">抓这部</button></form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% elif q.strip() %}
+    <p class="empty">没找到</p>
+  {% else %}
+    <p class="empty">今天的榜单还没拉(模式 {{ mode }})—— 去「参考 · 来源」点「现在拉榜单」</p>
+  {% endif %}
+</section>
+{% endblock %}
