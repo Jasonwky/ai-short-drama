@@ -70,7 +70,11 @@
       "luma_mean": 107.2,
       "luma_sd": 59.2,
       "keyframes": 20,
-      "transcript": "排队中(共用云机忙)"
+      "transcript": {
+        "verdict": "ok",
+        "chars": 331,
+        "note": "控制台重启后云机空闲时补转"
+      }
     },
     {
       "episode": 5,
@@ -82,7 +86,11 @@
       "luma_mean": 106.6,
       "luma_sd": 62.6,
       "keyframes": 17,
-      "transcript": "排队中(共用云机忙)"
+      "transcript": {
+        "verdict": "ok",
+        "chars": 304,
+        "note": "控制台重启后云机空闲时补转"
+      }
     }
   ],
   "jobs": [
@@ -192,7 +200,7 @@
       "error": ""
     }
   ],
-  "verdict": "录屏 5/5 收;转写 3/5 完成、2/5 排队(共用云机 ComfyUI 队列忙,按规则等待)",
+  "verdict": "录屏 5/5 收;转写 5/5 收(第 4、5 集在共用云机空出来后补转)",
   "real_machine_bugs_fixed": [
     "登录判定:浮层 ~24 秒才弹 → 改看 sessionid cookie,并直接点「登录」叫出二维码",
     "停掉录当前标签页的轨道 Chrome 会关掉浏览器 → 不停轨道",
