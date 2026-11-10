@@ -1,0 +1,37 @@
+{# 创作视图(spec 2.4):v = creation.view 的结果;hits = 重叠闸门命中;err = 换名残留;problems = 还没表态的;
+   adopted = 采纳的序号("0,2");sha = 已批准卡的 creation_sha(预览时为空)。预览与已批准的卡共用。 #}
+<div data-creation-view data-adopted="{{ adopted }}">
+  {% for p in problems %}<p class="hint" data-decision-problem>批准前还差:{{ p }}</p>{% endfor %}
+  {% if frags %}
+    <div class="{{ 'hint' if ack else 'status-bad' }}" data-fragments>
+      <p>原文高频片段(代码按出现次数猜的,可能是地名 / 门派 / 道具名,也可能只是常用词):<b>{{ frags | join("、") }}</b></p>
+      <p>{% if ack %}已勾「看过了,不是专名」。{% else %}是专名就驳回 / 去掉提到它的那条;不是专名就勾表态区的「看过了」。{% endif %}</p>
+    </div>
+  {% endif %}
+  {% if err %}
+    <p class="status-bad" data-gate-name>{{ err }}</p>
+  {% elif v %}
+    {% if sha %}
+      <p class="status-ok">重叠闸门:批准时已通过 · sha256 <code data-creation-sha>{{ sha }}</code>(格式 {{ v.format }})</p>
+    {% elif hits %}
+      <div class="status-bad" data-gate-hit>
+        <p>重叠闸门:不通过 —— 下面这些片段与库中原文连续 12 字以上相同,批准会被拒(驳回含它的假设或改掉补充):</p>
+        <ul>{% for h in hits %}<li>「{{ h.text }}」({{ h.field }},原文 #{{ h.content_id }})</li>{% endfor %}</ul>
+      </div>
+    {% else %}
+      <p class="status-ok" data-gate-ok>重叠闸门:通过(没有与库中原文连续 12 字以上相同的片段)</p>
+    {% endif %}
+    <table>
+      <tr><th>类型</th><td>{{ v.genre }}(对应立项题材:{{ v.genre_premise }})· 爽点 {{ v.payoff }} · 冲突 {{ v.conflict }} · 开场钩子 {{ v.hook_type }}</td></tr>
+      <tr><th>人设</th><td>主角:{{ v.persona.protagonist.label }}({{ v.persona.protagonist.contrast }})<br>
+        对手:{{ v.persona.antagonist.label }}({{ v.persona.antagonist.contrast }})</td></tr>
+      <tr><th>角色类型</th><td>{{ v.cast_types | join("、") or "—" }}</td></tr>
+      <tr><th>为什么爆(采纳的)</th><td>{% for h in v.hypotheses %}<p>[{{ h.evidence }}] {{ h.claim }}{% if h.label %} <span class="hint">{{ h.label }}</span>{% endif %}</p>
+        {% else %}<span class="hint">一条都没采纳</span>{% endfor %}</td></tr>
+      <tr><th>可借鉴的手法</th><td>{% for t in v.techniques %}<p>{{ t }}</p>{% endfor %}</td></tr>
+      <tr><th>不可借鉴</th><td>{% for t in v.not_borrowable %}<p>{{ t }}</p>{% endfor %}</td></tr>
+      <tr><th>冷门对照</th><td>{{ v.contrast.note }}</td></tr>
+      <tr><th>依据范围</th><td>{{ v.coverage }}</td></tr>
+    </table>
+  {% endif %}
+</div>

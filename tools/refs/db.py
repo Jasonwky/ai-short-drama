@@ -5,13 +5,13 @@
 只换结构与迁移。不可改的规矩由触发器强制:设置改动记录、热度、指纹只许追加;任务参数不可改;内容行不许删(清理只置 purged_at)。
 v2(1b):录屏 / 转写任务、录屏 / 转写 / 关键帧内容;改 CHECK 只能重建表,见 REFS_MIGRATIONS[1]。
 v3(1b):ref_source.retention_forever(原文永久保留、人手动删),见 REFS_MIGRATIONS[2]。
-1c 加 ref_unit / ref_card 时走 REFS_MIGRATIONS[3]。
+v4(1c):参考库自己的 llm_run(与剧库同一份 DDL,只换目标类型)、单元标注 ref_unit、拆解卡 ref_card、breakdown 任务,见 REFS_MIGRATIONS[3]。
 """
 from __future__ import annotations
 
-from tools.drama.db import Store
+from tools.drama.db import APPLIED_DDL, DECISION_DDL, LLM_RUN_DDL, Store, _LLM_TARGETS_V3
 
-REFS_VERSION = 3
+REFS_VERSION = 4
 
 _BASE_SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -86,7 +86,7 @@ BEGIN SELECT RAISE(ABORT, '热度写入后不删'); END;
 JOB_TABLE = """CREATE TABLE ref_job (
   id INTEGER PRIMARY KEY,
   source TEXT NOT NULL REFERENCES ref_source(key),
-  kind TEXT NOT NULL CHECK (kind IN ('ranks', 'meta', 'content', 'sitemap', 'record', 'transcribe')),
+  kind TEXT NOT NULL CHECK (kind IN ('ranks', 'meta', 'content', 'sitemap', 'record', 'transcribe', 'breakdown')),
   work_id INTEGER REFERENCES ref_work(id),
   params_json TEXT NOT NULL DEFAULT '{}',
   auto INTEGER NOT NULL DEFAULT 0,
@@ -140,8 +140,64 @@ BEGIN SELECT RAISE(ABORT, '指纹永久保留、不可改'); END""",
 BEGIN SELECT RAISE(ABORT, '指纹永久保留、不可删'); END""",
 ]
 
+# v4:LLM 运行记录放在参考库里(和剧库隔离)。照抄剧库**当前**的 llm_run —— 建表 + 3 个触发器(剧库 v3)、
+# decision_json 与锁定触发器(剧库 v15)、applied_json 与锁定触发器(剧库 v18),只把目标类型换成参考库的内容 / 作品。
+# 直接拿剧库的常量拼,两边不会漂;test_db 逐列、逐触发器与剧库新建库比对。
+_REFS_LLM_TARGETS = "('ref_content', 'ref_work')"
+REFS_LLM_RUN_DDL = [LLM_RUN_DDL[0].replace(_LLM_TARGETS_V3, _REFS_LLM_TARGETS), *LLM_RUN_DDL[1:], *DECISION_DDL, *APPLIED_DDL]
+assert _REFS_LLM_TARGETS in REFS_LLM_RUN_DDL[0]
+
+# 单元标注:批准拆解卡时连带写入。只许追加 —— 同一内容重拆 = 新行,读取取同一 content_id 的最新一行。
+# run_id 是参考库 llm_run.id,不设外键(同剧库 llm_queue 的理由:llm_run 以后可能重建)。quote_at:视频是秒,小说为空。
+UNIT_DDL = [
+    """CREATE TABLE ref_unit (
+  id INTEGER PRIMARY KEY,
+  work_id INTEGER NOT NULL REFERENCES ref_work(id),
+  content_id INTEGER NOT NULL REFERENCES ref_content(id),
+  unit INTEGER,
+  run_id INTEGER NOT NULL,
+  fields_json TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  quote TEXT NOT NULL,
+  quote_at TEXT NOT NULL DEFAULT '',
+  names_json TEXT NOT NULL DEFAULT '[]',
+  visual_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+)""",
+    """CREATE TRIGGER ref_unit_no_update BEFORE UPDATE ON ref_unit
+BEGIN SELECT RAISE(ABORT, '单元标注写下不可改 —— 重拆就追加一行'); END""",
+    """CREATE TRIGGER ref_unit_no_delete BEFORE DELETE ON ref_unit
+BEGIN SELECT RAISE(ABORT, '单元标注写下不可删'); END""",
+]
+
+# 拆解卡:只在批准时写入(待审的就是 llm_run 的 proposed)。除了 approved → superseded(被新版取代)什么都不许改,不许删。
+CARD_DDL = [
+    """CREATE TABLE ref_card (
+  id INTEGER PRIMARY KEY,
+  work_id INTEGER NOT NULL REFERENCES ref_work(id),
+  run_id INTEGER NOT NULL,
+  version INTEGER NOT NULL CHECK (version >= 1),
+  review_json TEXT NOT NULL,
+  creation_json TEXT NOT NULL,
+  creation_sha TEXT NOT NULL,
+  coverage TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('approved', 'superseded')),
+  decision_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (work_id, version)
+)""",
+    """CREATE TRIGGER ref_card_frozen
+BEFORE UPDATE OF id, work_id, run_id, version, review_json, creation_json, creation_sha, coverage, decision_json, created_at ON ref_card
+BEGIN SELECT RAISE(ABORT, '拆解卡批准即锁定 —— 要改就重拆、批准新版'); END""",
+    """CREATE TRIGGER ref_card_state_only_superseded BEFORE UPDATE OF state ON ref_card
+WHEN NOT (OLD.state = 'approved' AND NEW.state = 'superseded')
+BEGIN SELECT RAISE(ABORT, '拆解卡的状态只许从「已批准」变成「已取代」'); END""",
+    """CREATE TRIGGER ref_card_no_delete BEFORE DELETE ON ref_card
+BEGIN SELECT RAISE(ABORT, '拆解卡写下不可删'); END""",
+]
+
 _REBUILT = [JOB_TABLE, *JOB_TRIGGERS, CONTENT_TABLE, *CONTENT_TRIGGERS, FINGERPRINT_TABLE, *FINGERPRINT_INDEX_AND_TRIGGERS]
-REFS_SCHEMA = _BASE_SCHEMA + "".join(stmt + ";\n" for stmt in _REBUILT)
+REFS_SCHEMA = _BASE_SCHEMA + "".join(stmt + ";\n" for stmt in [*_REBUILT, *REFS_LLM_RUN_DDL, *UNIT_DDL, *CARD_DDL])
 
 # v1 -> v2:SQLite 改不了 CHECK,只能重建。顺序是关键 ——
 # 现代 SQLite(legacy_alter_table 关)改名时会把别的表里指向它的外键一起改到新名字上:
@@ -161,6 +217,17 @@ REFS_MIGRATIONS: dict[int, list[str]] = {1: [
     *JOB_TRIGGERS, *CONTENT_TRIGGERS, *FINGERPRINT_INDEX_AND_TRIGGERS,
 ],
     2: ["ALTER TABLE ref_source ADD COLUMN retention_forever INTEGER NOT NULL DEFAULT 0"],
+    # v4:ref_job.kind 加 breakdown —— 同 v2 重建(ref_job 没有别的表引用,单独改名即可);再建 llm_run / ref_unit / ref_card。
+    # (v1 -> v2 用的也是这份 JOB_TABLE,老库在 v2 那步就已放宽,这一步对它是原样搬一遍。)
+    3: [
+        "ALTER TABLE ref_job RENAME TO ref_job_v3",
+        JOB_TABLE,
+        "INSERT INTO ref_job (id, source, kind, work_id, params_json, auto, day, state, attempts, error, created_at, started_at,"
+        " finished_at, progress) SELECT id, source, kind, work_id, params_json, auto, day, state, attempts, error, created_at,"
+        " started_at, finished_at, progress FROM ref_job_v3",
+        "DROP TABLE ref_job_v3",
+        *JOB_TRIGGERS, *REFS_LLM_RUN_DDL, *UNIT_DDL, *CARD_DDL,
+    ],
 }
 
 

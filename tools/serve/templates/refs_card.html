@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% macro hyps(review, recs, stance=none) %}
+  {% for h in review.hypotheses %}
+    <div class="card" data-hyp="{{ loop.index0 }}">
+      <p><b>{{ loop.index }}. [{{ h.evidence }}] {{ h.claim }}</b></p>
+      {% if h.evidence == "剧情" %}
+        {% if h.check %}
+          {% set rec = recs.get(h.check.content_id) %}
+          <p class="status-ok">核对通过:第 {{ h.check.unit }} {{ "集" if h.check.at is not none else "章" }}原文「{{ h.check.restored }}」
+            {% if h.check.at is not none %}· 第 {{ "%g" | format(h.check.at) }} 秒
+              {% if rec %}<a href="/refs/record/view?id={{ rec }}&amp;t={{ '%g' | format(h.check.at) }}" data-hyp-link>看录屏那一秒</a>{% endif %}{% endif %}</p>
+        {% else %}<p class="status-bad">引用「{{ h.quote }}」在第 {{ h.units | join("、") }} 单元原文里对不上</p>{% endif %}
+      {% elif h.evidence == "剧评" %}
+        {% if h.check %}<p>第 {{ h.check.review_id }} 条剧评:{{ h.check.text }}</p>
+        {% else %}<p class="status-bad">引用「{{ h.quote }}」在第 {{ h.review_ids | join("、") }} 条剧评里对不上</p>{% endif %}
+        <p class="hint">{{ h.label }}</p>
+      {% else %}
+        {% if h.period and h.period["from"] %}<p class="hint">引的区间:{{ h.period["from"] }} – {{ h.period["to"] }}</p>{% endif %}
+        <p class="{{ 'status-bad' if h.label.startswith('与数据不符') else 'hint' }}" data-heat-check>{% if h.label.startswith('请人核对') %}<b>{{ h.label }}</b>{% else %}{{ h.label }}{% endif %}</p>
+      {% endif %}
+      {% if stance is none %}
+        <label><input type="radio" name="hyp-{{ loop.index0 }}" value="adopt" form="card-form"> 采纳</label>
+        <label><input type="radio" name="hyp-{{ loop.index0 }}" value="reject" form="card-form"> 驳回</label>
+      {% elif stance.get(loop.index0) %}
+        <p data-stance="{{ stance.get(loop.index0) }}"><b>{{ "已采纳" if stance.get(loop.index0) == "adopt" else "已驳回" }}</b></p>
+      {% endif %}
+    </div>
+  {% endfor %}
+{% endmacro %}
+{% macro review_body(review, units, recs, heat_text, stance=none) %}
+  <section class="card">
+    <h2>类型与人设</h2>
+    <p>题材 <b>{{ review.genre }}</b> · 爽点 {{ review.payoff }} · 冲突 {{ review.conflict }} · 开场钩子 {{ review.hook_type }}</p>
+    <p>主角:{{ review.persona.protagonist.label }}({{ review.persona.protagonist.contrast }})
+      · 对手:{{ review.persona.antagonist.label }}({{ review.persona.antagonist.contrast }})</p>
+    <p>出场人名 → 角色类型:{% for c in review.cast_types %}{{ c.name }} → {{ c.type }}{% if not loop.last %}、{% endif %}{% else %}—{% endfor %}</p>
+    {% if review.failed_units %}<p class="status-bad" data-card-failed-units><b>注意:第 {{ review.failed_units | join("、") }} 单元拆解失败,未计入这张卡</b>
+      —— 这几集 / 章的剧情不在依据范围里;要补上就在上面点「重拆这一集」,再重出卡。</p>{% endif %}
+    <p class="hint">依据范围:{{ review.coverage }}</p>
+    <p class="hint">热度(代码算):{{ heat_text }}</p>
+    {% set st = review.pacing.pacing %}
+    <p class="hint">节奏(代码算):{{ review.pacing.units }} 个单元 · 反转 {{ review.pacing.reversals }} 次 · 反转间隔 {{ st.reversal_gaps }}
+      · 开头到首个反转 {{ st.leading_gap }} · 最长连续压 {{ st.longest_press }}</p>
+  </section>
+  <section class="card">
+    <h2>为什么爆({{ review.hypotheses | length }} 条假设)</h2>
+    {% if stance is none %}<p class="hint">每条都要选「采纳」或「驳回」才能批准;驳回的不进创作视图。剧情类可点到录屏那一秒核对。</p>{% endif %}
+    {{ hyps(review, recs, stance) }}
+  </section>
+  <section class="card">
+    <h2>可借鉴 / 不可借鉴</h2>
+    {% set dec = review.decision %}
+    {% if stance is none %}<p class="hint">某条写了这部作品的专名(作品名 / 地名 / 门派 / 道具)或照抄原文,就勾「去掉」—— 去掉的不进创作视图。</p>{% endif %}
+    {% for key, title, prefix, dropped in (("techniques", "可借鉴的手法", "rt", dec.reject_techniques or []),
+                                           ("not_borrowable", "不可借鉴", "rn", dec.reject_not_borrowable or [])) %}
+      <p>{{ title }}:</p><ul>{% for t in review[key] %}<li data-{{ prefix }}="{{ loop.index0 }}">{{ t }}
+        {% if stance is none %}<label class="hint"><input type="checkbox" name="{{ prefix }}-{{ loop.index0 }}" value="1" form="card-form"> 去掉</label>
+        {% elif loop.index0 in dropped %}<b data-dropped>(已去掉,不进创作视图)</b>{% endif %}</li>{% endfor %}</ul>
+    {% endfor %}
+  </section>
+  <section class="card" data-ref-contrast>
+    <h2>冷门对照</h2>
+    <p class="hint">{{ review.contrast.note }}</p>
+    {% if review.contrast.rows %}
+      <table>
+        <tr><th>特征</th><th>热门</th><th>冷门</th><th>区分度</th></tr>
+        {% for c in review.contrast.rows %}<tr><td>{{ c.feature }}</td><td>{{ c.hot }}</td><td>{{ c.cold }}</td><td>{{ c.distinct }}</td></tr>{% endfor %}
+      </table>
+    {% endif %}
+  </section>
+  <section class="card">
+    <h2>逐单元标注({{ units | length }} 个)</h2>
+    <table>
+      <tr><th>单元</th><th>钩子</th><th>反转</th><th>情绪</th><th>卡点</th><th>画面钩子</th><th>摘要</th><th>依据(逐字)</th><th>出场</th></tr>
+      {% for u in units %}
+        <tr data-unit-row="{{ u.unit }}">
+          <td>第 {{ u.unit }} {{ "集" if u.kind == "transcript" else "章" }}<br><span class="hint">运行 {{ u.run_id }}</span></td>
+          <td>{{ u.a.hook }}</td><td>{{ u.a.reversal }}</td><td>{{ u.a.emotion }}</td><td>{{ u.a.paywall }}</td>
+          <td>{% if "visual_hook" in u.a %}{{ u.a.visual_hook }} · 第 {{ "%g" | format(u.a.visual_sec) }} 秒
+            {% if u.kf %}<br><img src="/refs/file/{{ u.kf }}" alt="第 {{ u.a.visual_sec }} 秒" style="height: 72px">{% endif %}{% else %}—{% endif %}</td>
+          <td style="max-width: 280px">{{ u.a.summary }}</td>
+          <td>「{{ u.a.quote }}」{% if u.at is not none %}<br>第 {{ "%g" | format(u.at) }} 秒
+            {% if u.rec %}<a href="/refs/record/view?id={{ u.rec }}&amp;t={{ '%g' | format(u.at) }}">看录屏</a>{% endif %}{% endif %}
+            {% if u.purged %}<br><span class="hint">原文已清理</span>{% endif %}
+            {% if u.err %}<br><span class="status-bad" data-unit-error>{{ u.err }}</span>{% endif %}</td>
+          <td>{{ u.a.names | join("、") or "—" }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  </section>
+{% endmacro %}
+{% block content %}
+<h1>参考 · 拆解卡 · {{ w.title or w.external_id }}</h1>
+<p><a href="/refs/cards">← 回拆解卡面板</a> · <a href="/refs/work?id={{ w.id }}">作品详情</a></p>
+<section class="card">
+  <table><tr><th>单元进度</th><th>卡</th></tr>
+    <tr>{% set x = bd %}<td>{% if x.p.blocked %}{{ x.p.blocked }}{% else %}{% for s, n in x.counts %}<span class="tag">{{ s }} {{ n }}</span> {% endfor %}{% endif %}</td>
+      {% include "_refs_card_state.html" %}</tr></table>
+  <form method="post" action="/refs/work/{{ w.id }}/breakdown" style="display:inline"><button class="btn" type="submit" data-ref-breakdown>拆解这部</button></form>
+  {% for u in bd.p.units if u.state == "失败" %}
+    {% set word = "集" if u.kind == "transcript" else "章" %}
+    <p class="status-bad" data-unit-failed="{{ u.unit }}">第 {{ u.unit }} {{ word }}拆解失败(运行 {{ u.run_id }}):{{ u.error }}
+      {% if u.judge_failed %}—— 判卷没过,不进汇总、不自动重拆{% endif %}
+      <form method="post" action="/refs/unit/{{ u.content_id }}/rebreak" style="display:inline">
+        <button class="btn" type="submit" data-unit-rebreak="{{ u.unit }}">重拆这一{{ word }}</button></form></p>
+  {% endfor %}
+</section>
+
+{% if pending %}
+  {% set run = pending.run %}
+  <section class="card" data-card-pending="{{ run.id }}">
+    <h2>待审:整部汇总运行 {{ run.id }}</h2>
+    <p>模型 {{ run.model }} · 发起 {{ run.created_at }}
+      {% if run.llm_mode == "fake" %}<span class="tag fake">假 LLM(测试用)</span>{% endif %}</p>
+    {% if run.llm_mode == "fake" %}<p class="hint">假 LLM 的产物不许通过审批闸门 —— 点批准会被拒(只用于测试控制台本身)。</p>{% endif %}
+    {% if pending.stale %}<p class="status-bad" data-card-stale>生成之后输入已经变了(单元标注 / 剧评 / 热度有改动),批准会被拒 —— 点「拆解这部」重跑。</p>{% endif %}
+    {% if pending.error %}<p class="status-bad" data-card-error>{{ pending.error }}</p>{% endif %}
+  </section>
+  {% if pending.review %}
+    {{ review_body(pending.review, pending.units, pending.recs, pending.heat_text) }}
+    <section class="card">
+      <h2>表态与批准</h2>
+      <form method="post" action="/refs/card/{{ run.id }}/approve" id="card-form" data-card-form>
+        <input type="hidden" name="run" value="{{ run.id }}">
+        <label>补充「不可借鉴」(一行一条,每条不超过 60 字;可留空)</label>
+        <textarea name="extra_not_borrowable" rows="3" data-extra-not-borrowable></textarea>
+        <p><label><input type="checkbox" name="ack_fragments" value="1" form="card-form" data-ack-fragments>
+          看过了,创作视图预览里列出的「原文高频片段」都不是专名(只是常用词)</label></p>
+        <button class="btn primary" type="submit" data-card-approve>批准(连带批准 {{ pending.units | length }} 个单元标注)</button>
+      </form>
+      <form method="post" action="/refs/card/{{ run.id }}/reject" style="display:inline">
+        <button class="btn" type="submit" data-card-reject>驳回这张卡</button>
+      </form>
+    </section>
+    <section class="card">
+      <h2>创作视图预览(按当前勾选由代码生成,不写库)</h2>
+      <p class="hint">子项目 2 只读这个:去掉所有引用、名字换成角色类型、驳回的假设不进,再查与原文连续 12 字重叠。</p>
+      <div data-card-preview><p class="hint">加载中…</p></div>
+    </section>
+    <script>
+    (function () {
+      var form = document.getElementById("card-form");
+      var box = document.querySelector("[data-card-preview]");
+      var seq = 0;
+      function refresh() {
+        var n = ++seq;
+        fetch("/refs/card/preview", {method: "POST", body: new FormData(form)})
+          .then(function (r) { return r.text().then(function (t) { return {ok: r.ok, t: t}; }); })
+          .then(function (x) { if (n === seq) { box.innerHTML = x.ok ? x.t : '<p class="status-bad">预览失败:' + x.t.replace(/<[^>]+>/g, " ") + "</p>"; } });
+      }
+      document.querySelectorAll('input[form="card-form"], [data-extra-not-borrowable]').forEach(function (el) {
+        el.addEventListener("change", refresh);
+      });
+      refresh();
+    })();
+    </script>
+  {% endif %}
+{% endif %}
+
+{% if approved %}
+  {% set cd = approved.card %}
+  <section class="card" data-card-approved="{{ cd.id }}">
+    <h2>已批准:版本 {{ cd.version }}(运行 {{ cd.run_id }},{{ cd.created_at }})</h2>
+    <p class="hint">批准即锁定。人补的「不可借鉴」:{{ approved.decision.extra_not_borrowable | join(";") if approved.decision.extra_not_borrowable else "无" }}</p>
+  </section>
+  {{ review_body(approved.review, approved.units, approved.recs, approved.heat_text, approved.stance) }}
+  <section class="card">
+    <h2>创作视图</h2>
+    {% with v=approved.view, hits=[], err=none, problems=[], adopted=approved.decision.adopt | join(","), sha=cd.creation_sha %}
+      {% include "_refs_creation.html" %}
+    {% endwith %}
+  </section>
+{% endif %}
+
+{% if not pending and not approved %}
+  <section class="card empty">这部作品还没有待审或已批准的卡 —— 点上面「拆解这部」</section>
+{% endif %}
+
+{% if history %}
+<section class="card">
+  <h2>历史版本</h2>
+  <table>
+    <tr><th>版本</th><th>状态</th><th>运行</th><th>批准时间</th><th>依据范围</th><th>创作视图 sha256</th></tr>
+    {% for h in history %}
+      <tr><td>{{ h.version }}</td><td>{{ "当前" if h.state == "approved" else "已取代" }}</td><td>{{ h.run_id }}</td>
+        <td>{{ h.created_at }}</td><td>{{ h.coverage }}</td><td><code>{{ h.creation_sha }}</code></td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+{% endblock %}

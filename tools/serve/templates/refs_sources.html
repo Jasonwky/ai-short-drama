@@ -54,6 +54,8 @@
     <p class="hint" data-ref-usage>今日自动抓取 {{ x.used }}/{{ x.s.cap_fetch if x.s.cap_fetch is not none else '未填' }}
       {% if x.s.cap_fetch is not none and x.used >= x.s.cap_fetch %} <b class="status-bad">今日已满</b>{% endif %}
       · 最近一次拉榜单 {{ x.s.last_ranks_day or '还没拉过' }}</p>
+    <p class="hint" data-ref-llm-usage>LLM 调用:今天 {{ x.llm.today }} 次(失败 {{ x.llm.today_failed }})/ 近 7 天 {{ x.llm.week }} 次(失败 {{ x.llm.week_failed }})
+      <span>(参考库拆解:单元标注算内容所属作品的来源,整部汇总算作品的来源)</span></p>
     <p class="hint">robots 最近一次:{% if x.robots %}{{ x.robots.at }} · {{ x.robots.get('url', '') }} · HTTP {{ x.robots.get('status') }}{% else %}还没读过{% endif %}</p>
     {% if x.boards %}
       <form method="post" action="/refs/source/{{ x.s.key }}/ranks">

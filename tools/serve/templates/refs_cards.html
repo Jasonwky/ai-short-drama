@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>参考 · 拆解卡</h1>
+<p class="hint">一部作品一行。拆解 = 逐集 / 逐章标注(单元)+ 整部汇总(卡);LLM 一次只跑一条,失败不自动重试(人再点「拆解这部」)。
+  单元标注不单独审批:在卡片审阅页批准整张卡时连带批准。</p>
+<section class="card">
+  {% if rows %}
+    <table>
+      <tr><th>作品</th><th>依据范围(已批准的卡)</th><th>单元进度</th><th>卡</th><th>拆解任务</th><th>操作</th></tr>
+      {% for x in rows %}
+        <tr data-ref-card-row="{{ x.w.id }}">
+          <td><a href="/refs/work?id={{ x.w.id }}">{{ x.w.title or x.w.external_id }}</a></td>
+          <td>{{ x.card.coverage if x.card else "—" }}</td>
+          <td>{% if x.p.blocked %}<span class="hint">{{ x.p.blocked }}</span>
+            {% else %}{% for s, n in x.counts %}<span class="tag">{{ s }} {{ n }}</span> {% endfor %}{% endif %}</td>
+          {% include "_refs_card_state.html" %}
+          <td>{% if x.job %}{{ x.job.state }}{% if x.job.progress %} · {{ x.job.progress }}{% endif %}
+            {% if x.job.error %}<br><span class="status-bad">{{ x.job.error }}</span>{% endif %}{% else %}—{% endif %}</td>
+          <td>
+            <form method="post" action="/refs/work/{{ x.w.id }}/breakdown" style="display:inline"><button class="btn" type="submit" data-ref-breakdown>拆解这部</button></form>
+            <a class="btn primary" href="/refs/card?work={{ x.w.id }}" data-ref-card-link>审阅</a>
+          </td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="empty">还没有可拆的作品 —— 先在作品详情抓正文(小说)或录屏(红果)</p>
+  {% endif %}
+</section>
+{% endblock %}

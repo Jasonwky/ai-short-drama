@@ -16,9 +16,12 @@ def record(store, wid: int, board: str, day: str, rank: int | None, value: float
         return cur.rowcount == 1
 
 
-def series(store, wid: int, board: str) -> list[dict]:
+NO_CAP = 2 ** 62      # 不限热度行号(`max_id`:卡运行开卡时记下的行号上限,之后写进来的热度不算)
+
+
+def series(store, wid: int, board: str, max_id: int = NO_CAP) -> list[dict]:
     rows = {r["day"]: dict(r) for r in store.conn.execute(
-        "SELECT day, rank, heat FROM ref_heat WHERE work_id = ? AND board = ? ORDER BY day", (wid, board))}
+        "SELECT day, rank, heat FROM ref_heat WHERE work_id = ? AND board = ? AND id <= ? ORDER BY day", (wid, board, max_id))}
     if not rows:
         return []
     d, end, out = date.fromisoformat(min(rows)), date.fromisoformat(max(rows)), []
@@ -29,22 +32,26 @@ def series(store, wid: int, board: str) -> list[dict]:
     return out
 
 
-def boards_of(store, wid: int) -> list[str]:
-    return [r[0] for r in store.conn.execute("SELECT DISTINCT board FROM ref_heat WHERE work_id = ? ORDER BY board", (wid,))]
+def boards_of(store, wid: int, max_id: int = NO_CAP) -> list[str]:
+    return [r[0] for r in store.conn.execute("SELECT DISTINCT board FROM ref_heat WHERE work_id = ? AND id <= ? ORDER BY board",
+                                             (wid, max_id))]
 
 
-def rising(store, wid: int, board: str, day: str) -> str | None:
-    t = store.conn.execute("SELECT rank, heat FROM ref_heat WHERE work_id = ? AND board = ? AND day = ?", (wid, board, day)).fetchone()
+def rising(store, wid: int, board: str, day: str, max_id: int = NO_CAP) -> str | None:
+    t = store.conn.execute("SELECT rank, heat FROM ref_heat WHERE work_id = ? AND board = ? AND day = ? AND id <= ?",
+                           (wid, board, day, max_id)).fetchone()
     if t is None:
         return None
     y_day = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
-    y = store.conn.execute("SELECT rank, heat FROM ref_heat WHERE work_id = ? AND board = ? AND day = ?", (wid, board, y_day)).fetchone()
+    y = store.conn.execute("SELECT rank, heat FROM ref_heat WHERE work_id = ? AND board = ? AND day = ? AND id <= ?",
+                           (wid, board, y_day, max_id)).fetchone()
     if y is None:
-        earlier = store.conn.execute("SELECT 1 FROM ref_heat WHERE work_id = ? AND board = ? AND day < ?", (wid, board, day)).fetchone()
+        earlier = store.conn.execute("SELECT 1 FROM ref_heat WHERE work_id = ? AND board = ? AND day < ? AND id <= ?",
+                                       (wid, board, day, max_id)).fetchone()
         # 这个来源的这个榜单在 day 之前一条数据都没有(刚开始盯)时,榜上每部都「新」—— 不算新上榜
         board_seen = store.conn.execute(
             "SELECT 1 FROM ref_heat h JOIN ref_work w ON w.id = h.work_id WHERE w.source = (SELECT source FROM ref_work WHERE id = ?)"
-            " AND h.board = ? AND h.day < ? LIMIT 1", (wid, board, day)).fetchone()
+            " AND h.board = ? AND h.day < ? AND h.id <= ? LIMIT 1", (wid, board, day, max_id)).fetchone()
         if earlier is None and board_seen is not None and t["rank"] is not None and t["rank"] <= config.NEW_TOP:
             return f"新上榜第 {t['rank']} 名"
         return None

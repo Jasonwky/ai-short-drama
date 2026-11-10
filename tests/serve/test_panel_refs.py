@@ -502,16 +502,18 @@ def _top_nav(t):
     return t.split('<nav class="steps">')[1].split("</nav>")[0]
 
 
-def test_top_nav_has_one_refs_item_and_side_nav_lists_four(rc):
+def test_top_nav_has_one_refs_item_and_side_nav_lists_five(rc):
     c, refs, root = rc
-    for url, cur in (("/refs/sources", "refs_sources"), ("/refs/ranks", "refs_ranks"), ("/refs/work", "refs_work"), ("/refs/record", "refs_record")):
+    for url, cur in (("/refs/sources", "refs_sources"), ("/refs/ranks", "refs_ranks"), ("/refs/work", "refs_work"),
+                     ("/refs/record", "refs_record"), ("/refs/cards", "refs_cards")):
         t = c.get(url).text
         top = _top_nav(t)
         assert top.count('data-nav="refs"') == 1 and "参考库" in top and 'data-nav="refs_' not in top
         assert 'class="step active" href="/refs/sources" data-nav="refs"' in top
         side = t.split("data-side-nav")[1].split("</nav>")[0]
-        assert side.count("data-side=") == 4
-        for k, title in (("refs_sources", "来源设置"), ("refs_ranks", "榜单与趋势"), ("refs_work", "作品详情"), ("refs_record", "录屏")):
+        assert side.count("data-side=") == 5
+        for k, title in (("refs_sources", "来源设置"), ("refs_ranks", "榜单与趋势"), ("refs_work", "作品详情"), ("refs_record", "录屏"),
+                         ("refs_cards", "拆解卡")):
             assert f'data-side="{k}"' in side and title in side
         cur_tag = side.split(f'data-side="{cur}"')[0].rsplit("<a", 1)[1]
         assert "active" in cur_tag and side.count("active") == 1

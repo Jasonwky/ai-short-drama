@@ -20,7 +20,7 @@ from tools.drama import invalidation, repo
 from tools.drama.db import Store
 from tools.drama.invalidation import Impact
 from tools.gen.capability import MINIMAX_H3, QWEN_IMAGE_EDIT_2511
-from tools.llm import asset_check, beats, cast, critique, describe, drama_review, expand, outline, outline_variants, premise, rewrite, runs, script_revise, script_writer, shot_options, skeleton, storyboard, storyboard_revise, vision_check, voices
+from tools.llm import asset_check, beats, cast, critique, describe, drama_review, expand, outline, outline_variants, premise, ref_card, ref_unit, rewrite, runs, script_revise, script_writer, shot_options, skeleton, storyboard, storyboard_revise, vision_check, voices
 from tools.llm.client import LLMError
 from tools.llm.gate import GateFailed, input_sha, run_gated
 
@@ -94,7 +94,17 @@ TASKS: dict[str, Spec] = {
     "asset_check_drama": Spec(asset_check, "drama", lambda store, d, data_root, key="":
                               asset_check.drama_context(store, d, data_root, key),
                               4000, "资产图 AI 检查:全剧对照(画风、撞脸、时代)", model=VISION_MODEL, needs_root=True),
+    # 参考库拆解卡第一层(spec 2026-11-07-参考库-design.md 2.1):库是参考库 RefStore、data_root 是参考库素材根;
+    # 不单独审批,批准拆解卡时连带批准
+    "ref_unit": Spec(ref_unit, ref_unit.TARGET, ref_unit.context, 3000, "参考库拆解:逐集 / 逐章标注",
+                     model=VISION_MODEL, needs_root=True),
+    # 第二层整部汇总(2.2–2.5):人逐条采纳 / 驳回假设;批准时连带批准用到的单元运行,写卡与创作视图
+    "ref_card": Spec(ref_card, ref_card.TARGET, ref_card.context, 8000, "参考库拆解:整部汇总「为什么爆」",
+                     max_rounds=4, needs_root=True),
 }
+
+
+REFS_TARGETS = (ref_unit.TARGET, ref_card.TARGET)       # 参考库的目标类型(运行记在 refs.db)
 
 
 @dataclass
@@ -188,8 +198,9 @@ def reset_cost(store: Store, run_id: int) -> tuple[int, Impact] | None:
     return n, invalidation.impact(store, "script", row["target_id"], video_cap=MINIMAX_H3, image_cap=QWEN_IMAGE_EDIT_2511)
 
 
-def approve(store: Store, run_id: int, data_root: Path | None = None, confirm_reset: bool = False,
-            decision: dict | None = None):
+def approvable(store: Store, run_id: int, data_root: Path | None = None) -> Prepared:
+    """批准前的检查(待审、不是假产物、输入没变),不过就 ValueError;过了返回重建的上下文。
+    `approve` 先走它;连带批准别的运行的任务(参考库拆解卡)先拿它把每条都查一遍再动手。"""
     row = runs.get(store, run_id)
     if row["state"] != "proposed":
         raise ValueError(f"这条 LLM 产物是 {row['state']} 状态,只有待审的能批准")
@@ -197,7 +208,16 @@ def approve(store: Store, run_id: int, data_root: Path | None = None, confirm_re
         raise ValueError("假 LLM 的产物不许通过审批闸门(只用于测试控制台本身)")
     p = prepare(store, row["task"], row["target_id"], runs.params(row), data_root)   # 重新核对前提
     if p.sha != row["input_sha"]:
+        if spec(row["task"]).target in REFS_TARGETS:      # 参考库的运行:说参考库自己的输入
+            raise ValueError("生成之后输入已经变了(原文 / 单元标注 / 剧评 / 关键帧有改动)—— 这一版对不上现在的数据,请重新拆解")
         raise ValueError("生成之后输入已经变了(剧本 / 资产名单 / 参考图 / 参数有改动)—— 这一版对不上现在的数据,请重跑")
+    return p
+
+
+def approve(store: Store, run_id: int, data_root: Path | None = None, confirm_reset: bool = False,
+            decision: dict | None = None):
+    row = runs.get(store, run_id)
+    p = approvable(store, run_id, data_root)
     module = spec(row["task"]).module
     args = runs.output(row)
     needs_decision = hasattr(module, "decision_problems")    # 要人挑的任务(评审团 / 局部改写)
@@ -215,7 +235,8 @@ def approve(store: Store, run_id: int, data_root: Path | None = None, confirm_re
             raise ValueError(f"批准会删除本集已有的 {cost[0]} 个段落({cost[1].summary()})—— 需要人确认代价")
         repo.delete_segments(store, row["target_id"])
     extra = (decision,) if needs_decision else ()
-    result = module.apply(store, row["target_id"], args, p.ctx, *extra)
+    kw = {"run_id": run_id} if getattr(module, "APPLY_RUN_ID", False) else {}    # 写回要记来源运行的任务(参考库单元标注)
+    result = module.apply(store, row["target_id"], args, p.ctx, *extra, **kw)
     # 修改回路的 apply 返回 {"applied": 写回前后, ...}:快照随批准一起落库(不可改),回滚按它恢复
     applied = result.pop("applied", None) if isinstance(result, dict) else None
     runs.approve(store, run_id, decision, applied)

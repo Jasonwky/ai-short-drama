@@ -33,6 +33,16 @@
       {% endif %}
     </div>
   </section>
+  <section class="card" data-ref-breakdown-state>
+    <h2>拆解</h2>
+    {% set x = bd %}
+    <table><tr><th>单元进度</th><th>卡</th></tr>
+      <tr><td>{% if x.p.blocked %}{{ x.p.blocked }}{% else %}{% for s, n in x.counts %}<span class="tag">{{ s }} {{ n }}</span> {% endfor %}{% endif %}</td>
+        {% include "_refs_card_state.html" %}</tr></table>
+    {% if x.job %}<p class="hint">最近一次拆解任务:{{ x.job.state }}{% if x.job.progress %} · {{ x.job.progress }}{% endif %}{% if x.job.error %} · <span class="status-bad">{{ x.job.error }}</span>{% endif %}</p>{% endif %}
+    <form method="post" action="/refs/work/{{ w.id }}/breakdown" style="display:inline"><button class="btn primary" type="submit" data-ref-breakdown>拆解这部</button></form>
+    <a class="btn" href="/refs/card?work={{ w.id }}">看拆解卡</a>
+  </section>
   <section class="card">
     <h2>热度曲线</h2>
     {% for c in curves %}

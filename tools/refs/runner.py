@@ -60,7 +60,10 @@ def _meta(store, root, adapter, f, job, today):
     w = works.get(store, job["work_id"])
     m = adapter.fetch_meta(f, w["external_id"])
     works.apply_meta(store, w["id"], m)
-    heat.record(store, w["id"], "detail", today, None, m.heat, {k: v for k, v in m.stats.items() if k != "vids"})
+    raw = {k: v for k, v in m.stats.items() if k != "vids"}
+    if adapter.content == "chapters":                  # 免费章数:拆解卡依据范围写「共 N 章免费」(spec 2.1)
+        raw["units_free"] = sum(u.free for u in m.units)
+    heat.record(store, w["id"], "detail", today, None, m.heat, raw)
     return f"详情:{m.title}"
 
 

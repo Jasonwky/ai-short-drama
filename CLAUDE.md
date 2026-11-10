@@ -170,6 +170,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   **robots 口径**:程序只 goto `/player/<剧号>`(允许);`/player/<剧>/<集>` 是禁止爬虫访问的,只能像人一样点「选集」切集。每集录完代码查时长 ±2 秒 / 音量 / 画面亮度,不过标「不收」。
   转写是 `ref_job(kind='transcribe')`,GPU worker 的 `idle_hook` 在机器没有我们的在途、也没有待派生产任务时才跑一条;音频转 16 kHz PCM **嵌进脚本经 ssh stdin 送云机,只在内存里识别,云机不落盘**
   (`asr_remote.py` 每 25 秒一块);连不上 / 显存被抢最多 3 次。登录结论存 refs.db 的 meta(`loginstate`),不靠扫 journal;`rjournal.read` 遇坏行跳过并返回 `corrupt` 记录,不抛。
+  **1c 拆解卡**(plan 2026-11-08-参考库-1c.md,结构 v4):逐集 / 章单元标注 `ref_unit` + 整部汇总 `ref_card` 两个 LLM 任务,
+  走同一套 `service` / `gate`(参考库的 `llm_run` 在 refs.db,素材根是**参考库的** `refs_root`,别传剧库的 `data_root` —— 传错会让待审卡永远「过期」、循环重开)。
+  编排 `refs/breakdown.py`(`Runtime.refs_breakdown_tick` 推进,LLM 进同一个单线程池):同一集 / 章只认**最新**那条内容(`breakdown.CURRENT`,重录后旧的不进);
+  单元判卷失败的不进汇总、依据范围写明;待审卡按现在的数据重建对不上就重开(一个任务最多两次)。
+  卡的热度截到开卡那一刻(参数 `heat_until` + `heat_max_id`),之后拉的热度不改卡的输入。引用代码核对(`evidence.py`,最短 6 字 / 音节,转写按拼音);
+  热度假设带区间 `period`,审阅时按区间数字判涨跌;冷门对照只用库里已有的作品(`contrast.py`,不自动抽样)。
+  人在审阅页逐条采纳 / 驳回、可「去掉」可借鉴 / 不可借鉴条目,批准连带批准单元。**子项目 2 只读创作视图**(`creation.py`):去掉引用、名字(含同音)换角色类型、
+  驳回 / 去掉的不进,名字 / 作品名残留与原文连续 12 字重叠(换名前、换名后、整段连起来各比一次)**硬拦**;原文高频片段是启发式(常用词也会中,人设 / 角色类型又没法「去掉」),只**提示**,人勾「看过了,不是专名」(`ack_fragments`)才放行。待审 / 驳回的卡不结束原文清理顺延,只有批准的才算拆过。
 - `tools/cut/`:成片与合规。只调本机 ffmpeg(找不到就 400 报原因,ffmpeg 失败抛 `CutError`,不吞)。
   导出两态:`export.begin` 当场核对(★服务提供者编码、每段有视频、溯源成立)→ `run` 后台出带 / 不带显式标识两版 +
   溯源报告 + **8 项读回自检(含字幕),不过 = 导出失败**。元数据按 GB 45438-2025 **附录 E**(不是附录 F 的示例,它拼错了键名)。

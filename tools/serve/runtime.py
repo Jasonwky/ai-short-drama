@@ -9,6 +9,8 @@
 - LLM 任务(一次 30–80 秒)放进**单线程**池在后台跑(M-21 落盘单线程),页面立刻返回、自动刷新看结果。
   真实后端点按钮时才读 key:没有 key 就明确报「LLM 不可用」,**不静默切假 LLM**。
 - 成片导出(一集 1–3 分钟 ffmpeg)同样放进单线程池后台跑;控制台启动时把上次没跑完的导出标失败。
+- 参考库拆解(1c):参考库的 LLM 运行记在 refs.db,也进**同一个** LLM 单线程池(和剧库 LLM 串行,M-21);
+  breakdown 任务由 refs-fetch 线程每轮看一眼(只排 / 开运行,不等 LLM),之后由运行结束的回调接着推进。
 """
 from __future__ import annotations
 
@@ -127,6 +129,9 @@ class Runtime:
         self._browser_lock = threading.Lock()
         self.refs_login: dict | None = None    # 最近一次扫码登录:{"state": running / ok / failed, "at", "message"}
         self._record_thread: threading.Thread | None = None
+        # 参考库 LLM:同一时间只跑一条(在跑的运行号;None = 空闲)。判空闲与开运行在同一把锁里(refs-fetch 线程与 LLM 池回调都会来)
+        self._ref_llm_lock = threading.Lock()
+        self._ref_llm_busy: int | None = None
 
     REFS_ERRORS_KEEP = 5
 
@@ -139,10 +144,75 @@ class Runtime:
             return
         from tools.refs import monitor, retention, runner
         monitor.plan(self.refs)
+        try:                                             # 拆解推进出错不许挡住同一轮的抓取与清理(审查 C1)
+            self.refs_breakdown_tick()
+        except Exception as e:
+            self.refs_fail(f"拆解推进:{type(e).__name__}: {e}")
+            journal.append(self.data_root, [f"参考库拆解推进异常:{type(e).__name__}: {e}"], prefix="runtime ")
         runner.run_one(self.refs, self.refs_root)
         res = retention.daily(self.refs, self.refs_root)
         for e in (res[1] if res else []):                # 删除失败要有人看见(来源设置页 + 待办)
             self.refs_fail(f"清理:{e}")
+
+    def start_ref_llm(self, task: str, target_id: int, params: dict | None = None) -> tuple[int, bool]:
+        """开一条参考库 LLM 运行(记在 refs.db,素材根是参考库的)。前提不满足 / LLM 不可用当场报错;
+        命中锁定版直接复用、不调 LLM。真开了就进 LLM 单线程池,结束时 `_after_ref_llm` 接着推进拆解。"""
+        if self.refs is None:
+            raise ValueError("没配参考库")
+        if self.backend.llm is None:
+            raise LLMUnavailable("LLM 不可用:这个执行面没有配置 LLM")
+        llm = self.backend.llm()
+        rid, reused = service.begin(self.refs, task, target_id, params or {}, llm, self.refs_root)
+        if not reused:
+            self._ref_llm_busy = rid
+            self._llm_jobs.append(self._llm_pool.submit(self._finish_ref_llm, rid, llm))
+        return rid, reused
+
+    def _finish_ref_llm(self, rid: int, llm: LLMBackend) -> None:
+        kind: str | None = "error"
+        try:
+            kind = service.finish(self.refs, rid, llm, self.refs_root / "journal", data_root=self.refs_root)
+        except Exception as e:     # 不吞:落成 failed 带原因、进参考库错误与 journal
+            runs.fail(self.refs, rid, f"{type(e).__name__}: {e}")
+            self.refs_fail(f"参考库 LLM 运行 {rid}:{type(e).__name__}: {e}")
+            journal.append(self.data_root, [f"参考库 llm_run {rid} 意外失败:{type(e).__name__}: {e}"], prefix="runtime ")
+        self._after_ref_llm(rid, kind)
+
+    def _after_ref_llm(self, rid: int, kind: str | None) -> None:
+        """一条参考库运行结束:失败 → 它的拆解任务失败(不自动重试);成功 → 开下一条或收尾。"""
+        from tools.refs import breakdown
+        try:
+            with self._ref_llm_lock:
+                self._ref_llm_busy = None
+                line = breakdown.fail_for_run(self.refs, rid) if kind is not None else None
+            if line:
+                journal.append(self.data_root, [line], prefix="refs ")
+            self.refs_breakdown_tick()
+        except Exception as e:     # 不吞:LLM 池线程里没人接,挂到参考库错误上、进 journal
+            self.refs_fail(f"拆解推进:{type(e).__name__}: {e}")
+            journal.append(self.data_root, [f"参考库拆解推进异常:{type(e).__name__}: {e}"], prefix="runtime ")
+
+    def refs_breakdown_tick(self) -> None:
+        """推进拆解(spec 2.1、3.2)。refs-fetch 线程每轮调一次、参考库运行结束的回调再调一次;只排 / 开运行,不等 LLM。
+        参考库 LLM 在跑就什么都不做;一次只推进一条 breakdown 任务:有在跑的推它,没有就取下一条排着的
+        (`jobs.next_waiting` 对自动排的复核:隔天不补跑、切到 C、今日已满)。"""
+        if self.refs is None:
+            return
+        from tools.refs import breakdown, clock, jobs as ref_jobs
+        with self._ref_llm_lock:
+            running = self.refs.conn.execute("SELECT COUNT(*) FROM llm_run WHERE state = 'running'").fetchone()[0]
+            if self._ref_llm_busy is not None or running:
+                return
+            job = breakdown.running_job(self.refs)
+            if job is None:
+                job = ref_jobs.next_waiting(self.refs, clock.today(), kinds=("breakdown",))
+                if job is None:
+                    return
+                ref_jobs.start(self.refs, job["id"])
+            # start 抛的任何异常(含 LLM 不可用:不静默切假 LLM、不自动重试)都由 advance 接住、任务失败写原因
+            line = breakdown.advance(self.refs, job, self.start_ref_llm, self.refs_root)
+        if line:
+            journal.append(self.data_root, [line], prefix="refs ")
 
     def _claim_browser(self, who: str) -> str | None:
         """占配置目录;已被占就返回占着的那个,不占。"""
@@ -412,9 +482,12 @@ class Runtime:
         if self.refs is not None:
             from tools.refs import jobs as ref_jobs, settings as ref_settings
             ref_settings.ensure(self.refs)
-            n = ref_jobs.fail_stale(self.refs)
+            n = runs.fail_stale(self.refs)            # 参考库自己的 llm_run(拆解的单元 / 卡运行)
             if n:
-                journal.append(self.data_root, [f"参考库:上次有 {n} 条任务(抓取 / 录屏 / 转写)没跑完,已标失败"], prefix="runtime ")
+                journal.append(self.data_root, [f"参考库:上次有 {n} 次 LLM 运行没跑完,已标失败"], prefix="runtime ")
+            n = ref_jobs.fail_stale(self.refs)        # 含拆解任务:不接着跑,人可以再点
+            if n:
+                journal.append(self.data_root, [f"参考库:上次有 {n} 条任务(抓取 / 录屏 / 转写 / 拆解)没跑完,已标失败"], prefix="runtime ")
 
             def refs_loop():
                 while not self._stop.is_set():

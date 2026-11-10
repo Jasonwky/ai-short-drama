@@ -66,8 +66,9 @@ def approve(store: Store, run_id: int, decision: dict | None = None, applied: di
     _move(store, run_id, "approved", **fields)
 
 
-def reject(store: Store, run_id: int) -> None:
-    _move(store, run_id, "rejected", decided_at=now())
+def reject(store: Store, run_id: int, reason: str | None = None) -> None:
+    """reason:不是人驳回、是代码作废时写明原因(记在 error;人驳回的为空)。"""
+    _move(store, run_id, "rejected", decided_at=now(), **({"error": reason} if reason else {}))
 
 
 def get(store: Store, run_id: int) -> sqlite3.Row:

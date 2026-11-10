@@ -14,7 +14,7 @@
   <section class="card empty" data-ref-purged>原文已删除(指纹保留)—— 播放器、关键帧、转写都不在了;要再看只能重录。</section>
 {% else %}
   <section class="card">
-    <video controls preload="metadata" src="/refs/file/{{ rec.id }}" data-ref-player style="max-width: 360px; max-height: 70vh"></video>
+    <video controls preload="metadata" src="/refs/file/{{ rec.id }}" data-ref-player{% if t is not none %} data-start="{{ '%g' | format(t) }}"{% endif %} style="max-width: 360px; max-height: 70vh"></video>
   </section>
 
   <section class="card">
@@ -59,6 +59,10 @@
   (function () {
     var v = document.querySelector("[data-ref-player]");
     var rows = Array.prototype.slice.call(document.querySelectorAll(".sent"));
+    if (v.dataset.start) {                       // 从拆解卡的引用链过来:打开即跳到那一秒
+      var jump = function () { v.currentTime = parseFloat(v.dataset.start); };
+      if (v.readyState >= 1) { jump(); } else { v.addEventListener("loadedmetadata", jump, {once: true}); }
+    }
     document.querySelectorAll(".kf, .sent").forEach(function (el) {
       el.addEventListener("click", function (e) { e.preventDefault(); v.currentTime = parseFloat(el.dataset.sec); });
     });

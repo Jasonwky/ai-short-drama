@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import socket
 import subprocess
@@ -77,6 +78,7 @@ KEY_SELECTOR = {
     "refs_ranks": "[data-ref-rank-row]",
     "refs_work": "[data-ref-content]",
     "refs_record": "[data-ref-record]",
+    "refs_cards": "[data-ref-card-row]",
 }
 
 
@@ -258,7 +260,53 @@ def seed_refs(work: Path):
     heat.record(refs, book, "detail", yesterday, None, 1.0e9, {"note": "自测造的前一天热度"})
     settings.trip(refs, root, "k17", "自测:演示熔断(假装被风控挡住)", today)
     driver = _seed_recording(refs, root, work, fetcher, today)
-    return refs, {"refs_book": book, "record_driver": driver, "refs_fetcher": fetcher}
+    series = refs.conn.execute("SELECT id FROM ref_work WHERE source = 'hongguo' AND external_id = ?", (REFS_SERIES,)).fetchone()[0]
+    _seed_card(refs, root, series)
+    return refs, {"refs_book": book, "record_driver": driver, "refs_fetcher": fetcher, "refs_series": series}
+
+
+CARD_QUOTE = "这块玉佩是我母亲留给我的"          # 出自 _fake_asr 的转写
+NO_PERIOD = {"from": "", "to": ""}
+# 拆解卡演示用的假 LLM 产物(_seed_card)
+CARD = {"genre": "古装甜宠", "payoff": "复仇", "conflict": "情感背叛", "hook_type": "直接冲突",
+        "persona": {"protagonist": {"label": "守着遗物的孤女", "contrast": "看着柔弱,寸步不让"},
+                    "antagonist": {"label": "上门逼迫的人", "contrast": "人前客气,人后紧逼"}},
+        "cast_types": [],
+        "hypotheses": [
+            {"claim": "开场就抛出遗物之争,冲突前置", "evidence": "剧情", "units": [1], "review_ids": [], "quote": CARD_QUOTE, "period": NO_PERIOD},
+            {"claim": "每集都回到同一件信物,观众记得住", "evidence": "剧情", "units": [2], "review_ids": [], "quote": CARD_QUOTE, "period": NO_PERIOD},
+            {"claim": "第 3 集又一次拿信物做文章", "evidence": "剧情", "units": [3], "review_ids": [], "quote": CARD_QUOTE,
+             "period": NO_PERIOD}],
+        "techniques": ["开场一分钟内让主角为一件信物与人正面冲突"], "not_borrowable": ["那件信物的具体来历"]}
+
+
+def _seed_card(refs, root: Path, wid: int) -> None:
+    """拆解卡面板的演示数据:用**假 LLM**(llm_mode = fake,永远过不了审批闸门)给录好的 5 集各出一条单元标注,再出一张待审的卡。
+    走真的 service.begin / finish(判卷照常跑);自测只演示到「点批准 → 假产物被拒」,不调真 LLM。"""
+    from tools.llm import ref_card, ref_unit, service
+    from tools.llm.fake import FakeLLM
+    from tools.refs import clock
+    unit = lambda schema: {"hook": "有", "reversal": "小", "emotion": "压", "paywall": "否",            # noqa: E731
+                           "summary": "女主护住母亲遗物,和来人起了争执。", "quote": CARD_QUOTE, "names": [],
+                           "visual_hook": "有", "visual_sec": schema["properties"]["visual_sec"]["enum"][0]}
+
+    def card(schema):          # 热度类只在有热度历史时可选(schema 的 enum 说了算);这部通常只见过今天,第 3 条是剧情类
+        out = dict(CARD)
+        hyp = schema["properties"]["hypotheses"]["items"]["properties"]
+        days = hyp["period"]["properties"]["from"]["enum"][1:]
+        if "热度" in hyp["evidence"]["enum"]:
+            out["hypotheses"] = [*CARD["hypotheses"][:2], {"claim": "上线后热度涨得快", "evidence": "热度", "units": [], "review_ids": [],
+                                                           "quote": "", "period": {"from": days[0], "to": days[-1]}}]
+        return out
+    llm = service.LLMBackend(FakeLLM({ref_unit.TOOL: unit, ref_card.TOOL: card}), "selftest", "fake")
+    cids = [r[0] for r in refs.conn.execute("SELECT id FROM ref_content WHERE work_id = ? AND kind = 'transcript' AND verdict = 'ok'"
+                                            " AND purged_at = '' ORDER BY unit", (wid,))]
+    for task, tid, params in [*(("ref_unit", c, {}) for c in cids), ("ref_card", wid, {"heat_until": clock.today()})]:
+        rid, _ = service.begin(refs, task, tid, params, llm, data_root=root)
+        kind = service.finish(refs, rid, llm, root / "journal", data_root=root)
+        if kind is not None:
+            row = refs.conn.execute("SELECT error FROM llm_run WHERE id = ?", (rid,)).fetchone()
+            raise RuntimeError(f"拆解卡演示数据没灌进去:{task} {tid} 判失败({kind}):{row['error']}")
 
 
 def _seed_recording(refs, root: Path, work: Path, fetcher, today: str) -> SelftestDriver:
@@ -290,6 +338,27 @@ def _check_ref_view(page) -> None:
     kf, sents = page.locator("[data-kf]").count(), page.locator("[data-sentence]").count()
     if kf == 0 or sents == 0:
         raise RuntimeError(f"录屏详情页内容是空的:关键帧 {kf} 张、转写 {sents} 句")
+
+
+EXPECTED_400 = "Failed to load resource: the server responded with a status of 400 (Bad Request)"
+
+
+def _card_choices(page) -> None:
+    """拆解卡审阅页:第 1、3 条采纳、第 2 条驳回,补一条不可借鉴;等预览按这组勾选刷新(采纳 0,2、没有还差的)再点批准。"""
+    page.wait_for_selector("[data-creation-view]", timeout=10000)
+    for i, v in ((0, "adopt"), (1, "reject"), (2, "adopt")):
+        page.locator(f'[data-hyp="{i}"] input[value="{v}"]').check()
+    page.locator("[data-extra-not-borrowable]").fill("自测补的:片头那句台词")
+    page.locator("[data-extra-not-borrowable]").dispatch_event("change")
+    page.wait_for_selector('[data-creation-view][data-adopted="0,2"]', timeout=10000)
+    if page.locator("[data-creation-view] [data-decision-problem]").count():
+        raise RuntimeError("全部表态后预览里还写着「批准前还差」")
+    if page.locator("[data-creation-view]:has-text('自测补的')").count() == 0:
+        raise RuntimeError("预览没带上补充的「不可借鉴」")
+    if page.locator("[data-fragments]").count():          # 原文高频片段只是提示:勾「看过了」,预览要跟着放行
+        page.locator("[data-ack-fragments]").check()
+        page.wait_for_selector("[data-fragments].hint", timeout=10000)
+    page.locator("[data-card-approve]").click()
 
 
 def _free_port() -> int:
@@ -564,6 +633,8 @@ def run(out_dir: Path) -> dict:
             page.on("console", lambda m: errors.append(f"console.{m.type}:{m.text}")
                     if m.type == "error" and m.text not in KNOWN_UPSTREAM_ERRORS else None)
             page.on("response", lambda r: errors.append(f"HTTP {r.status} {r.url}") if r.status >= 500 else None)
+            got_400: list[str] = []          # 收到的 400 响应地址(expect_400 只认批准拆解卡那一条)
+            page.on("response", lambda r: got_400.append(r.url) if r.status == 400 else None)
             page.on("request", lambda r: errors.append(f"外网请求:{r.url}")
                     if not r.url.startswith((base, "data:", "blob:", base.replace("http", "ws"))) else None)
 
@@ -590,6 +661,17 @@ def run(out_dir: Path) -> dict:
                     problems.append(f"页脚署名不对:{footer!r}")
                 report["panels"].append({"panel": p.key, "title": p.title, "url": url, "ok": not problems,
                                          "problems": problems, "screenshot": str(shot)})
+
+            def expect_400(pg) -> None:
+                """这一步要的就是批准拆解卡被拒的 400 页:response 事件确认 400 来自 `/refs/card/<号>/approve`、恰好一条,
+                Chrome 因它记的 console.error 也只放过一条(别的 400 照样算错,审查 M7)。"""
+                pg.wait_for_selector("[data-error]", timeout=10000)
+                pg.wait_for_load_state("load")
+                hits = [u for u in got_400 if re.search(r"/refs/card/\d+/approve$", u.split("?")[0])]
+                if len(hits) != 1:
+                    raise RuntimeError(f"要的是批准拆解卡那一条 400,实际收到的 400:{got_400 or '无'}")
+                got_400.remove(hits[0])
+                errors.remove(f"console.error:{EXPECTED_400}")        # 只放过一条;没有这一条会抛 ValueError
 
             seg, seg2, seg3, photo, lin = ids["segment"], ids["segment2"], ids["segment3"], ids["photo"], ids["lin"]
             seg4, zhou = ids["segment4"], ids["zhou"]
@@ -779,6 +861,13 @@ def run(out_dir: Path) -> dict:
                     ("refs_record", "第 1 集点「查看」→ 播放器、关键帧、转写句子都出来", {},
                      ["[data-ref-view-link]", _check_ref_view],
                      "[data-ref-player]", 20),
+                    # 拆解卡(1c):种子是假 LLM 出的待审卡(5 个单元 + 卡)。审阅页 → 逐条表态 → 预览刷新 → 批准被闸门拒
+                    ("refs_cards", "点「审阅」→ 假设、逐单元表、创作视图预览都出来", {},
+                     [f'[data-ref-card-row="{ref_ids["refs_series"]}"] [data-ref-card-link]'],
+                     "[data-creation-view] [data-decision-problem]", 20),
+                    ("refs_cards", "逐条采纳 / 驳回 → 预览按勾选刷新 → 点批准 → 「假 LLM 的产物不许通过审批闸门」(400)", {},
+                     [f'[data-ref-card-row="{ref_ids["refs_series"]}"] [data-ref-card-link]', _card_choices, expect_400],
+                     '@[data-error]:has-text("假 LLM 的产物不许通过审批闸门")', 20),
                     # 放在最后:填了陈设,前面链路的提示词就要按它查
                     ("assets", "场景选用途、填固定陈设 → 保存", {f'[data-asset="scene-{ids["yard"]}"] [data-scene-furnishings]': "石桌、古井"},
                      [lambda pg: pg.locator(f'[data-asset="scene-{ids["yard"]}"] [data-scene-purpose]').select_option("庭院"),
@@ -791,6 +880,7 @@ def run(out_dir: Path) -> dict:
                     ("videos", "港片画风:点「预览导出调色」→ 出调色预览视频", {}, [f"#seg-{seg} [data-grade-preview-btn]"],
                      f"#seg-{seg} [data-grade-preview-video]", 60)), 1):
                 errors.clear()
+                got_400.clear()
                 key, _, ep_key = key.partition(":")               # 「面板:集」—— 默认第 1 集
                 p = next(x for x in REGISTRY if x.key == key)
                 page.goto(base + url_for(p, ids["drama"], ids[ep_key or "episode"]))

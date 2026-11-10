@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """到期清理(spec 1.3):删原文文件、置 purged_at;指纹与内容行留着。
 每天一次(`daily`,Runtime 的 refs-fetch 线程调);拉黑时面板直接调 `purge` 立即清。
-顺延:还没拆解的作品顺延到 hard_due_at(保留天数 × 2);拉黑的作品立即删。1a 没有拆解 → has_breakdown 恒假。"""
+顺延:没有已批准拆解卡的作品(没拆、卡待审或刚驳回)顺延到 hard_due_at(保留天数 × 2);有已批准的卡(1c)按 due_at 清;拉黑的作品立即删。"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,7 +10,9 @@ from tools.refs import clock, rjournal
 
 
 def has_breakdown(store, work_id: int) -> bool:
-    return False          # 1c:查 ref_card 里这部作品有没有已批准 / 待审的卡
+    """这部作品有**已批准**的拆解卡(spec 1.3:拆过就不再顺延)。待审 / 刚驳回的拆解照常顺延 —— 人还要对着原文审、重拆。"""
+    return store.conn.execute("SELECT 1 FROM ref_card WHERE work_id = ? AND state = 'approved' LIMIT 1",
+                              (work_id,)).fetchone() is not None
 
 
 def _delete_files(store, root: Path, rows, now: str) -> tuple[list[int], list[str]]:

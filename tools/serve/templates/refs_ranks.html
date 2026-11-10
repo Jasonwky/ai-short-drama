@@ -62,4 +62,18 @@
     <p class="empty">今天的榜单还没拉(模式 {{ mode }})—— 去「参考 · 来源」点「现在拉榜单」</p>
   {% endif %}
 </section>
+<section class="card" data-ref-trends>
+  <h2>跨作品趋势 · {{ labels[source] if source in labels else source }}</h2>
+  <p class="hint">只数已批准、未被取代的拆解卡的闭集字段,按批准月份分;代码统计,不经 LLM。</p>
+  {% if trend_rows %}
+    <table>
+      <tr><th>月份</th><th>卡数</th>{% for k, label in trend_fields.items() %}<th>{{ label }}</th>{% endfor %}</tr>
+      {% for m in trend_rows %}
+        <tr data-ref-trend-row><td>{{ m.month }}</td><td>{{ m.n }}</td>{% for k in trend_fields %}<td>{{ m.cells[k] }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="empty">这个来源还没有已批准的拆解卡</p>
+  {% endif %}
+</section>
 {% endblock %}

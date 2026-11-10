@@ -217,4 +217,5 @@ def test_detail_heat_raw_leaves_out_episode_ids(env):
     meta = dataclasses.replace(fake_adapter().fetch_meta(None, "9"), stats={"vids": ["1", "2"], "plays": 3})
     assert run(env, fake_adapter(fetch_meta=lambda f, ext: meta), "meta", work_id=wid)["state"] == "done"
     raw = refs.conn.execute("SELECT raw_json FROM ref_heat WHERE work_id = ? AND board = 'detail'", (wid,)).fetchone()[0]
-    assert json.loads(raw) == {"plays": 3}
+    free = sum(u.free for u in meta.units)
+    assert json.loads(raw) == {"plays": 3, "units_free": free}                  # 免费章数:拆解卡依据范围写「共 N 章免费」

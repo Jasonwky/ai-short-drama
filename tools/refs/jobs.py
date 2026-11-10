@@ -47,6 +47,13 @@ def _auto_refusal(store, job: dict, src: dict, today: str) -> str | None:
                                   " AND state IN ('running', 'done')", (job["source"], today)).fetchone()[0]
         if src["cap_fetch"] is None or used >= src["cap_fetch"]:
             return f"今日自动抓取已满 {used}/{src['cap_fetch'] if src['cap_fetch'] is not None else '未填'}"
+    elif job["kind"] == "breakdown":                   # A、B 都自动拆(spec 3.2),切到 C 才不跑
+        if src["mode"] == "C":
+            return "来源已切到 C 全手动"
+        used = store.conn.execute("SELECT COUNT(*) FROM ref_job WHERE source = ? AND kind = 'breakdown' AND auto = 1 AND day = ?"
+                                  " AND started_at != ''", (job["source"], today)).fetchone()[0]     # 开跑过的(含跑了失败的)才算用量
+        if src["cap_breakdown"] is None or used >= src["cap_breakdown"]:
+            return f"今日自动拆解已满 {used}/{src['cap_breakdown'] if src['cap_breakdown'] is not None else '未填'}"
     elif src["mode"] == "C":
         return "来源已切到 C 全手动"
     return None
@@ -59,8 +66,8 @@ def next_waiting(store, today: str, kinds: tuple[str, ...] = FETCH_KINDS) -> dic
                                   kinds).fetchall():
         job = dict(row)
         src = settings.get(store, job["source"])
-        if settings.blocked_reason(src, today) is not None:
-            continue
+        if job["kind"] != "breakdown" and settings.blocked_reason(src, today) is not None:
+            continue                     # 拆解只调本机 LLM、不碰网站:来源熔断 / 暂停不挡它
         why = _auto_refusal(store, job, src, today) if job["auto"] else None
         if why:
             finish(store, job["id"], error=why)
@@ -101,6 +108,12 @@ def fail_stale(store) -> int:
 def auto_content_today(store, source: str, day: str) -> int:
     """今天自动抓取的用量:排着的 + 跑过的(含跑了失败的);没开跑就被标失败的(上限调低、切模式)不算。"""
     return store.conn.execute("SELECT COUNT(*) FROM ref_job WHERE source = ? AND kind = 'content' AND auto = 1 AND day = ?"
+                              " AND (state != 'failed' OR started_at != '')", (source, day)).fetchone()[0]
+
+
+def auto_breakdown_today(store, source: str, day: str) -> int:
+    """今天自动拆解的用量,口径同 `auto_content_today`:排着的 + 开跑过的;没开跑就被标失败的不算。"""
+    return store.conn.execute("SELECT COUNT(*) FROM ref_job WHERE source = ? AND kind = 'breakdown' AND auto = 1 AND day = ?"
                               " AND (state != 'failed' OR started_at != '')", (source, day)).fetchone()[0]
 
 

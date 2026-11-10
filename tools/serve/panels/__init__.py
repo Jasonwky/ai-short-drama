@@ -36,11 +36,12 @@ REGISTRY: tuple[Panel, ...] = (
     Panel("workflows", "工作流", "global", "/workflows"),
     Panel("hosts", "主机", "global", "/hosts"),
     Panel("trace", "留痕", "global", "/trace"),
-    # 参考库(spec 2026-11-07-参考库):顶部合成一个「参考库」标签,四个面板在左侧竖排
+    # 参考库(spec 2026-11-07-参考库):顶部合成一个「参考库」标签,五个面板在左侧竖排
     Panel("refs_sources", "来源设置", "global", "/refs/sources", group="refs"),
     Panel("refs_ranks", "榜单与趋势", "global", "/refs/ranks", group="refs"),
     Panel("refs_work", "作品详情", "global", "/refs/work", group="refs"),
     Panel("refs_record", "录屏", "global", "/refs/record", group="refs"),
+    Panel("refs_cards", "拆解卡", "global", "/refs/cards", group="refs"),
 )
 
 

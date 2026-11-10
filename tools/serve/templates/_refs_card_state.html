@@ -1,0 +1,9 @@
+{# 一部作品的卡状态单元格:x = panels.refs._card_row 的结果 #}
+<td data-ref-card-state="{{ x.p.card.state }}">
+  {% if x.p.card.state == "待审" %}<b>卡待审(运行 {{ x.p.card.run_id }})</b>
+  {% elif x.p.card.state == "跑中" %}卡汇总中(运行 {{ x.p.card.run_id }})
+  {% elif x.p.card.state == "失败" %}<span class="status-bad">卡失败(运行 {{ x.p.card.run_id }}):{{ x.p.card.error }}</span>
+  {% elif x.p.card.state == "已批" %}已批准
+  {% else %}还没有卡{% endif %}
+  {% if x.card %}<br><span class="hint">已批准 版本 {{ x.card.version }}</span>{% endif %}
+</td>

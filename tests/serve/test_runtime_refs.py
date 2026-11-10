@@ -360,3 +360,115 @@ def test_default_login_fn_is_the_real_qr_login(store, tmp_path):
     from tools.refs import hgdriver
     refs = RefStore(":memory:")
     assert Runtime(store, tmp_path, fake_backend()[0], refs=refs, refs_root=tmp_path / "refs").login_fn is hgdriver.login
+
+
+# ---------- 拆解(1c):参考库 LLM 进同一个单线程池,运行结束的回调接着推进 ----------
+
+def _ref_rt(store, tmp_path, unit_args=None, llm=True):
+    import dataclasses
+    from tests.refs.test_ref_card import UNIT_ARGS, _card_args, _seed
+    from tools.llm import ref_card as rc, ref_unit as ru
+    from tools.llm.fake import FakeLLM
+    from tools.llm.service import LLMBackend
+    refs = RefStore(":memory:")
+    root = tmp_path / "refs"
+    _seed(refs, root)
+    settings.ensure(refs)
+    seq = list(unit_args or [UNIT_ARGS[1], UNIT_ARGS[2]])
+    fake = FakeLLM({ru.TOOL: lambda schema: seq.pop(0) if len(seq) > 1 else seq[0], rc.TOOL: _card_args()})
+    backend = dataclasses.replace(fake_backend()[0], llm=(lambda: LLMBackend(fake, "m", "real")) if llm else None)  # 确定性替身
+    return Runtime(store, tmp_path, backend, refs=refs, refs_root=root), refs
+
+
+def _ref_runs(refs):
+    return [tuple(r) for r in refs.conn.execute("SELECT task, target_id, state FROM llm_run ORDER BY id")]
+
+
+def test_breakdown_runs_units_then_card_through_the_llm_pool(store, tmp_path):
+    from tools.refs import breakdown
+    rt, refs = _ref_rt(store, tmp_path)
+    jid = breakdown.enqueue(refs, 1)
+    rt.refs_breakdown_tick()                       # refs-fetch 线程这一轮:取任务、开第 1 集,不等 LLM
+    rt.wait_llm()                                  # 之后每条结束的回调开下一条
+    # 第 1、2 集转写是内容 1、3(中间夹着第 1 集的关键帧)
+    assert _ref_runs(refs) == [("ref_unit", 1, "proposed"), ("ref_unit", 3, "proposed"), ("ref_card", 1, "proposed")]
+    assert jobs.get(refs, jid)["state"] == "done" and rt._ref_llm_busy is None
+    assert store.conn.execute("SELECT COUNT(*) FROM llm_run").fetchone()[0] == 0          # 剧库不沾
+    assert list((tmp_path / "refs" / "journal" / "llm").glob("*.json"))                   # 闸门每轮落参考库的 journal
+    rt.refs_breakdown_tick()
+    assert len(_ref_runs(refs)) == 3                                                      # 做完了不再开
+
+
+def test_breakdown_leaves_out_a_unit_that_fails_judging(store, tmp_path):
+    """spec 2.1(审查 I4):单元判卷超限失败不进汇总、不挡开卡;做完不自动重试。"""
+    from tests.refs.test_ref_card import UNIT_ARGS
+    from tools.refs import breakdown
+    rt, refs = _ref_rt(store, tmp_path, [UNIT_ARGS[1], {**UNIT_ARGS[2], "quote": "原文里根本没有这一句"}])
+    jid = breakdown.enqueue(refs, 1)
+    rt.refs_breakdown_tick()
+    rt.wait_llm()
+    assert _ref_runs(refs) == [("ref_unit", 1, "proposed"), ("ref_unit", 3, "failed"), ("ref_card", 1, "proposed")]
+    assert jobs.get(refs, jid)["state"] == "done"
+    rt.refs_breakdown_tick()
+    rt.wait_llm()
+    assert len(_ref_runs(refs)) == 3                                                      # 不自动重试
+
+
+def test_breakdown_without_llm_fails_the_job(store, tmp_path):
+    from tools.refs import breakdown
+    rt, refs = _ref_rt(store, tmp_path, llm=False)
+    jid = breakdown.enqueue(refs, 1)
+    rt.refs_breakdown_tick()
+    j = jobs.get(refs, jid)
+    assert j["state"] == "failed" and "LLM 不可用" in j["error"] and _ref_runs(refs) == []
+
+
+def test_breakdown_waits_while_a_ref_llm_run_is_in_flight(store, tmp_path):
+    from tools.llm import runs as llm_runs
+    from tools.refs import breakdown
+    rt, refs = _ref_rt(store, tmp_path)
+    rid = llm_runs.start(refs, task="ref_unit", target_type="ref_content", target_id=1, model="m", input_sha="s", llm_mode="real")
+    jid = breakdown.enqueue(refs, 1)
+    rt.refs_breakdown_tick()
+    assert jobs.get(refs, jid)["state"] == "waiting" and len(_ref_runs(refs)) == 1       # 参考库同一时间只跑一条
+    llm_runs.fail(refs, rid, "x")
+    rt.refs_breakdown_tick()
+    rt.wait_llm()
+    assert jobs.get(refs, jid)["state"] == "done"
+
+
+def test_start_fails_ref_llm_runs_and_breakdowns_left_running(store, tmp_path):
+    from tools.llm import runs as llm_runs
+    from tools.refs import breakdown
+    rt, refs = _ref_rt(store, tmp_path)
+    rid = llm_runs.start(refs, task="ref_unit", target_type="ref_content", target_id=1, model="m", input_sha="s", llm_mode="real")
+    jid = breakdown.enqueue(refs, 1)
+    jobs.start(refs, jid)
+    rt.start()
+    rt.stop()
+    assert llm_runs.get(refs, rid)["state"] == "failed" and jobs.get(refs, jid)["state"] == "failed"
+
+
+def test_breakdown_error_does_not_block_fetch_and_purge(store, tmp_path, monkeypatch):
+    """审查 C1:拆解推进出了非 ValueError 的错(文件缺失)→ 任务失败;同一轮照常抓取、清理。"""
+    from tools.refs import breakdown
+    rt, refs = _ref_rt(store, tmp_path)
+    (tmp_path / "refs" / "content/hongguo/7/ep1-x.transcript.json").unlink()
+    jid = breakdown.enqueue(refs, 1)
+    calls = []
+    monkeypatch.setattr("tools.refs.runner.run_one", lambda s, root, **kw: calls.append("run"))
+    monkeypatch.setattr("tools.refs.retention.daily", lambda s, root, **kw: calls.append("daily"))
+    rt.refs_tick()
+    j = jobs.get(refs, jid)
+    assert j["state"] == "failed" and j["error"].startswith("FileNotFoundError: ")
+    assert calls == ["run", "daily"]
+
+
+def test_breakdown_tick_crash_goes_to_refs_errors_and_the_rest_still_runs(store, tmp_path, monkeypatch):
+    rt, refs = _ref_rt(store, tmp_path)
+    calls = []
+    monkeypatch.setattr(rt, "refs_breakdown_tick", lambda: (_ for _ in ()).throw(RuntimeError("推进坏了")))
+    monkeypatch.setattr("tools.refs.runner.run_one", lambda s, root, **kw: calls.append("run"))
+    monkeypatch.setattr("tools.refs.retention.daily", lambda s, root, **kw: calls.append("daily"))
+    rt.refs_tick()
+    assert calls == ["run", "daily"] and "拆解推进:RuntimeError: 推进坏了" in rt.refs_errors[-1]

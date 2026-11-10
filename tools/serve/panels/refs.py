@@ -1,19 +1,25 @@
 # -*- coding: utf-8 -*-
-"""参考库面板(spec 2026-11-07-参考库-design.md 第 3 节):来源设置 / 榜单与趋势 / 作品详情(1a)、录屏(1b)。
-面板只排任务、改设置;抓取由 Runtime 的 refs-fetch 线程跑,录屏由 refs-record 线程跑(永远人点才排)。
+"""参考库面板(spec 2026-11-07-参考库-design.md 第 3 节):来源设置 / 榜单与趋势 / 作品详情(1a)、录屏(1b)、拆解卡(1c)。
+面板只排任务、改设置;抓取由 Runtime 的 refs-fetch 线程跑,录屏由 refs-record 线程跑(永远人点才排),
+拆解由 Runtime 的参考库 LLM 推进(`breakdown`)。拆解卡审阅页:人逐条采纳 / 驳回假设、补「不可借鉴」,批准才写卡;
+创作视图预览只渲染不写库。
 没配参考库就如实显示「未配置」,不偷偷建库。"""
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import FileResponse, RedirectResponse
 
-from tools.refs import clock, heat, jobs, loginstate, manual, retention, rjournal, settings, transcript, works
+from tools.llm import ref_card as rcard
+from tools.llm import runs, service
+from tools.refs import (breakdown, clock, evidence, heat, jobs, loginstate, manual, retention, rjournal, settings,
+                        transcript, trends, works)
 from tools.refs.sources import ADAPTERS
 from tools.refs.sources.hongguo import WEB_EPISODES
-from tools.serve.panels.common import confirm_page, render, rt
+from tools.serve.panels.common import TEMPLATES, confirm_page, render, rt
 
 router = APIRouter()
 LIVE = ("waiting", "running")     # 人点的录屏 / 重新转写只和还没跑完的去重:跑完(成功或失败)同一天还能再排
@@ -47,7 +53,7 @@ def login_status(r) -> dict | None:
 
 
 def todo(refs, today: str, errors: int = 0, *, login: dict | None = None) -> list[str]:
-    """待办:后台错误条数、被挡住的来源、B 模式今天的候选数、红果没登录(1c 再加待审的卡)。"""
+    """待办:后台错误条数、被挡住的来源、B 模式今天的候选数、红果没登录、待审的拆解卡。"""
     out = [f"参考库后台有 {errors} 条错误(含清理失败),见上方"] if errors else []
     if login is not None and not login["ok"]:
         out.append(f"红果没登录 / 登录过期({login['at'][:16]} {login['text']})—— 在「录屏」面板点「打开浏览器扫码」")
@@ -57,6 +63,30 @@ def todo(refs, today: str, errors: int = 0, *, login: dict | None = None) -> lis
                           " AND candidate_reason NOT LIKE '建议录屏%'", (today,)).fetchone()[0]      # 建议录屏只标不挑,不算候选
     if n:
         out.append(f"今天有 {n} 部候选等你挑")
+    n = refs.conn.execute("SELECT COUNT(*) FROM llm_run WHERE task = 'ref_card' AND state = 'proposed'").fetchone()[0]
+    if n:
+        out.append(f"有 {n} 张拆解卡待审 —— 在「拆解卡」面板逐条表态、批准")
+    return out
+
+
+def llm_usage(refs, today: str) -> dict[str, dict]:
+    """每个来源的参考库 LLM 调用次数(spec 3.1):今天 / 近 7 天,各含失败数。
+    单元标注(ref_content)归内容所属作品的来源,整部汇总(ref_work)归作品的来源;日子按北京时间。"""
+    out: dict[str, dict] = {}
+    for r in refs.conn.execute(
+            "SELECT l.created_at, l.state, COALESCE(wc.source, ww.source) AS source FROM llm_run l"
+            " LEFT JOIN ref_content c ON l.target_type = 'ref_content' AND c.id = l.target_id"
+            " LEFT JOIN ref_work wc ON wc.id = c.work_id"
+            " LEFT JOIN ref_work ww ON l.target_type = 'ref_work' AND ww.id = l.target_id"):
+        d = clock.days_between(clock.today(r["created_at"]), today)
+        u = out.setdefault(r["source"], {"today": 0, "today_failed": 0, "week": 0, "week_failed": 0})
+        failed = r["state"] == "failed"
+        if d == 0:
+            u["today"] += 1
+            u["today_failed"] += failed
+        if 0 <= d < 7:
+            u["week"] += 1
+            u["week_failed"] += failed
     return out
 
 
@@ -74,6 +104,7 @@ def sources(request: Request):
     if r.refs is None:
         return _off(request, "refs_sources")
     today = clock.today()
+    usage = llm_usage(r.refs, today)
     rows = []
     for s in settings.all_sources(r.refs):
         robots = rjournal.read(r.refs_root, source=s["key"], event="robots", limit=1)
@@ -82,6 +113,7 @@ def sources(request: Request):
                      "used": jobs.auto_content_today(r.refs, s["key"], today),
                      "boards": ADAPTERS[s["key"]].boards if s["key"] in ADAPTERS else {},
                      "robots": robots[0] if robots else None,
+                     "llm": usage.get(s["key"], {"today": 0, "today_failed": 0, "week": 0, "week_failed": 0}),
                      "log": rjournal.read(r.refs_root, source=s["key"], limit=20)})
     items, todo_error = todo_of(r)
     return render(request, "refs_sources.html", "refs_sources", rows=rows, fields=settings.INT_FIELDS,
@@ -142,7 +174,18 @@ def ranks(request: Request, source: str = "hongguo", board: str = "", q: str = "
                                              " WHERE w.source = ? AND h.board = ? AND h.day = ? ORDER BY h.rank",
                                              (source, board, today))]
     return render(request, "refs_ranks.html", "refs_ranks", rows=rows, source=source, board=board, q=q,
-                  adapters=ADAPTERS, labels=settings.SOURCES, today=today, mode=settings.get(r.refs, source)["mode"] if a else "C")
+                  adapters=ADAPTERS, labels=settings.SOURCES, today=today, mode=settings.get(r.refs, source)["mode"] if a else "C",
+                  trend_rows=_trend_rows(r.refs, source), trend_fields=TREND_FIELDS)
+
+
+TREND_FIELDS = {"genre": "题材", "payoff": "爽点", "conflict": "冲突", "hook_type": "开场钩子"}
+
+
+def _trend_rows(refs, source: str) -> list[dict]:
+    """跨作品趋势(spec 2.6):已批准卡片的闭集字段按月计数,代码统计、不经 LLM。"""
+    return [{"month": m["month"], "n": m["n"],
+             "cells": {k: "、".join(f"{v} {c}" for v, c in m[k].most_common()) for k in TREND_FIELDS}}
+            for m in trends.by_month(refs, source)]
 
 
 @router.post("/refs/add")
@@ -196,7 +239,7 @@ def work(request: Request, id: int | None = None):
     return render(request, "refs_work.html", "refs_work", w=w, tags=works.tags(w), contents=contents, curves=curves,
                   jobs=jobs.recent(r.refs, work_id=id), log=rjournal.read(r.refs_root, work_id=id, limit=30),
                   label=settings.SOURCES[w["source"]], fetch_refusal=_fetch_refusal(w["source"]), web_episodes=WEB_EPISODES,
-                  today=clock.today(), live_n=len(retention.live_content(r.refs, id)))
+                  today=clock.today(), live_n=len(retention.live_content(r.refs, id)), bd=_card_row(r.refs, id))
 
 
 @router.post("/refs/work/{wid}/manual")      # 要在 /refs/work/{wid}/{action} 之前注册,否则被通配吃掉
@@ -260,6 +303,11 @@ def work_action(request: Request, wid: int, action: str):
         if why:
             raise ValueError(why)
         jobs.enqueue(r.refs, w["source"], "content", work_id=wid, day=clock.today())
+    elif action == "breakdown":                 # 「拆解这部」:人点的(auto = 0),不受每日上限;推进由 Runtime 做
+        why = breakdown.progress(r.refs, wid)["blocked"]
+        if why:
+            raise ValueError(f"《{w['title'] or w['external_id']}》拆不了:{why}")
+        breakdown.enqueue(r.refs, wid)
     else:
         raise KeyError(action)
     return RedirectResponse(request.headers.get("referer") or f"/refs/work?id={wid}", status_code=303)
@@ -314,8 +362,8 @@ def record(request: Request):
 
 
 @router.get("/refs/record/view")
-def record_view(request: Request, id: int):
-    """每集详情:播放器 + 关键帧整排 + 完整转写(逐句可点跳转)。只认录屏行。"""
+def record_view(request: Request, id: int, t: float | None = None):
+    """每集详情:播放器 + 关键帧整排 + 完整转写(逐句可点跳转)。只认录屏行。`t` = 打开即跳到第几秒(拆解卡的引用链过来)。"""
     r = rt(request)
     if r.refs is None:
         return _off(request, "refs_record")
@@ -325,7 +373,8 @@ def record_view(request: Request, id: int):
     rec = dict(row)
     meta = json.loads(rec["meta_json"] or "{}")
     w = works.get(r.refs, rec["work_id"])
-    ctx = {"rec": rec, "meta": meta, "w": w, "kf_head": [], "kf_rest": [], "sentences": [], "tr_error": None, "tstate": None}
+    ctx = {"rec": rec, "meta": meta, "w": w, "kf_head": [], "kf_rest": [], "sentences": [], "tr_error": None, "tstate": None,
+           "t": t}
     if not rec["purged_at"] and rec["path"]:
         prefix = rec["path"].removesuffix(".webm") + "-kf/"
         kfs = sorted(({"id": k["id"], "sec": json.loads(k["meta_json"] or "{}").get("sec", 0)}
@@ -390,3 +439,193 @@ def ref_file(request: Request, cid: int):
     if root not in p.parents or not p.is_file() or p.suffix.lower() not in MEDIA:
         raise KeyError(f"没有这个参考库文件:{cid}")
     return FileResponse(p, media_type=MEDIA[p.suffix.lower()])
+
+
+# ---------- 拆解卡(1c):列表、审阅页、创作视图预览、批准 / 驳回 ----------
+
+UNIT_STATES = (breakdown.APPROVED, breakdown.PROPOSED, breakdown.RUNNING, breakdown.MISSING, breakdown.FAILED)
+
+
+def _card_row(refs, wid: int) -> dict:
+    """一部作品的拆解状态:单元进度(按状态计数)、卡运行状态、已批准的最新版、最近一条拆解任务。"""
+    p = breakdown.progress(refs, wid)
+    n = Counter(u["state"] for u in p["units"])
+    card = refs.conn.execute("SELECT version, coverage FROM ref_card WHERE work_id = ? AND state = 'approved'", (wid,)).fetchone()
+    job = refs.conn.execute("SELECT * FROM ref_job WHERE kind = 'breakdown' AND work_id = ? ORDER BY id DESC LIMIT 1",
+                            (wid,)).fetchone()
+    return {"w": works.get(refs, wid), "p": p, "counts": [(s, n[s]) for s in UNIT_STATES if n[s]],
+            "card": dict(card) if card else None, "job": dict(job) if job else None}
+
+
+@router.get("/refs/cards")
+def cards(request: Request):
+    r = rt(request)
+    if r.refs is None:
+        return _off(request, "refs_cards")
+    ids = [x[0] for x in r.refs.conn.execute(
+        "SELECT id FROM ref_work WHERE id IN (SELECT work_id FROM ref_content WHERE kind IN ('chapter', 'transcript')"
+        "                                     AND verdict = 'ok' AND purged_at = '')"
+        " OR id IN (SELECT work_id FROM ref_card) OR id IN (SELECT work_id FROM ref_job WHERE kind = 'breakdown')"
+        " OR id IN (SELECT target_id FROM llm_run WHERE task = 'ref_card') ORDER BY id DESC")]
+    return render(request, "refs_cards.html", "refs_cards", rows=[_card_row(r.refs, i) for i in ids])
+
+
+def _recording_of(refs, row) -> int | None:
+    """转写对应的录屏(录屏 `x.webm` ↔ 转写 `x.transcript.json`);没有 / 已清理返回 None。"""
+    if row["kind"] != "transcript":
+        return None
+    rec = refs.conn.execute("SELECT id FROM ref_content WHERE kind = 'recording' AND path = ? AND purged_at = ''"
+                            " ORDER BY id DESC LIMIT 1", (row["path"].removesuffix(".transcript.json") + ".webm",)).fetchone()
+    return rec[0] if rec else None
+
+
+def _keyframe_at(refs, row, sec) -> int | None:
+    prefix = row["path"].removesuffix(".transcript.json") + "-kf/"
+    kf = refs.conn.execute("SELECT id FROM ref_content WHERE kind = 'keyframe' AND purged_at = '' AND substr(path, 1, ?) = ?"
+                           " AND json_extract(meta_json, '$.sec') = ? ORDER BY id DESC LIMIT 1", (len(prefix), prefix, sec)).fetchone()
+    return kf[0] if kf else None
+
+
+def _unit_rows(refs, root: Path, units: list[dict]) -> list[dict]:
+    """逐单元表:每单元运行的产物(闭集字段、摘要、引用、出场)+ 引用在第几秒(转写)、录屏链接、画面钩子那一帧。"""
+    out = []
+    for u in units:
+        row = refs.conn.execute("SELECT * FROM ref_content WHERE id = ?", (u["content_id"],)).fetchone()
+        a = runs.output(runs.get(refs, u["run_id"]))
+        at, err = None, ""
+        if row["verdict"] == "ok" and not row["purged_at"]:
+            try:                                 # 文件缺失等:如实写在这一行,页面不 500(审查 M8)
+                at = evidence.check_quote(evidence.unit_text(refs, root, row), a["quote"])[2]
+            except Exception as e:
+                err = f"读不出原文:{type(e).__name__}: {e}"
+        out.append({"err": err, "unit": u["unit"], "content_id": u["content_id"], "run_id": u["run_id"], "kind": row["kind"],
+                    "purged": bool(row["purged_at"]), "a": a, "at": at, "rec": _recording_of(refs, row),
+                    "kf": _keyframe_at(refs, row, a["visual_sec"]) if "visual_sec" in a else None})
+    return out
+
+
+def _recs(refs, review: dict) -> dict[int, int]:
+    """单元内容号 → 录屏号(剧情类假设的引用链到录屏详情 `&t=秒`)。"""
+    out = {}
+    for u in review["units"]:
+        row = refs.conn.execute("SELECT * FROM ref_content WHERE id = ?", (u["content_id"],)).fetchone()
+        rec = _recording_of(refs, row)
+        if rec is not None:
+            out[u["content_id"]] = rec
+    return out
+
+
+NO_CHOICE = {"adopt": [], "reject": []}
+
+
+def _pending(refs, root: Path, row) -> dict:
+    """待审的卡运行:按现在的数据重建上下文(与批准同一套 prepare),审阅视图由 `ref_card.review_of` 出(代码标注都在里面)。"""
+    out = {"run": dict(row), "review": None, "error": None, "stale": False, "units": [], "recs": {}, "heat_text": ""}
+    try:
+        p = service.prepare(refs, "ref_card", row["target_id"], runs.params(row), root)
+    except Exception as e:                      # 前提不满足、文件缺失(OSError)都如实写出来,不 500(审查 M8)
+        out["error"] = f"按现在的数据重建不了这张卡的上下文,批不了 —— 重新拆解:{type(e).__name__}: {e}"
+        return out
+    review = rcard.review_of(refs, row["target_id"], runs.output(row), p.ctx, NO_CHOICE)
+    out.update(review=review, stale=p.sha != row["input_sha"], units=_unit_rows(refs, root, review["units"]),
+               recs=_recs(refs, review), heat_text=rcard._heat_text(review["heat"]))
+    return out
+
+
+@router.get("/refs/card")
+def card(request: Request, work: int):
+    r = rt(request)
+    if r.refs is None:
+        return _off(request, "refs_cards")
+    w = works.get(r.refs, work)
+    row = r.refs.conn.execute("SELECT * FROM llm_run WHERE task = 'ref_card' AND target_type = 'ref_work' AND target_id = ?"
+                              " AND state = 'proposed' ORDER BY id DESC LIMIT 1", (work,)).fetchone()
+    pending = _pending(r.refs, r.refs_root, row) if row is not None else None
+    cur = r.refs.conn.execute("SELECT * FROM ref_card WHERE work_id = ? AND state = 'approved'", (work,)).fetchone()
+    approved = None
+    if cur is not None:
+        review = json.loads(cur["review_json"])
+        dec = json.loads(cur["decision_json"])
+        stance = {**{i: "adopt" for i in dec["adopt"]}, **{i: "reject" for i in dec["reject"]}}
+        approved = {"card": dict(cur), "review": review, "view": json.loads(cur["creation_json"]), "stance": stance,
+                    "decision": dec, "units": _unit_rows(r.refs, r.refs_root, review["units"]), "recs": _recs(r.refs, review),
+                    "heat_text": rcard._heat_text(review["heat"])}
+    history = [dict(x) for x in r.refs.conn.execute(
+        "SELECT id, run_id, version, state, creation_sha, coverage, created_at FROM ref_card WHERE work_id = ? ORDER BY version DESC",
+        (work,))]
+    return render(request, "refs_card.html", "refs_cards", w=w, bd=_card_row(r.refs, work), pending=pending,
+                  approved=approved, history=history)
+
+
+def _card_decision(form) -> dict:
+    """审阅页上的选择 → decision(`ref_card.decision_problems` 再严格核一遍)。补充的「不可借鉴」一行一条,空行不算。"""
+    stance, drop = {}, {"rt-": [], "rn-": []}
+    for k, v in form.items():
+        idx = k[4:] if k.startswith("hyp-") else ""
+        if idx.isdigit():                       # 序号不是整数的键直接忽略,缺的表态由 decision_problems 报
+            stance[int(idx)] = str(v)
+        if k[:3] in drop and k[3:].isdigit():   # 「去掉」勾选:rt-<序号> 可借鉴,rn-<序号> 不可借鉴
+            drop[k[:3]].append(int(k[3:]))
+    return {"adopt": sorted(i for i, v in stance.items() if v == "adopt"),
+            "reject": sorted(i for i, v in stance.items() if v == "reject"),
+            "extra_not_borrowable": [s.strip() for s in str(form.get("extra_not_borrowable", "")).splitlines() if s.strip()],
+            "reject_techniques": sorted(drop["rt-"]), "reject_not_borrowable": sorted(drop["rn-"]),
+            "ack_fragments": form.get("ack_fragments") == "1"}
+
+
+def _card_run(refs, run_id: int):
+    row = runs.get(refs, run_id)                # 没有 → 404
+    if row["task"] != "ref_card":
+        raise ValueError(f"运行 {run_id} 是 {row['task']},这里只批整部汇总(拆解卡);单元标注随卡连带批准")
+    return row
+
+
+@router.post("/refs/card/preview")
+async def card_preview(request: Request):
+    """创作视图预览:按当前勾选由代码生成(换名、去引用、去驳回)并跑重叠闸门。只渲染,不写库、不批准。"""
+    r = _refs(request)
+    form = await request.form()
+    raw = str(form.get("run", ""))
+    if not raw.isdigit():
+        raise ValueError(f"预览要带卡运行号,收到 {raw!r}")
+    row = _card_run(r.refs, int(raw))
+    decision = _card_decision(form)
+    args = runs.output(row)
+    p = service.prepare(r.refs, "ref_card", row["target_id"], runs.params(row), r.refs_root)
+    review = rcard.review_of(r.refs, row["target_id"], args, p.ctx, decision)
+    view, hits, err = None, [], None
+    frags = rcard.fragments(review, decision, p.ctx)
+    try:
+        view, hits = rcard.preview(r.refs, review, decision, p.ctx)     # 与批准同一套:换名、高频专名、换名前后与连起来的重叠
+    except ValueError as e:                     # 名字 / 专名没换掉:批准时同样会拒,这里如实写出来
+        err = str(e)
+    return TEMPLATES.TemplateResponse(request, "_refs_creation.html", {
+        "v": view, "hits": hits, "err": err, "frags": frags, "ack": decision["ack_fragments"],
+        "problems": rcard.decision_problems(args, decision),
+        "adopted": ",".join(map(str, decision["adopt"])), "sha": None})
+
+
+@router.post("/refs/card/{run_id}/approve")
+async def card_approve(request: Request, run_id: int):
+    """批准:带人的选择调 `service.approve`(连带批准单元运行、写卡、创作视图;重叠 / 换名残留 / 假产物都 ValueError → 400 说原因)。"""
+    r = _refs(request)
+    row = _card_run(r.refs, run_id)
+    service.approve(r.refs, run_id, data_root=r.refs_root, decision=_card_decision(await request.form()))
+    return RedirectResponse(f"/refs/card?work={row['target_id']}", status_code=303)
+
+
+@router.post("/refs/unit/{cid}/rebreak")
+def unit_rebreak(request: Request, cid: int):
+    """「重拆这一集 / 章」:排一条只拆这个单元的 breakdown(人点的,不受上限);只给拆解失败的单元。"""
+    r = _refs(request)
+    breakdown.enqueue_unit(r.refs, cid)
+    wid = r.refs.conn.execute("SELECT work_id FROM ref_content WHERE id = ?", (cid,)).fetchone()[0]
+    return RedirectResponse(f"/refs/card?work={wid}", status_code=303)
+
+
+@router.post("/refs/card/{run_id}/reject")
+def card_reject(request: Request, run_id: int):
+    r = _refs(request)
+    row = _card_run(r.refs, run_id)
+    runs.reject(r.refs, run_id)
+    return RedirectResponse(f"/refs/card?work={row['target_id']}", status_code=303)
